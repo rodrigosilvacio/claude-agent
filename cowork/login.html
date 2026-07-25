@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Entrar — Cowork</title>
+  <link rel="stylesheet" href="./assets/styles.css?v=1" />
+</head>
+<body class="auth-body">
+  <div class="center-card">
+    <div class="card">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M14 3v5h5" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h1 class="auth-title">Cowork</h1>
+      <p class="hint">Peça planilhas, documentos e apresentações prontos, gerados por IA. Informe seu e-mail para receber um link de acesso.</p>
+      <form id="login-form">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required autocomplete="email" placeholder="voce@exemplo.com" />
+        </div>
+        <button type="submit" id="submit-btn" class="btn btn-primary" style="width:100%;">Enviar link de acesso</button>
+      </form>
+      <div id="message" class="message" role="status"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { supabase } from "./assets/supabaseClient.js";
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      window.location.replace("./index.html");
+    }
+
+    const form = document.getElementById("login-form");
+    const messageEl = document.getElementById("message");
+    const submitBtn = document.getElementById("submit-btn");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submitBtn.disabled = true;
+      messageEl.textContent = "";
+      messageEl.className = "message";
+
+      const email = document.getElementById("email").value.trim();
+      const redirectTo = new URL("./index.html", window.location.href).toString();
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: redirectTo },
+      });
+
+      if (error) {
+        messageEl.textContent = "Erro ao enviar link: " + error.message;
+        messageEl.className = "message error";
+      } else {
+        messageEl.textContent = "Link enviado! Verifique seu email para acessar o Cowork.";
+        messageEl.className = "message success";
+        form.reset();
+      }
+
+      submitBtn.disabled = false;
+    });
+
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        window.location.replace("./index.html");
+      }
+    });
+  </script>
+</body>
+</html>

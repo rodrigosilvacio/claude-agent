@@ -392,3 +392,68 @@ manda a resposta de volta pelo Z-API.
 > envio pelo Resend por pedido — mesmo rate limit por conversa cobre esse
 > caso. O rate limit por conversa é a única mitigação no MVP — se o volume
 > crescer, vale revisitar (allowlist, captcha, limite global).
+
+## Cowork (`/cowork`)
+
+Clone do "Claude Cowork": o usuário cria **projetos**, define **instruções
+de agente** (como o Cowork faz com instruções de projeto), anexa **arquivos
+de referência** (PDF, imagem, DOCX, XLSX, TXT/MD/CSV) e pede em linguagem
+natural uma planilha, um documento ou uma apresentação. A Claude gera a
+estrutura do conteúdo e o browser monta o arquivo Office real (`.xlsx` /
+`.docx` / `.pptx`) na hora, pronto pra baixar. Mesmo padrão HTML/JS estático
++ Supabase do resto do repo, mas com login obrigatório e dados privados por
+usuário (diferente do Reports Panel, que é visível ao time todo).
+
+- `cowork/login.html` — magic link (Supabase Auth, Email OTP), mesmo padrão
+  já usado no Reports Panel.
+- `cowork/index.html` + `cowork/assets/app.js` — shell da app: barra lateral
+  de projetos, painel do projeto ativo (instruções do agente, arquivos de
+  referência, composer de geração) e o feed de documentos gerados.
+- `cowork/assets/projects.js` — CRUD de projetos e arquivos de referência.
+- `cowork/assets/fileExtract.js` — extração de anexos no client: PDF/imagem
+  viram anexo nativo (a Claude lê direto, sem OCR manual); DOCX (via
+  `mammoth`), XLSX (via `exceljs`) e TXT/MD/CSV viram texto extraído, salvo
+  em `cowork_reference_files.extracted_text` pra não reprocessar a cada
+  geração.
+- `cowork/assets/generate.js` — chama a Edge Function, monta o arquivo Office
+  no client com os builders abaixo e sobe pro Storage.
+- `cowork/assets/builders/{xlsx,docx,pptx}.js` — montam o arquivo de verdade
+  a partir da estrutura (`spec`) devolvida pela Claude, usando `exceljs`
+  (planilha com estilo — cabeçalho colorido, largura de coluna, filtro),
+  `docx` (documento com títulos, listas, tabelas) e `pptxgenjs`
+  (apresentação com múltiplos layouts de slide), todos carregados via
+  `esm.sh` sem build step.
+
+**Edge Function `cowork-generate-document`:** recebe o pedido do usuário +
+instruções do projeto + anexos, e força a resposta da Claude via **tool
+use** (um schema por tipo de saída — `build_spreadsheet` / `build_document`
+/ `build_presentation`) em vez de pedir JSON solto no texto, o que evita
+respostas mal formadas. Suporta ajuste iterativo: o botão "Pedir ajuste" num
+documento já gerado reenvia a estrutura anterior + o feedback do usuário, e
+a Claude devolve uma revisão completa (mesma lógica de feedback do
+`generate-linkedin-post`). Requer a secret `ANTHROPIC_API_KEY` (já configurada
+no projeto Supabase para as outras functions).
+
+**Banco (migration `0024_create_cowork_schema.sql`):** tabelas
+`cowork_projects`, `cowork_reference_files` e `cowork_documents`, todas com
+RLS **por dono** (`auth.uid() = owner_id`) — diferente do Reports Panel,
+aqui cada usuário só enxerga os próprios projetos e documentos. Dois buckets
+de Storage privados (`cowork-references`, `cowork-documents`), com policy
+restringindo cada usuário à própria pasta (primeiro segmento do path =
+`auth.uid()`).
+
+### Setup no projeto Supabase (`ClaudeProjects`)
+
+1. Aplicar a migration `supabase/migrations/0024_create_cowork_schema.sql`.
+2. Deploy da Edge Function `supabase/functions/cowork-generate-document`.
+3. Confirmar que a secret `ANTHROPIC_API_KEY` já está configurada (é a mesma
+   usada por `generate-linkedin-post`) — se não estiver, `supabase secrets
+   set ANTHROPIC_API_KEY=sk-ant-...`.
+4. Confirmar que o Email OTP (magic link) está habilitado no Supabase Auth
+   do projeto (já é usado pelo Reports Panel).
+
+> **Custo:** cada geração (e cada "Pedir ajuste") é uma chamada à API da
+> Anthropic com `max_tokens: 8192` e possivelmente anexos grandes (PDF/imagem
+> em base64) — sem rate limit por usuário no MVP. Se o Cowork for exposto
+> além de um piloto interno, vale adicionar um limite de gerações por
+> usuário/dia.

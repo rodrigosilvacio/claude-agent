@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cowork</title>
+  <link rel="stylesheet" href="./assets/styles.css?v=1" />
+</head>
+<body class="app-body">
+  <div class="shell">
+    <aside class="rail">
+      <div class="rail-top">
+        <div class="rail-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M14 3v5h5" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="rail-title">Cowork</span>
+      </div>
+
+      <button id="new-project-btn" class="tab tab-new" type="button">+ Novo projeto</button>
+      <nav id="project-list" class="tab-list" aria-label="Projetos"></nav>
+
+      <div class="rail-bottom">
+        <span id="user-email" class="rail-email"></span>
+        <button id="logout-btn" class="rail-logout" type="button">Sair</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <div id="empty-state" class="empty-state">
+        <h2>Nenhum projeto ainda</h2>
+        <p>Um projeto guarda as instruções do agente e os arquivos de referência para um assunto — crie um para começar a gerar planilhas, documentos e apresentações.</p>
+        <button id="empty-new-project-btn" class="btn btn-primary" type="button">Criar primeiro projeto</button>
+      </div>
+
+      <div id="project-view" class="project-view" hidden>
+        <header class="project-header">
+          <input id="project-name-input" class="project-name-input" maxlength="120" aria-label="Nome do projeto" />
+          <button id="delete-project-btn" class="btn btn-ghost btn-danger btn-sm" type="button">Excluir projeto</button>
+        </header>
+
+        <details class="ledger" id="instructions-panel">
+          <summary>Instruções do agente</summary>
+          <textarea
+            id="instructions-textarea"
+            placeholder="Como o agente deve trabalhar neste projeto — tom, padrões, o que sempre incluir ou evitar..."
+          ></textarea>
+          <div class="ledger-actions">
+            <button id="save-instructions-btn" class="btn btn-primary btn-sm" type="button">Salvar instruções</button>
+            <span id="instructions-saved-msg" class="hint-inline"></span>
+          </div>
+        </details>
+
+        <details class="ledger" id="references-panel">
+          <summary>Arquivos de referência <span id="reference-count" class="count-badge">0</span></summary>
+          <div class="reference-list" id="reference-list"></div>
+          <label class="attach-btn">
+            📎 Anexar arquivo
+            <input
+              type="file"
+              id="reference-input"
+              hidden
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.docx,.xlsx,.txt,.md,.csv"
+            />
+          </label>
+          <p class="hint">PDF, imagem, DOCX, XLSX, TXT, MD ou CSV — até 15MB cada. Usados como exemplo/contexto em toda geração deste projeto.</p>
+        </details>
+
+        <section class="composer">
+          <div class="doctype-row" id="doctype-row">
+            <button type="button" class="doctype-btn active" data-doctype="spreadsheet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+              Planilha
+            </button>
+            <button type="button" class="doctype-btn" data-doctype="document">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 2h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v5h5"/><path d="M7.5 13h9M7.5 16.5h6"/></svg>
+              Documento
+            </button>
+            <button type="button" class="doctype-btn" data-doctype="presentation">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="12" rx="1.5"/><path d="M9 20h6M12 17v3"/></svg>
+              Apresentação
+            </button>
+          </div>
+          <textarea
+            id="prompt-input"
+            class="prompt-textarea"
+            placeholder="Descreva o que você precisa — ex: “orçamento mensal para uma reforma de cozinha, com categorias de material e mão de obra”"
+          ></textarea>
+          <div class="composer-actions">
+            <span id="composer-hint" class="hint-inline"></span>
+            <button id="generate-btn" class="btn btn-stamp" type="button">Gerar</button>
+          </div>
+        </section>
+
+        <section class="documents-feed" id="documents-feed">
+          <p class="feed-empty">Nenhum documento gerado neste projeto ainda.</p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <template id="doc-card-template">
+    <article class="doc-card">
+      <div class="doc-card-fold"></div>
+      <h3 class="doc-card-title"></h3>
+      <p class="doc-card-prompt"></p>
+      <div class="doc-card-meta">
+        <span class="doc-type-label"></span>
+        <time></time>
+      </div>
+      <div class="doc-card-body"></div>
+    </article>
+  </template>
+
+  <script type="module" src="./assets/app.js"></script>
+</body>
+</html>

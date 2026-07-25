@@ -1,0 +1,931 @@
+/* Cowork — folha de estilo compartilhada (login + app).
+   Conceito: mesa de trabalho de documentos — papel, régua/ficha, e cada tipo
+   de saída (planilha/documento/apresentação) tem sua cor de identificação,
+   usada em todo lugar (botão do composer, aba do projeto, canto dobrado do
+   card) em vez de ser decorativa. */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
+
+:root {
+  color-scheme: light dark;
+
+  --paper: #f6f3ec;
+  --paper-raised: #ffffff;
+  --paper-sunken: #efebe0;
+  --ink: #1b2430;
+  --ink-soft: #5b6472;
+  --ink-faint: #8b93a0;
+  --navy: #1f4e78;
+  --navy-deep: #163a5b;
+  --amber: #c97a2b;
+  --amber-soft: #f0d9bc;
+  --rule: #e1dccc;
+  --rule-strong: #c9c2ae;
+  --success: #1f7a4d;
+  --danger: #b3432e;
+  --danger-soft: #f4dcd5;
+
+  --type-spreadsheet: #1f7a4d;
+  --type-spreadsheet-soft: #d9ecdf;
+  --type-document: #1f4e78;
+  --type-document-soft: #dbe6ef;
+  --type-presentation: #c97a2b;
+  --type-presentation-soft: #f0d9bc;
+
+  --font-display: "Space Grotesk", "IBM Plex Sans", sans-serif;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --shadow-card: 0 1px 2px rgba(27, 36, 48, 0.06), 0 8px 24px rgba(27, 36, 48, 0.06);
+  --shadow-raised: 0 4px 14px rgba(27, 36, 48, 0.1);
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14181f;
+    --paper-raised: #1c222c;
+    --paper-sunken: #10141a;
+    --ink: #edebe3;
+    --ink-soft: #a9b0bc;
+    --ink-faint: #6b7280;
+    --navy: #6fa0d8;
+    --navy-deep: #9cc0e8;
+    --amber: #e0a868;
+    --amber-soft: #3a2e1e;
+    --rule: #2a313d;
+    --rule-strong: #3a424f;
+    --success: #4cb082;
+    --danger: #e0755d;
+    --danger-soft: #3a2620;
+
+    --type-spreadsheet: #4cb082;
+    --type-spreadsheet-soft: #1c2e26;
+    --type-document: #6fa0d8;
+    --type-document-soft: #1c2836;
+    --type-presentation: #e0a868;
+    --type-presentation-soft: #3a2e1e;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+    --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 0;
+}
+
+a {
+  color: var(--navy);
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+textarea {
+  resize: vertical;
+}
+
+:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.hint-inline {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+/* ---- Botões ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+  color: var(--ink);
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+
+.btn:hover {
+  box-shadow: var(--shadow-card);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-primary {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--navy-deep);
+  border-color: var(--navy-deep);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--paper-sunken);
+}
+
+.btn-danger {
+  color: var(--danger);
+}
+
+.btn-sm {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+/* Botão "carimbo" de gerar — o momento central da ferramenta merece um
+   tratamento com mais peso do que um botão de formulário comum. */
+.btn-stamp {
+  background: var(--navy);
+  border: 2px solid var(--navy);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.7rem 1.6rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
+
+.btn-stamp:hover {
+  background: var(--navy-deep);
+  border-color: var(--navy-deep);
+  box-shadow: var(--shadow-raised);
+}
+
+/* ---- Login ---- */
+
+.auth-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at 20% -10%, var(--type-document-soft), transparent 45%),
+    radial-gradient(circle at 100% 110%, var(--type-presentation-soft), transparent 40%),
+    var(--paper);
+}
+
+.center-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.card {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 2rem;
+  box-shadow: var(--shadow-card);
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--navy);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+}
+
+.auth-title {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.card .hint {
+  margin-bottom: 1.5rem;
+}
+
+.field {
+  margin-bottom: 1.1rem;
+}
+
+.field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  color: var(--ink-soft);
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  font-size: 0.95rem;
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px var(--type-document-soft);
+}
+
+.message {
+  margin-top: 1rem;
+  font-size: 0.87rem;
+  text-align: center;
+  min-height: 1.2em;
+}
+
+.message.success {
+  color: var(--success);
+}
+
+.message.error {
+  color: var(--danger);
+}
+
+/* ---- App shell ---- */
+
+.shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.rail {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-sunken);
+  border-right: 1px solid var(--rule);
+  padding: 1rem 0.75rem;
+}
+
+.rail-top {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.25rem 1rem;
+}
+
+.rail-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: var(--navy);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.rail-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+/* Lista de projetos como fichas/abas de fichário — remete a divisórias de
+   pasta suspensa, o objeto mais associado a "organizar documentos". */
+.tab-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.tab {
+  text-align: left;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px 8px 0 0;
+  font-size: 0.88rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab:hover {
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.tab.active {
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-weight: 600;
+  border-color: var(--rule);
+  border-bottom-color: var(--paper-raised);
+  box-shadow: var(--shadow-card);
+}
+
+.tab-new {
+  border: 1px dashed var(--rule-strong);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-weight: 500;
+  padding: 0.55rem 0.75rem;
+}
+
+.tab-new:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+.rail-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.25rem 0.25rem;
+  border-top: 1px solid var(--rule);
+  margin-top: 0.5rem;
+}
+
+.rail-email {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-logout {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rail-logout:hover {
+  color: var(--danger);
+}
+
+.workspace {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.75rem 2.25rem 4rem;
+}
+
+.empty-state {
+  max-width: 460px;
+  margin: 10vh auto 0;
+  text-align: center;
+}
+
+.empty-state h2 {
+  font-size: 1.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.empty-state p {
+  color: var(--ink-soft);
+  margin-bottom: 1.25rem;
+}
+
+.project-view {
+  max-width: 820px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.project-name-input {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  padding: 0.2rem 0.3rem;
+  width: 100%;
+  border-radius: 6px;
+}
+
+.project-name-input:hover,
+.project-name-input:focus {
+  background: var(--paper-sunken);
+  outline: none;
+}
+
+/* "Ficha" recolhível para instruções e referências. */
+.ledger {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.25rem 1.1rem;
+}
+
+.ledger[open] {
+  padding-bottom: 1.1rem;
+}
+
+.ledger summary {
+  cursor: pointer;
+  padding: 0.9rem 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ledger summary::-webkit-details-marker {
+  display: none;
+}
+
+.ledger summary::before {
+  content: "▸";
+  color: var(--ink-faint);
+  transition: transform 0.15s ease;
+  font-size: 0.75rem;
+}
+
+.ledger[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.count-badge {
+  background: var(--paper-sunken);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+}
+
+.ledger textarea {
+  width: 100%;
+  min-height: 110px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: var(--paper);
+  font-size: 0.9rem;
+}
+
+.ledger textarea:focus {
+  outline: none;
+  border-color: var(--navy);
+}
+
+.ledger-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+
+.reference-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.reference-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.3rem 0.4rem 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  max-width: 240px;
+}
+
+.reference-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-chip button {
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.15rem;
+}
+
+.reference-chip button:hover {
+  color: var(--danger);
+}
+
+.attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.attach-btn:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+/* ---- Composer ---- */
+
+.composer {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.1rem;
+  box-shadow: var(--shadow-card);
+}
+
+.doctype-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.doctype-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1.5px solid var(--rule);
+  background: var(--paper);
+  border-radius: 8px;
+  padding: 0.65rem 0.5rem;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.doctype-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.doctype-btn:hover {
+  border-color: var(--rule-strong);
+}
+
+.doctype-btn[data-doctype="spreadsheet"].active {
+  border-color: var(--type-spreadsheet);
+  background: var(--type-spreadsheet-soft);
+  color: var(--type-spreadsheet);
+}
+
+.doctype-btn[data-doctype="document"].active {
+  border-color: var(--type-document);
+  background: var(--type-document-soft);
+  color: var(--type-document);
+}
+
+.doctype-btn[data-doctype="presentation"].active {
+  border-color: var(--type-presentation);
+  background: var(--type-presentation-soft);
+  color: var(--type-presentation);
+}
+
+.prompt-textarea {
+  width: 100%;
+  min-height: 90px;
+  border: none;
+  background: transparent;
+  font-size: 0.98rem;
+  padding: 0.2rem;
+}
+
+.prompt-textarea:focus {
+  outline: none;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* ---- Feed de documentos ---- */
+
+.documents-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.feed-empty {
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 0.88rem;
+  padding: 2rem 0;
+}
+
+/* Card com canto dobrado — o "documento" físico é o elemento de assinatura
+   visual do produto: cada geração aparece como uma folha de papel. */
+.doc-card {
+  position: relative;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+  clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%);
+}
+
+.doc-card-fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 26px 26px 0;
+  border-color: transparent var(--fold-color, var(--type-document)) transparent transparent;
+  opacity: 0.85;
+}
+
+.doc-card[data-doctype="spreadsheet"] {
+  --fold-color: var(--type-spreadsheet);
+}
+
+.doc-card[data-doctype="document"] {
+  --fold-color: var(--type-document);
+}
+
+.doc-card[data-doctype="presentation"] {
+  --fold-color: var(--type-presentation);
+}
+
+.doc-card-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+  padding-right: 24px;
+}
+
+.doc-card-prompt {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  margin: 0 0 0.6rem;
+  max-width: 90%;
+}
+
+.doc-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+  margin-bottom: 0.75rem;
+}
+
+.doc-type-label {
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+}
+
+.doc-card[data-doctype="spreadsheet"] .doc-type-label {
+  background: var(--type-spreadsheet-soft);
+  color: var(--type-spreadsheet);
+}
+
+.doc-card[data-doctype="document"] .doc-type-label {
+  background: var(--type-document-soft);
+  color: var(--type-document);
+}
+
+.doc-card[data-doctype="presentation"] .doc-type-label {
+  background: var(--type-presentation-soft);
+  color: var(--type-presentation);
+}
+
+.doc-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.doc-card-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.doc-card-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.84rem;
+  margin-bottom: 0.75rem;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--rule-strong);
+  border-top-color: var(--navy);
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.feedback-box {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.feedback-box textarea {
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  background: var(--paper);
+  font-size: 0.86rem;
+}
+
+.feedback-box textarea:focus {
+  outline: none;
+  border-color: var(--navy);
+}
+
+.feedback-box .btn {
+  align-self: flex-end;
+}
+
+/* ---- Toast ---- */
+
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0.7rem 1.2rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  box-shadow: var(--shadow-raised);
+  z-index: 20;
+}
+
+.toast.error {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ---- Responsivo ---- */
+
+@media (max-width: 760px) {
+  .shell {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .rail {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.75rem;
+    overflow-x: auto;
+  }
+
+  .rail-top {
+    padding: 0;
+  }
+
+  .tab-list {
+    flex-direction: row;
+    margin-top: 0;
+    overflow-x: auto;
+  }
+
+  .rail-bottom {
+    border-top: none;
+    border-left: 1px solid var(--rule);
+    margin-top: 0;
+    padding-left: 0.75rem;
+  }
+
+  .workspace {
+    padding: 1.25rem 1rem 3rem;
+  }
+
+  .doctype-row {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
