@@ -2,6 +2,10 @@
 // release nova do supabase-js não deve entrar em produção sem passar por
 // um commit e revisão.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.5";
+// Cliente SMTP (Deno) para enviar e-mail via Gmail com senha de app — sem
+// depender de um fluxo OAuth completo. Versão pinada pelo mesmo motivo do
+// supabase-js acima.
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 // Agente Theo: recebe mensagens de WhatsApp via webhook do Z-API e responde
 // perguntas sobre o catálogo/tabela de preços da empresa. Fluxo de resposta:
@@ -13,6 +17,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.5";
 //      Anthropic) como alternativa.
 //   3. Se o usuário pedir um CEP, usa `consultar_cep`, que chama o servidor
 //      MCP `mcp-cep` já existente neste repositório via JSON-RPC.
+//   4. Se o usuário pedir para receber algo por e-mail (ex: "me manda por
+//      email"), usa `enviar_email` — sempre para um destinatário fixo
+//      pré-configurado (não escolhido pelo usuário do WhatsApp), para evitar
+//      que o número aberto a qualquer um vire um relay de spam via Gmail.
 //
 // Histórico de conversa persistido por telefone (tabelas `theo_conversas`/
 // `theo_mensagens`, migration 0025) — mesmo padrão do `oraculo-webhook`.
@@ -32,6 +40,9 @@ const GOOGLE_SHEETS_CLIENT_EMAIL = Deno.env.get("GOOGLE_SHEETS_CLIENT_EMAIL")!;
 const GOOGLE_SHEETS_PRIVATE_KEY = Deno.env.get("GOOGLE_SHEETS_PRIVATE_KEY")!;
 const GOOGLE_SHEETS_SPREADSHEET_ID = Deno.env.get("GOOGLE_SHEETS_SPREADSHEET_ID")!;
 const GOOGLE_SHEETS_RANGE = Deno.env.get("GOOGLE_SHEETS_RANGE")!;
+const GMAIL_ADDRESS = Deno.env.get("GMAIL_ADDRESS")!;
+const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD")!;
+const THEO_EMAIL_DESTINO = Deno.env.get("THEO_EMAIL_DESTINO")!;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -73,7 +84,15 @@ const SYSTEM_PROMPT =
   "pergunta não for sobre o catálogo — e, nesse caso, deixe claro que a resposta veio da " +
   "internet, não da planilha oficial. Se o usuário pedir um CEP ou informações de endereço, " +
   "use a ferramenta consultar_cep. Se não encontrar a resposta em nenhuma fonte, diga isso " +
-  "claramente em vez de inventar.";
+  "claramente em vez de inventar. " +
+  "Você também pode enviar por e-mail uma informação desta conversa (ex: uma lista de " +
+  "produtos, um CEP) quando o usuário pedir explicitamente — frases como \"me manda por " +
+  "email\", \"manda isso pro meu email\", \"pode enviar por e-mail\". Antes de chamar a " +
+  "ferramenta enviar_email, confirme com o usuário o que vai no e-mail (resuma o assunto e " +
+  "o conteúdo) caso ainda não esteja claro pelo pedido dele — só envie depois que ficar " +
+  "claro o que ele quer mandar. O e-mail sempre vai para um endereço fixo já configurado; " +
+  "você nunca escolhe nem pergunta o destinatário. Depois de enviar, confirme ao usuário " +
+  "que o e-mail foi mandado.";
 
 const TOOLS = [
   {
@@ -106,6 +125,22 @@ const TOOLS = [
         },
       },
       required: ["cep"],
+    },
+  },
+  {
+    name: "enviar_email",
+    description:
+      "Envia por e-mail uma informação desta conversa para um destinatário fixo já " +
+      "configurado (não escolhido pelo usuário do WhatsApp). Use só quando o usuário pedir " +
+      "explicitamente para receber algo por e-mail, e só depois de confirmar com ele o que " +
+      "vai ser enviado.",
+    input_schema: {
+      type: "object",
+      properties: {
+        assunto: { type: "string", description: "Assunto do e-mail." },
+        corpo: { type: "string", description: "Conteúdo do e-mail, em texto simples." },
+      },
+      required: ["assunto", "corpo"],
     },
   },
   { type: "web_search_20260209", name: "web_search" },
@@ -312,6 +347,38 @@ async function consultarCepViaMcp(cepInput: unknown): Promise<{ texto: string; i
   }
 }
 
+// --- E-mail, via SMTP do Gmail (senha de app) -----------------------------
+
+async function enviarEmail(assuntoInput: unknown, corpoInput: unknown): Promise<string> {
+  const assunto = typeof assuntoInput === "string" && assuntoInput.trim()
+    ? assuntoInput.trim()
+    : "Mensagem do Theo";
+  const corpo = typeof corpoInput === "string" ? corpoInput.trim() : "";
+  if (!corpo) {
+    return "Não recebi nenhum conteúdo para mandar no e-mail.";
+  }
+
+  const client = new SMTPClient({
+    connection: {
+      hostname: "smtp.gmail.com",
+      port: 465,
+      tls: true,
+      auth: { username: GMAIL_ADDRESS, password: GMAIL_APP_PASSWORD },
+    },
+  });
+  try {
+    await client.send({
+      from: GMAIL_ADDRESS,
+      to: THEO_EMAIL_DESTINO,
+      subject: assunto,
+      content: corpo,
+    });
+    return `E-mail enviado com sucesso para ${THEO_EMAIL_DESTINO}.`;
+  } finally {
+    await client.close();
+  }
+}
+
 // --- Loop de ferramentas com a Anthropic ----------------------------------
 
 async function gerarResposta(
@@ -371,6 +438,9 @@ async function gerarResposta(
           const resultado = await consultarCepViaMcp((bloco.input as { cep?: string })?.cep);
           conteudo = resultado.texto;
           isError = resultado.isError;
+        } else if (bloco.name === "enviar_email") {
+          const input = bloco.input as { assunto?: string; corpo?: string };
+          conteudo = await enviarEmail(input?.assunto, input?.corpo);
         } else {
           conteudo = `Ferramenta desconhecida: "${bloco.name}".`;
           isError = true;

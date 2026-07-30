@@ -400,7 +400,7 @@ consultando primeiro uma planilha oficial (Google Sheets, ao vivo) e caindo
 para busca na web quando a planilha não tem a resposta. Sem painel web — a
 interface é a própria conversa no WhatsApp, mesmo padrão do Oráculo. Fluxo:
 Z-API recebe a mensagem e chama o webhook (Edge Function `theo-webhook`); a
-function busca o histórico da conversa, chama a Anthropic com três
+function busca o histórico da conversa, chama a Anthropic com quatro
 ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
 
 - **Ferramentas disponíveis ao modelo, nesta ordem de preferência (definida
@@ -417,6 +417,11 @@ ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
   3. `consultar_cep` — para perguntas de CEP/endereço, chama o servidor MCP
      `mcp-cep` já existente neste repositório via JSON-RPC (`tools/call`),
      reaproveitando a mesma integração com o ViaCEP em vez de duplicá-la.
+  4. `enviar_email` — quando o usuário pede explicitamente para receber algo
+     por e-mail (ex: "me manda por email"), manda via SMTP do Gmail (senha de
+     app, sem OAuth completo) para um **destinatário fixo pré-configurado**
+     — nunca o e-mail que a pessoa do WhatsApp informar. O prompt instrui o
+     modelo a confirmar o conteúdo antes de enviar.
 - **Banco (migration `0025_create_theo_agent.sql`):** tabelas
   `theo_conversas` (uma linha por telefone) e `theo_mensagens` (histórico,
   `role` `user`/`assistant`), mesmo desenho do Oráculo (migration `0010`) —
@@ -445,6 +450,15 @@ ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
 > estar **compartilhada com o e-mail da conta de serviço** (ver setup
 > abaixo), não só com o seu usuário Google.
 
+> **`enviar_email` sempre manda para um destinatário fixo, por decisão de
+> segurança.** Como o número do Theo está aberto a qualquer pessoa no
+> WhatsApp (sem allowlist), deixar o destinatário do e-mail ser escolhido por
+> quem manda mensagem transformaria o Gmail configurado num relay de spam
+> para terceiros. Por isso `THEO_EMAIL_DESTINO` é fixo nas secrets do
+> projeto — o modelo nunca pergunta nem aceita um e-mail diferente, mesmo
+> que o usuário peça. Se o caso de uso mudar para precisar de destinatário
+> variável, isso exige repensar autenticação/allowlist do WhatsApp antes.
+
 ### Setup
 
 1. Aplicar a migration `supabase/migrations/0025_create_theo_agent.sql`.
@@ -459,12 +473,19 @@ ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
      **ID da planilha** (o trecho entre `/d/` e `/edit` na URL) e o **nome +
      intervalo** da aba com os dados (ex: `Catálogo!A:F` — a primeira linha
      do intervalo é tratada como cabeçalho/nome das colunas).
-3. Deploy da function **sem verificação de JWT** (quem chama é o Z-API, não
+3. Criar uma **senha de app** do Gmail para o envio de e-mail (SMTP):
+   - Precisa ter a **verificação em duas etapas** ativada na conta Google
+     que vai enviar os e-mails.
+   - Acessar [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords),
+     criar uma senha de app (ex: nome "Theo"), e guardar a senha de 16
+     caracteres gerada — é ela que vira `GMAIL_APP_PASSWORD` (não é a senha
+     normal da conta).
+4. Deploy da function **sem verificação de JWT** (quem chama é o Z-API, não
    um cliente Supabase autenticado — mesmo racional de `oraculo-webhook`):
    ```
    supabase functions deploy theo-webhook --no-verify-jwt
    ```
-4. Configurar as secrets no projeto Supabase (`ClaudeProjects`):
+5. Configurar as secrets no projeto Supabase (`ClaudeProjects`):
    ```
    supabase secrets set \
      ANTHROPIC_API_KEY=sk-ant-... \
@@ -475,15 +496,21 @@ ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
      GOOGLE_SHEETS_CLIENT_EMAIL=nome@projeto.iam.gserviceaccount.com \
      GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n" \
      GOOGLE_SHEETS_SPREADSHEET_ID=<id da planilha> \
-     GOOGLE_SHEETS_RANGE="Catálogo!A:F"
+     GOOGLE_SHEETS_RANGE="Catálogo!A:F" \
+     GMAIL_ADDRESS=seu-email@gmail.com \
+     GMAIL_APP_PASSWORD=<senha de app de 16 caracteres> \
+     THEO_EMAIL_DESTINO=seu-email@gmail.com
    ```
    `ANTHROPIC_API_KEY`, `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN` e
    `ZAPI_CLIENT_TOKEN` provavelmente já existem (usadas pelo Oráculo) — só
    falta configurar as demais se ainda não existirem. `GOOGLE_SHEETS_PRIVATE_KEY`
    vem da chave JSON da conta de serviço; se colar com quebras de linha
    literais (`\n` como texto, não como nova linha) o código já normaliza —
-   funciona nos dois formatos.
-5. No painel do Z-API, configurar a URL de webhook "ao receber mensagem"
+   funciona nos dois formatos. `GMAIL_ADDRESS` é o remetente (a conta cuja
+   senha de app foi gerada); `THEO_EMAIL_DESTINO` é para onde os e-mails são
+   enviados — pode ser o mesmo endereço ou outro, mas é sempre fixo (ver nota
+   de segurança acima).
+6. No painel do Z-API, configurar a URL de webhook "ao receber mensagem"
    apontando para:
    ```
    https://<seu-projeto>.supabase.co/functions/v1/theo-webhook?secret=<THEO_WEBHOOK_SECRET>
