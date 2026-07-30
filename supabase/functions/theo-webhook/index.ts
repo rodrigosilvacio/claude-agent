@@ -17,7 +17,12 @@ import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 //      Anthropic) como alternativa.
 //   3. Se o usuário pedir um CEP, usa `consultar_cep`, que chama o servidor
 //      MCP `mcp-cep` já existente neste repositório via JSON-RPC.
-//   4. Se o usuário pedir para receber algo por e-mail (ex: "me manda por
+//   4. Se o usuário pedir para cadastrar/adicionar um produto ou sistema
+//      novo, usa `adicionar_produto`, que grava uma linha nova na planilha
+//      (values:append) depois de confirmar os dados com o usuário. Aberto a
+//      qualquer número que mandar mensagem — decisão do usuário, ciente do
+//      risco de spam/dados indevidos.
+//   5. Se o usuário pedir para receber algo por e-mail (ex: "me manda por
 //      email"), usa `enviar_email` — sempre para um destinatário fixo
 //      pré-configurado (não escolhido pelo usuário do WhatsApp), para evitar
 //      que o número aberto a qualquer um vire um relay de spam via Gmail.
@@ -89,7 +94,12 @@ const SYSTEM_PROMPT =
   "pergunta não for sobre o catálogo — e, nesse caso, deixe claro que a resposta veio da " +
   "internet, não da planilha oficial. Se o usuário pedir um CEP ou informações de endereço, " +
   "use a ferramenta consultar_cep. Se não encontrar a resposta em nenhuma fonte, diga isso " +
-  "claramente em vez de inventar." +
+  "claramente em vez de inventar. " +
+  "Se o usuário pedir para cadastrar, adicionar ou incluir um novo produto/sistema na " +
+  "planilha, use a ferramenta adicionar_produto — mas antes de chamá-la, repita para o " +
+  "usuário os dados que você entendeu (um por linha ou campo) e só adicione depois que ele " +
+  "confirmar que está certo; se faltar alguma informação importante, pergunte antes de " +
+  "adicionar. Depois de adicionar, confirme ao usuário o que foi gravado." +
   (EMAIL_HABILITADO
     ? (
       " Você também pode enviar por e-mail uma informação desta conversa (ex: uma lista de " +
@@ -134,6 +144,27 @@ const TOOLS = [
         },
       },
       required: ["cep"],
+    },
+  },
+  {
+    name: "adicionar_produto",
+    description:
+      "Adiciona uma linha nova (ex: um produto ou sistema novo) ao final da planilha de " +
+      "catálogo. Use os mesmos nomes de coluna que aparecem nos resultados de buscar_produto " +
+      "como chaves de `campos`. Só chame depois de confirmar com o usuário os dados exatos " +
+      "que serão gravados.",
+    input_schema: {
+      type: "object",
+      properties: {
+        campos: {
+          type: "object",
+          description:
+            "Mapa coluna -> valor a ser gravado na nova linha, usando os mesmos nomes de " +
+            "coluna retornados por buscar_produto. Colunas omitidas ficam em branco.",
+          additionalProperties: { type: "string" },
+        },
+      },
+      required: ["campos"],
     },
   },
   ...(EMAIL_HABILITADO
@@ -227,7 +258,9 @@ async function obterGoogleAccessToken(): Promise<string> {
   const header = { alg: "RS256", typ: "JWT" };
   const claims = {
     iss: GOOGLE_SHEETS_CLIENT_EMAIL,
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+    // Escopo de leitura+escrita: além de buscar_produto, a ferramenta
+    // adicionar_produto grava linhas novas na planilha (values:append).
+    scope: "https://www.googleapis.com/auth/spreadsheets",
     aud: "https://oauth2.googleapis.com/token",
     iat: agora,
     exp: agora + 3600,
@@ -265,6 +298,9 @@ async function obterGoogleAccessToken(): Promise<string> {
 // mesma conversa sem servir dados velhos por muito tempo.
 let cachedLinhas: Record<string, string>[] | null = null;
 let cachedLinhasExpiraEm = 0;
+// Cabeçalho (nomes das colunas, na ordem da planilha) — usado por
+// adicionarLinhaPlanilha para saber em qual posição colocar cada valor.
+let cachedCabecalho: string[] | null = null;
 const CACHE_PLANILHA_SEGUNDOS = 60;
 
 async function obterLinhasPlanilha(): Promise<Record<string, string>[]> {
@@ -289,6 +325,7 @@ async function obterLinhasPlanilha(): Promise<Record<string, string>[]> {
     return cachedLinhas;
   }
   const [cabecalho, ...linhas] = valores;
+  cachedCabecalho = cabecalho.map((coluna, i) => coluna || `coluna_${i + 1}`);
   cachedLinhas = linhas.map((linha) => {
     const obj: Record<string, string> = {};
     cabecalho.forEach((coluna, i) => {
@@ -298,6 +335,53 @@ async function obterLinhasPlanilha(): Promise<Record<string, string>[]> {
   });
   cachedLinhasExpiraEm = agora + CACHE_PLANILHA_SEGUNDOS;
   return cachedLinhas;
+}
+
+// Adiciona uma linha nova ao final da planilha (ex: um produto/sistema
+// novo). Os campos são casados com o cabeçalho pelo nome da coluna (mesmos
+// nomes de chave que buscar_produto já devolve), ignorando maiúsculas/
+// acentos na comparação; colunas sem valor correspondente ficam em branco.
+async function adicionarLinhaPlanilha(campos: Record<string, unknown>): Promise<string> {
+  await obterLinhasPlanilha();
+  if (!cachedCabecalho || cachedCabecalho.length === 0) {
+    throw new Error(
+      "Não consegui ler o cabeçalho da planilha para saber em quais colunas colocar os dados.",
+    );
+  }
+
+  const chavesRecebidas = Object.keys(campos ?? {});
+  const linha = cachedCabecalho.map((coluna) => {
+    const chave = chavesRecebidas.find((k) => normalizarTexto(k) === normalizarTexto(coluna));
+    const valor = chave ? campos[chave] : undefined;
+    return valor == null ? "" : String(valor);
+  });
+
+  if (linha.every((valor) => !valor)) {
+    throw new Error(
+      `Nenhum dos campos enviados corresponde às colunas da planilha (${cachedCabecalho.join(", ")}).`,
+    );
+  }
+
+  const accessToken = await obterGoogleAccessToken();
+  const range = encodeURIComponent(GOOGLE_SHEETS_RANGE);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_SPREADSHEET_ID}/values/${range}:append` +
+    `?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ values: [linha] }),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Falha ao adicionar linha na planilha (status ${res.status}): ${await res.text()}`,
+    );
+  }
+
+  // Invalida o cache pra próxima busca já enxergar a linha recém-adicionada.
+  cachedLinhasExpiraEm = 0;
+
+  const resumo = cachedCabecalho.map((coluna, i) => `${coluna}: ${linha[i] || "-"}`).join(", ");
+  return `Adicionado na planilha com sucesso — ${resumo}.`;
 }
 
 function normalizarTexto(texto: string): string {
@@ -449,6 +533,9 @@ async function gerarResposta(
           const resultado = await consultarCepViaMcp((bloco.input as { cep?: string })?.cep);
           conteudo = resultado.texto;
           isError = resultado.isError;
+        } else if (bloco.name === "adicionar_produto") {
+          const input = bloco.input as { campos?: Record<string, unknown> };
+          conteudo = await adicionarLinhaPlanilha(input?.campos ?? {});
         } else if (bloco.name === "enviar_email") {
           const input = bloco.input as { assunto?: string; corpo?: string };
           conteudo = await enviarEmail(input?.assunto, input?.corpo);

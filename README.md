@@ -400,7 +400,7 @@ consultando primeiro uma planilha oficial (Google Sheets, ao vivo) e caindo
 para busca na web quando a planilha não tem a resposta. Sem painel web — a
 interface é a própria conversa no WhatsApp, mesmo padrão do Oráculo. Fluxo:
 Z-API recebe a mensagem e chama o webhook (Edge Function `theo-webhook`); a
-function busca o histórico da conversa, chama a Anthropic com quatro
+function busca o histórico da conversa, chama a Anthropic com cinco
 ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
 
 - **Ferramentas disponíveis ao modelo, nesta ordem de preferência (definida
@@ -417,7 +417,12 @@ ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
   3. `consultar_cep` — para perguntas de CEP/endereço, chama o servidor MCP
      `mcp-cep` já existente neste repositório via JSON-RPC (`tools/call`),
      reaproveitando a mesma integração com o ViaCEP em vez de duplicá-la.
-  4. `enviar_email` — quando o usuário pede explicitamente para receber algo
+  4. `adicionar_produto` — quando o usuário pede para cadastrar/adicionar um
+     produto ou sistema novo, grava uma linha nova ao final da planilha
+     (`values:append` da Google Sheets API), casando os campos enviados com
+     as colunas pelo nome. O prompt instrui o modelo a repetir os dados e só
+     gravar depois que o usuário confirmar.
+  5. `enviar_email` — quando o usuário pede explicitamente para receber algo
      por e-mail (ex: "me manda por email"), manda via SMTP do Gmail (senha de
      app, sem OAuth completo) para um **destinatário fixo pré-configurado**
      — nunca o e-mail que a pessoa do WhatsApp informar. O prompt instrui o
@@ -450,6 +455,14 @@ ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
 > estar **compartilhada com o e-mail da conta de serviço** (ver setup
 > abaixo), não só com o seu usuário Google.
 
+> **`adicionar_produto` está aberto a qualquer número, sem allowlist.** Como
+> o WhatsApp do Theo não tem restrição de quem pode mandar mensagem, essa
+> ferramenta grava direto na planilha de catálogo para qualquer pessoa que
+> pedir — o único freio é o prompt exigir confirmação dos dados antes de
+> gravar. Se isso virar um problema (spam, dados indevidos), a mitigação é
+> uma allowlist de telefones autorizados a usar essa ferramenta específica
+> (não implementada neste MVP, mas simples de adicionar depois).
+
 > **`enviar_email` sempre manda para um destinatário fixo, por decisão de
 > segurança.** Como o número do Theo está aberto a qualquer pessoa no
 > WhatsApp (sem allowlist), deixar o destinatário do e-mail ser escolhido por
@@ -468,7 +481,9 @@ ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
      **conta de serviço** (Service Account) com uma chave JSON.
    - Abrir a planilha do catálogo no Google Sheets e **compartilhá-la** (botão
      Compartilhar) com o e-mail da conta de serviço (algo como
-     `nome@projeto.iam.gserviceaccount.com`), papel **Leitor**.
+     `nome@projeto.iam.gserviceaccount.com`), papel **Editor** (não Leitor —
+     a ferramenta `adicionar_produto` precisa gravar linhas novas, não só
+     ler).
    - Anotar da chave JSON baixada: `client_email` e `private_key`, e o
      **ID da planilha** (o trecho entre `/d/` e `/edit` na URL) e o **nome +
      intervalo** da aba com os dados (ex: `Catálogo!A:F` — a primeira linha
