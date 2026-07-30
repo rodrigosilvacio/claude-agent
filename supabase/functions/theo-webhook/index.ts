@@ -310,6 +310,9 @@ async function consultarCepViaMcp(cepInput: unknown): Promise<{ texto: string; i
 
 async function gerarResposta(
   mensagens: { role: string; content: unknown }[],
+  // deno-lint-ignore no-explicit-any
+  supabaseDebug: any,
+  conversaIdDebug: string,
 ): Promise<string> {
   let historico = mensagens;
 
@@ -372,6 +375,14 @@ async function gerarResposta(
       } catch (err) {
         conteudo = err instanceof Error ? err.message : String(err);
         isError = true;
+        // DEBUG TEMPORÁRIO: grava o erro da ferramenta no histórico para
+        // diagnosticar sem depender de acesso à rede externa nesta sessão —
+        // remover depois.
+        await supabaseDebug.from("theo_mensagens").insert({
+          conversa_id: conversaIdDebug,
+          role: "assistant",
+          conteudo: `[DEBUG ${bloco.name}] ${conteudo}`,
+        });
       }
       resultados.push({
         type: "tool_result",
@@ -507,7 +518,7 @@ Deno.serve(async (req: Request) => {
 
   let resposta: string;
   try {
-    resposta = await gerarResposta(mensagens);
+    resposta = await gerarResposta(mensagens, supabase, conversaId);
   } catch (err) {
     console.error("Falha ao gerar resposta do Theo:", err);
     // DEBUG TEMPORÁRIO: grava o detalhe do erro no histórico para diagnosticar
