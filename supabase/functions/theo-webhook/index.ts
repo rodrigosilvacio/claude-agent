@@ -68,6 +68,11 @@ const RATE_LIMIT_MAX_MENSAGENS = 20;
 // ferramentas sem nunca concluir).
 const MAX_ITERACOES_FERRAMENTA = 5;
 
+// Desabilitado a pedido do usuário por enquanto — trocar para true reativa
+// a ferramenta enviar_email (tool + instrução no prompt) sem precisar
+// remexer no resto do código.
+const EMAIL_HABILITADO = false;
+
 const SYSTEM_PROMPT =
   "Você é o Theo, um assistente de WhatsApp que responde perguntas sobre o catálogo de " +
   "produtos e preços da empresa, em português do Brasil. Tom coloquial e simpático, como " +
@@ -84,15 +89,19 @@ const SYSTEM_PROMPT =
   "pergunta não for sobre o catálogo — e, nesse caso, deixe claro que a resposta veio da " +
   "internet, não da planilha oficial. Se o usuário pedir um CEP ou informações de endereço, " +
   "use a ferramenta consultar_cep. Se não encontrar a resposta em nenhuma fonte, diga isso " +
-  "claramente em vez de inventar. " +
-  "Você também pode enviar por e-mail uma informação desta conversa (ex: uma lista de " +
-  "produtos, um CEP) quando o usuário pedir explicitamente — frases como \"me manda por " +
-  "email\", \"manda isso pro meu email\", \"pode enviar por e-mail\". Antes de chamar a " +
-  "ferramenta enviar_email, confirme com o usuário o que vai no e-mail (resuma o assunto e " +
-  "o conteúdo) caso ainda não esteja claro pelo pedido dele — só envie depois que ficar " +
-  "claro o que ele quer mandar. O e-mail sempre vai para um endereço fixo já configurado; " +
-  "você nunca escolhe nem pergunta o destinatário. Depois de enviar, confirme ao usuário " +
-  "que o e-mail foi mandado.";
+  "claramente em vez de inventar." +
+  (EMAIL_HABILITADO
+    ? (
+      " Você também pode enviar por e-mail uma informação desta conversa (ex: uma lista de " +
+      "produtos, um CEP) quando o usuário pedir explicitamente — frases como \"me manda por " +
+      "email\", \"manda isso pro meu email\", \"pode enviar por e-mail\". Antes de chamar a " +
+      "ferramenta enviar_email, confirme com o usuário o que vai no e-mail (resuma o assunto e " +
+      "o conteúdo) caso ainda não esteja claro pelo pedido dele — só envie depois que ficar " +
+      "claro o que ele quer mandar. O e-mail sempre vai para um endereço fixo já configurado; " +
+      "você nunca escolhe nem pergunta o destinatário. Depois de enviar, confirme ao usuário " +
+      "que o e-mail foi mandado."
+    )
+    : "");
 
 const TOOLS = [
   {
@@ -127,22 +136,24 @@ const TOOLS = [
       required: ["cep"],
     },
   },
-  {
-    name: "enviar_email",
-    description:
-      "Envia por e-mail uma informação desta conversa para um destinatário fixo já " +
-      "configurado (não escolhido pelo usuário do WhatsApp). Use só quando o usuário pedir " +
-      "explicitamente para receber algo por e-mail, e só depois de confirmar com ele o que " +
-      "vai ser enviado.",
-    input_schema: {
-      type: "object",
-      properties: {
-        assunto: { type: "string", description: "Assunto do e-mail." },
-        corpo: { type: "string", description: "Conteúdo do e-mail, em texto simples." },
+  ...(EMAIL_HABILITADO
+    ? [{
+      name: "enviar_email",
+      description:
+        "Envia por e-mail uma informação desta conversa para um destinatário fixo já " +
+        "configurado (não escolhido pelo usuário do WhatsApp). Use só quando o usuário pedir " +
+        "explicitamente para receber algo por e-mail, e só depois de confirmar com ele o que " +
+        "vai ser enviado.",
+      input_schema: {
+        type: "object",
+        properties: {
+          assunto: { type: "string", description: "Assunto do e-mail." },
+          corpo: { type: "string", description: "Conteúdo do e-mail, em texto simples." },
+        },
+        required: ["assunto", "corpo"],
       },
-      required: ["assunto", "corpo"],
-    },
-  },
+    }]
+    : []),
   { type: "web_search_20260209", name: "web_search" },
 ];
 
