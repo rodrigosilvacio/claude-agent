@@ -330,8 +330,9 @@ async function gerarResposta(
       }),
     });
     if (!anthropicRes.ok) {
-      console.error("Anthropic API error:", anthropicRes.status, await anthropicRes.text());
-      throw new Error("anthropic-error");
+      const corpoErro = await anthropicRes.text();
+      console.error("Anthropic API error:", anthropicRes.status, corpoErro);
+      throw new Error(`anthropic-error: ${anthropicRes.status} ${corpoErro}`);
     }
     const data = await anthropicRes.json();
 
@@ -509,6 +510,13 @@ Deno.serve(async (req: Request) => {
     resposta = await gerarResposta(mensagens);
   } catch (err) {
     console.error("Falha ao gerar resposta do Theo:", err);
+    // DEBUG TEMPORÁRIO: grava o detalhe do erro no histórico para diagnosticar
+    // sem depender de acesso à rede externa nesta sessão — remover depois.
+    await supabase.from("theo_mensagens").insert({
+      conversa_id: conversaId,
+      role: "assistant",
+      conteudo: `[DEBUG] ${err instanceof Error ? err.message : String(err)}`,
+    });
     await enviarMensagemZapi(telefone, "Tive um problema para responder agora. Tenta de novo daqui a pouco?");
     return json({ error: "Falha ao gerar resposta." }, 502);
   }
