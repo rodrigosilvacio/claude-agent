@@ -393,6 +393,126 @@ manda a resposta de volta pelo Z-API.
 > caso. O rate limit por conversa é a única mitigação no MVP — se o volume
 > crescer, vale revisitar (allowlist, captcha, limite global).
 
+## Theo — consulta de catálogo via WhatsApp (`supabase/functions/theo-webhook`)
+
+Agente que responde perguntas sobre catálogo/tabela de preços por WhatsApp,
+consultando primeiro uma planilha oficial (Google Sheets, ao vivo) e caindo
+para busca na web quando a planilha não tem a resposta. Sem painel web — a
+interface é a própria conversa no WhatsApp, mesmo padrão do Oráculo. Fluxo:
+Z-API recebe a mensagem e chama o webhook (Edge Function `theo-webhook`); a
+function busca o histórico da conversa, chama a Anthropic com três
+ferramentas, salva o histórico e manda a resposta de volta pelo Z-API.
+
+- **Ferramentas disponíveis ao modelo, nesta ordem de preferência (definida
+  no system prompt):**
+  1. `buscar_produto` — lê a planilha do Google Sheets ao vivo (via conta de
+     serviço do Google, sem depender de upload manual) e filtra linhas por um
+     termo de busca (nome do produto, categoria etc). É a fonte de verdade;
+     o modelo é instruído a preferi-la sempre que a pergunta for sobre
+     produtos, preços ou disponibilidade.
+  2. `web_search` — ferramenta nativa da Anthropic (server-side, sem custo de
+     infraestrutura própria), usada só quando a planilha não cobrir a
+     pergunta. O prompt exige que a resposta deixe claro que veio da internet
+     e não da planilha oficial.
+  3. `consultar_cep` — para perguntas de CEP/endereço, chama o servidor MCP
+     `mcp-cep` já existente neste repositório via JSON-RPC (`tools/call`),
+     reaproveitando a mesma integração com o ViaCEP em vez de duplicá-la.
+- **Banco (migration `0025_create_theo_agent.sql`):** tabelas
+  `theo_conversas` (uma linha por telefone) e `theo_mensagens` (histórico,
+  `role` `user`/`assistant`), mesmo desenho do Oráculo (migration `0010`) —
+  RLS habilitada sem nenhuma policy, só a service role acessa.
+- **Aberto a qualquer número** que mandar mensagem, sem allowlist — mesmo
+  rate limit do Oráculo (20 mensagens por conversa a cada 15 minutos) para
+  conter custo/abuso.
+- **Só texto no MVP** — mensagem de áudio, imagem ou documento gera uma
+  resposta automática pedindo texto (o Oráculo já cobre voz; Theo não
+  precisava duplicar isso para o caso de uso de catálogo).
+- **Cache de 60s da planilha** (`obterLinhasPlanilha`) para não bater no
+  Google Sheets a cada mensagem numa rajada de perguntas na mesma conversa —
+  não serve dados desatualizados por muito tempo, mas evita uma chamada
+  redundante por mensagem.
+- **Idempotência:** mesmo mecanismo do Oráculo — `zapi_message_id` com
+  unique index parcial evita reprocessar uma reentrega do Z-API.
+
+> **Planilha compartilhada com uma conta de serviço, não com um usuário.**
+> Diferente de um upload manual, o Theo lê a planilha em tempo real via
+> Google Sheets API, autenticado como uma conta de serviço do Google Cloud
+> (JWT assinado com a chave privada, trocado por um access token OAuth2 —
+> implementado em `theo-webhook/index.ts` sem depender de bibliotecas
+> externas, só Web Crypto). Isso significa que qualquer edição na planilha
+> aparece na próxima consulta do Theo (respeitando o cache de 60s), sem
+> precisar reprocessar nada — mas também significa que a planilha precisa
+> estar **compartilhada com o e-mail da conta de serviço** (ver setup
+> abaixo), não só com o seu usuário Google.
+
+### Setup
+
+1. Aplicar a migration `supabase/migrations/0025_create_theo_agent.sql`.
+2. Criar a conta de serviço no Google Cloud e conectar à planilha:
+   - No [Google Cloud Console](https://console.cloud.google.com/), criar (ou
+     reaproveitar) um projeto, ativar a **Google Sheets API** e criar uma
+     **conta de serviço** (Service Account) com uma chave JSON.
+   - Abrir a planilha do catálogo no Google Sheets e **compartilhá-la** (botão
+     Compartilhar) com o e-mail da conta de serviço (algo como
+     `nome@projeto.iam.gserviceaccount.com`), papel **Leitor**.
+   - Anotar da chave JSON baixada: `client_email` e `private_key`, e o
+     **ID da planilha** (o trecho entre `/d/` e `/edit` na URL) e o **nome +
+     intervalo** da aba com os dados (ex: `Catálogo!A:F` — a primeira linha
+     do intervalo é tratada como cabeçalho/nome das colunas).
+3. Deploy da function **sem verificação de JWT** (quem chama é o Z-API, não
+   um cliente Supabase autenticado — mesmo racional de `oraculo-webhook`):
+   ```
+   supabase functions deploy theo-webhook --no-verify-jwt
+   ```
+4. Configurar as secrets no projeto Supabase (`ClaudeProjects`):
+   ```
+   supabase secrets set \
+     ANTHROPIC_API_KEY=sk-ant-... \
+     ZAPI_INSTANCE_ID=... \
+     ZAPI_TOKEN=... \
+     ZAPI_CLIENT_TOKEN=... \
+     THEO_WEBHOOK_SECRET=<string aleatória sua> \
+     GOOGLE_SHEETS_CLIENT_EMAIL=nome@projeto.iam.gserviceaccount.com \
+     GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n" \
+     GOOGLE_SHEETS_SPREADSHEET_ID=<id da planilha> \
+     GOOGLE_SHEETS_RANGE="Catálogo!A:F"
+   ```
+   `ANTHROPIC_API_KEY`, `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN` e
+   `ZAPI_CLIENT_TOKEN` provavelmente já existem (usadas pelo Oráculo) — só
+   falta configurar as demais se ainda não existirem. `GOOGLE_SHEETS_PRIVATE_KEY`
+   vem da chave JSON da conta de serviço; se colar com quebras de linha
+   literais (`\n` como texto, não como nova linha) o código já normaliza —
+   funciona nos dois formatos.
+5. No painel do Z-API, configurar a URL de webhook "ao receber mensagem"
+   apontando para:
+   ```
+   https://<seu-projeto>.supabase.co/functions/v1/theo-webhook?secret=<THEO_WEBHOOK_SECRET>
+   ```
+   O `?secret=` é a única camada de autenticação do endpoint (Z-API não
+   assina o payload) — sem ele batendo com `THEO_WEBHOOK_SECRET`, a function
+   responde `401` e não processa nada.
+
+> **Importante — número compartilhado com o Oráculo:** o Z-API só permite
+> **uma** URL de webhook "ao receber mensagem" por instância/número. Como o
+> Theo reaproveita o mesmo número do Oráculo (decisão tomada na criação
+> deste agente), apontar o webhook para `theo-webhook` significa que
+> mensagens recebidas nesse número passam a ser respondidas pelo Theo, e o
+> Oráculo (`oraculo-webhook`) para de receber — os dois não recebem mensagens
+> em paralelo na mesma instância. Enviar mensagens (`send-text`) continua
+> funcionando normalmente para os dois, já que isso não passa pelo webhook.
+> Se quiser os dois agentes ativos ao mesmo tempo no mesmo número, é preciso
+> um pequeno roteador na frente (uma function que decide, por mensagem, se
+> chama a lógica do Oráculo ou do Theo) — não implementado neste MVP; ou,
+> mais simples, usar um número de WhatsApp dedicado ao Theo (mesmo racional
+> já descrito para o AppVendas: basta apontar `ZAPI_INSTANCE_ID`/`ZAPI_TOKEN`
+> para uma instância própria nas secrets do projeto).
+
+> **Custo:** cada resposta do Theo é uma chamada à API da Anthropic (com a
+> ferramenta `web_search` nativa, que tem custo por uso), mais uma leitura no
+> Google Sheets a cada 60s de cache por conversa ativa. O rate limit por
+> conversa (20 msgs/15 min) é a única mitigação de custo/abuso no MVP, mesmo
+> racional do Oráculo — o endpoint está aberto a qualquer número.
+
 ## Cowork (`/cowork`)
 
 Clone do "Claude Cowork": o usuário cria **projetos**, define **instruções
