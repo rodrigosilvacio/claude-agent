@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Escolha o Modelo</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f7;
+      padding: 1.5rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #16161a; }
+    }
+    .card {
+      width: 100%;
+      max-width: 620px;
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      .card { background: #232329; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin: 0 0 0.4rem;
+      color: #1d1d1f;
+    }
+    @media (prefers-color-scheme: dark) {
+      h1 { color: #f2f2f2; }
+    }
+    p.subtitle {
+      margin: 0 0 1.5rem;
+      font-size: 0.9rem;
+      color: #6e6e73;
+    }
+    @media (prefers-color-scheme: dark) {
+      p.subtitle { color: #a1a1a6; }
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      color: #444;
+    }
+    @media (prefers-color-scheme: dark) {
+      label { color: #ccc; }
+    }
+    textarea {
+      width: 100%;
+      padding: 0.7rem 0.9rem;
+      margin-bottom: 1.1rem;
+      border: 1px solid #d2d2d7;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: #fff;
+      color: #1d1d1f;
+      resize: vertical;
+      min-height: 90px;
+    }
+    @media (prefers-color-scheme: dark) {
+      textarea {
+        background: #17171c;
+        border-color: #3a3a40;
+        color: #f2f2f2;
+      }
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #0071e3;
+    }
+    button {
+      width: 100%;
+      padding: 0.8rem;
+      border: none;
+      border-radius: 8px;
+      background: #0071e3;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    #message {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      text-align: center;
+      min-height: 1.2em;
+    }
+    #message.error { color: #d92d20; }
+
+    #result-wrapper {
+      display: none;
+      margin-top: 1.5rem;
+    }
+    #resposta {
+      white-space: pre-wrap;
+      line-height: 1.5;
+      font-size: 0.95rem;
+      color: #1d1d1f;
+      margin: 0;
+    }
+    @media (prefers-color-scheme: dark) {
+      #resposta { color: #f2f2f2; }
+    }
+
+    .info-box {
+      margin-top: 1.2rem;
+      padding: 0.9rem 1rem;
+      border-radius: 10px;
+      border: 1px solid #d2d2d7;
+    }
+    @media (prefers-color-scheme: dark) {
+      .info-box { border-color: #3a3a40; }
+    }
+    .info-box-title {
+      font-weight: 700;
+      font-size: 0.85rem;
+      margin-bottom: 0.35rem;
+    }
+    .info-box p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #444;
+    }
+    @media (prefers-color-scheme: dark) {
+      .info-box p { color: #ccc; }
+    }
+
+    #modelo-box.modelo-haiku { border-color: #1a8a3f; background: rgba(26, 138, 63, 0.08); }
+    #modelo-box.modelo-sonnet { border-color: #0071e3; background: rgba(0, 113, 227, 0.08); }
+    #modelo-box.modelo-opus { border-color: #7c3aed; background: rgba(124, 58, 237, 0.08); }
+
+    #custo-box {
+      opacity: 0.85;
+    }
+    #custo-aviso {
+      margin-top: 0.35rem;
+      font-size: 0.75rem;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Escolha o Modelo</h1>
+    <p class="subtitle">
+      Digite uma pergunta. Um agente escolhe automaticamente qual modelo da
+      Anthropic (Haiku 4.5, Sonnet 5 ou Opus 5) deve respondê-la.
+    </p>
+
+    <form id="pergunta-form">
+      <label for="pergunta">Sua pergunta</label>
+      <textarea id="pergunta" name="pergunta" required maxlength="2000"
+        placeholder="Ex: quanto é 15% de 200? / explique como funciona o cache HTTP / compare microserviços vs monolito"></textarea>
+
+      <button type="submit" id="submit-btn">Perguntar</button>
+    </form>
+    <div id="message"></div>
+
+    <div id="result-wrapper">
+      <p id="resposta"></p>
+
+      <div class="info-box" id="modelo-box">
+        <div class="info-box-title" id="modelo-titulo"></div>
+        <p id="modelo-justificativa"></p>
+      </div>
+
+      <div class="info-box" id="custo-box">
+        <div class="info-box-title">Custo estimado</div>
+        <p id="custo-texto"></p>
+        <p id="custo-aviso"></p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const SUPABASE_URL = "https://xtrvojnauvkkterogrst.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const form = document.getElementById("pergunta-form");
+    const perguntaEl = document.getElementById("pergunta");
+    const submitBtn = document.getElementById("submit-btn");
+    const messageEl = document.getElementById("message");
+
+    const resultWrapper = document.getElementById("result-wrapper");
+    const respostaEl = document.getElementById("resposta");
+
+    const modeloBox = document.getElementById("modelo-box");
+    const modeloTituloEl = document.getElementById("modelo-titulo");
+    const modeloJustificativaEl = document.getElementById("modelo-justificativa");
+
+    const custoBox = document.getElementById("custo-box");
+    const custoTextoEl = document.getElementById("custo-texto");
+    const custoAvisoEl = document.getElementById("custo-aviso");
+
+    const MODELO_ICONS = {
+      "claude-haiku-4-5": "⚡",
+      "claude-sonnet-5": "⚖️",
+      "claude-opus-5": "🧠",
+    };
+    const MODELO_CLASSES = {
+      "claude-haiku-4-5": "modelo-haiku",
+      "claude-sonnet-5": "modelo-sonnet",
+      "claude-opus-5": "modelo-opus",
+    };
+
+    function renderModelo(modelo, classificacao) {
+      modeloBox.className = "info-box";
+      if (!modelo) {
+        modeloBox.style.display = "none";
+        return;
+      }
+      const icon = MODELO_ICONS[modelo.id] || "🤖";
+      modeloTituloEl.textContent = `Modelo escolhido: ${modelo.label} ${icon}`;
+      modeloJustificativaEl.textContent = classificacao?.justificativa
+        || "Não foi possível classificar a pergunta; usamos um modelo padrão equilibrado.";
+      modeloBox.classList.add(MODELO_CLASSES[modelo.id] || "");
+      modeloBox.style.display = "block";
+    }
+
+    const numeroBR = new Intl.NumberFormat("pt-BR");
+    const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 4 });
+    const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 4 });
+
+    function renderCusto(custo) {
+      if (!custo) {
+        custoBox.style.display = "none";
+        return;
+      }
+      const { tokens, usd: usdValor, brl: brlValor, cotacao_usd_brl, cotacao_fonte } = custo;
+      custoTextoEl.textContent =
+        `${numeroBR.format(tokens.total)} tokens ` +
+        `(${numeroBR.format(tokens.entrada)} entrada + ${numeroBR.format(tokens.saida)} saída) ` +
+        `→ aprox. ${brl.format(brlValor)} (${usd.format(usdValor)} · cotação ${cotacao_usd_brl?.toFixed(2)}/US$)`;
+
+      if (cotacao_fonte === "fallback") {
+        custoAvisoEl.textContent = "cotação aproximada — não foi possível obter a cotação em tempo real";
+        custoAvisoEl.style.display = "block";
+      } else {
+        custoAvisoEl.textContent = "";
+        custoAvisoEl.style.display = "none";
+      }
+      custoBox.style.display = "block";
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      resultWrapper.style.display = "none";
+      messageEl.textContent = "";
+      messageEl.className = "";
+
+      const pergunta = perguntaEl.value.trim();
+      if (!pergunta) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Escolhendo o modelo ideal...";
+
+      const { data, error } = await supabase.functions.invoke("escolhamodelo-router", {
+        body: { pergunta },
+      });
+
+      if (error || !data?.resposta) {
+        messageEl.textContent = data?.error || error?.message || "Erro ao processar a pergunta.";
+        messageEl.className = "error";
+      } else {
+        respostaEl.textContent = data.resposta;
+        renderModelo(data.modelo, data.classificacao);
+        renderCusto(data.custo);
+        resultWrapper.style.display = "block";
+      }
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Perguntar";
+    });
+  </script>
+</body>
+</html>

@@ -33,6 +33,49 @@ novo sobre o texto revisado. Pode repetir quantas vezes quiser.
 > linkado) ou pelo dashboard do Supabase em Project Settings → Edge Functions
 > → Secrets. Sem essa secret, as functions respondem com erro 502.
 
+## Escolha o Modelo (`/escolhamodelo`)
+
+Página com um campo de texto onde o usuário digita uma pergunta. A Edge
+Function `escolhamodelo-router` decide automaticamente qual modelo Claude
+(Haiku 4.5, Sonnet 5 ou Opus 5) é mais adequado para responder, com base na
+complexidade e no tipo da pergunta, e devolve a resposta junto com os
+critérios usados na escolha. Mesmo padrão do resto do repo: HTML/JS
+estático + Supabase, sem build.
+
+**Dois agentes em cadeia** (dentro da mesma Edge Function):
+1. **Agente roteador** (sempre `claude-haiku-4-5`, fixo — classificar é uma
+   tarefa simples e o custo de errar o modelo de resposta é maior que o
+   custo de classificar): avalia a pergunta e devolve, via saída
+   estruturada (`output_config.format`), a complexidade (`simples` /
+   `moderada` / `complexa`), o tipo (`factual_direta`, `explicativa_geral`,
+   `analise_aberta`, `codificacao_complexa`, `raciocinio_multietapas`), se
+   exige raciocínio profundo, o modelo escolhido e uma justificativa curta
+   em português.
+2. **Agente respondedor** (modelo escolhido pelo roteador — `claude-haiku-4-5`,
+   `claude-sonnet-5` ou `claude-opus-5`): responde de fato à pergunta do
+   usuário.
+
+Se o agente roteador falhar, a function cai para `claude-sonnet-5` como
+modelo padrão e a tela simplesmente não mostra o bloco de critérios (a
+resposta continua sendo exibida normalmente).
+
+**Custo estimado:** abaixo da resposta e dos critérios, a tela mostra o
+total de tokens gastos (soma das duas chamadas à Anthropic) e o custo
+convertido em reais. A conversão usa a cotação USD→BRL em tempo real (API
+pública `economia.awesomeapi.com.br`, sem chave); se a busca falhar, usa
+uma cotação fixa de fallback e avisa na tela que o valor é aproximado. Os
+preços por modelo usados no cálculo são valores de referência (não
+reflete promoções, desconto de cache, etc.) — servem só para dar noção de
+grandeza do custo.
+
+Não há persistência — cada pergunta é uma requisição isolada (mesmo padrão
+stateless do `cep-agent`).
+
+> **Requer a secret `ANTHROPIC_API_KEY`** já configurada no projeto Supabase
+> (`ClaudeProjects`) — a mesma usada por `generate-linkedin-post`,
+> `grade-linkedin-post`, `cowork-generate-document` e `oraculo-webhook`.
+> Nenhuma secret nova é necessária.
+
 ## Painel de Reports (`/reports`)
 
 Painel interno para centralizar dashboards em HTML gerados pelo Claude:
