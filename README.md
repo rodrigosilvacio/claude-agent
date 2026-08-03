@@ -1,5 +1,46 @@
 # claude-agent
 
+## NinaNews (`/ninanews`)
+
+Página com um único botão ("Buscar notícias de hoje") que aciona a Edge
+Function `ninanews-buscar` e mostra 5 notícias sobre inteligência artificial
+do dia, cada uma com título e resumo em formato executivo, mais um texto
+único já pronto para colar no LinkedIn (com botão de copiar). A busca é
+sempre manual — nada é atualizado sozinho — e nada é salvo no banco: sem
+histórico, cada clique busca e gera tudo de novo do zero. Mesmo padrão do
+resto do repo: HTML/JS estático + Supabase, sem build.
+
+**Pipeline dentro da Edge Function:**
+1. **Busca (Firecrawl):** consulta `https://api.firecrawl.dev/v1/search` com
+   `lang: "pt"` e `country: "br"`, primeiro restrita às últimas 24h
+   (`tbs: "qdr:d"`); se vierem poucos resultados, complementa com uma busca
+   na última semana (`tbs: "qdr:w"`), deduplicando por URL. Cada resultado já
+   vem com o conteúdo em markdown (`scrapeOptions.formats: ["markdown"]`),
+   cortado a 2500 caracteres por candidato para manter o prompt enxuto.
+2. **Seleção + resumo (Anthropic, `claude-sonnet-5`, saída estruturada via
+   `output_config.format`):** recebe até 12 notícias candidatas e escolhe
+   exatamente 5, distintas entre si, priorizando sempre fontes brasileiras
+   (só recorre a fontes internacionais se não houver 5 opções boas em
+   português). Para cada uma gera título + resumo executivo, e monta um
+   `post_final` único reunindo as 5, em texto puro (sem markdown, já que o
+   LinkedIn não renderiza `**`/`#`), com até 3 hashtags ao final.
+3. **Limite de 3000 caracteres:** o prompt já instrui o limite rígido no
+   `post_final` (usado no LinkedIn), mas se o modelo estourar mesmo assim, a
+   function faz uma segunda chamada pedindo para encurtar preservando as 5
+   notícias; se ainda passar do limite, trunca no último espaço antes do
+   caractere 3000 como último recurso.
+
+Se a busca no Firecrawl não trouxer notícias suficientes (mínimo de 5
+candidatas), ou se o modelo falhar em selecionar exatamente 5, a tela mostra
+uma mensagem de erro e sugere tentar de novo — sem resultado parcial.
+
+> **Requer as secrets `FIRECRAWL_API_KEY` e `ANTHROPIC_API_KEY`**
+> configuradas no projeto Supabase (`ClaudeProjects`) — configure com
+> `supabase secrets set FIRECRAWL_API_KEY=fc-...` e
+> `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...` (via CLI, com o
+> projeto linkado) ou pelo dashboard do Supabase em Project Settings → Edge
+> Functions → Secrets. Sem elas, a function responde com erro 502.
+
 ## Gerador de post para LinkedIn (`/linkedin`)
 
 Página com um formulário (tema + tom) que chama a Edge Function
