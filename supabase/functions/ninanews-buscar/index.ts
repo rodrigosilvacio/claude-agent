@@ -33,8 +33,13 @@ interface FirecrawlResult {
   title?: string;
   url?: string;
   description?: string;
-  markdown?: string;
 }
+
+// Timeout curto por chamada de rede — melhor falhar rápido e deixar o
+// comRetry (ou o "sem resultados suficientes") lidar com isso do que deixar
+// a função inteira arrastar até o gateway derrubar a conexão com 502.
+const TIMEOUT_FIRECRAWL_MS = 12_000;
+const TIMEOUT_ANTHROPIC_MS = 30_000;
 
 async function firecrawlSearch(query: string, tbs?: string): Promise<FirecrawlResult[]> {
   const res = await fetch("https://api.firecrawl.dev/v1/search", {
@@ -43,14 +48,19 @@ async function firecrawlSearch(query: string, tbs?: string): Promise<FirecrawlRe
       "content-type": "application/json",
       "Authorization": `Bearer ${FIRECRAWL_API_KEY}`,
     },
+    // Sem scrapeOptions: pedir markdown completo faz o Firecrawl raspar cada
+    // página do resultado, o que sozinho pode levar dezenas de segundos por
+    // busca. O snippet (title/description) que a busca já devolve é
+    // suficiente pro modelo selecionar e resumir, e corta o tempo da chamada
+    // de dezenas de segundos para poucos segundos.
     body: JSON.stringify({
       query,
-      limit: 10,
+      limit: 8,
       lang: "pt",
       country: "br",
       ...(tbs ? { tbs } : {}),
-      scrapeOptions: { formats: ["markdown"] },
     }),
+    signal: AbortSignal.timeout(TIMEOUT_FIRECRAWL_MS),
   });
 
   if (!res.ok) {
@@ -94,10 +104,9 @@ async function buscarCandidatos(): Promise<Candidato[]> {
       titulo: r.title ?? "",
       url: r.url!,
       fonte: hostnameOf(r.url!),
-      // Corta o conteúdo por candidato pra manter o prompt enxuto — o
-      // suficiente pro modelo entender do que se trata sem mandar o
-      // artigo inteiro.
-      conteudo: (r.markdown || r.description || "").slice(0, 2500),
+      // Sem scrape completo, o conteúdo disponível é o snippet de busca
+      // (description) — suficiente pro modelo entender do que se trata.
+      conteudo: (r.description || "").slice(0, 2500),
     }));
 }
 
@@ -166,6 +175,7 @@ async function chamarAnthropicUmaVez(body: Record<string, unknown>): Promise<str
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(TIMEOUT_ANTHROPIC_MS),
   });
 
   if (!response.ok) {
@@ -205,6 +215,11 @@ async function selecionarEResumirUmaVez(candidatos: Candidato[], hojeExtenso: st
   const text = await chamarAnthropic({
     model: "claude-sonnet-5",
     max_tokens: 4096,
+    // Sem isso o claude-sonnet-5 liga "adaptive thinking" por padrão — bom
+    // pra tarefas que exigem raciocínio, mas essa aqui é só seleção e
+    // formatação, e o tempo extra de "pensar" era boa parte da lentidão
+    // (~90s) que estourava o timeout do gateway.
+    thinking: { type: "disabled" },
     system:
       `Você é um editor que curadoria notícias de inteligência artificial para um público executivo brasileiro. Hoje é ${hojeExtenso}. ` +
       "Você recebe uma lista de notícias candidatas (numeradas). Escolha exatamente 5, distintas entre si (não repita o mesmo fato coberto por veículos diferentes), " +
@@ -276,6 +291,7 @@ async function encurtarSeNecessario(postFinal: string): Promise<string> {
     const encurtado = await chamarAnthropic({
       model: "claude-sonnet-5",
       max_tokens: 2048,
+      thinking: { type: "disabled" },
       system:
         "Reduza o texto do usuário para no máximo 3000 caracteres no total, mantendo as 5 notícias, o tom executivo e sem markdown. " +
         "Não corte frases pela metade. Responda apenas com o texto final, sem comentários.",
