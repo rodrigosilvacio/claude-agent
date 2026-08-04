@@ -1,29 +1,34 @@
 # claude-agent
 
-## NinaNews (`/ninanews`)
+## Notícias de IA (`/ninanews`)
 
 Página com um único botão ("Buscar notícias de hoje") que aciona a Edge
 Function `ninanews-buscar` e mostra 5 notícias sobre inteligência artificial
 do dia, cada uma com título e resumo em formato executivo, mais um texto
-único já pronto para colar no LinkedIn (com botão de copiar). A busca é
-sempre manual — nada é atualizado sozinho — e nada é salvo no banco: sem
-histórico, cada clique busca e gera tudo de novo do zero. Mesmo padrão do
-resto do repo: HTML/JS estático + Supabase, sem build.
+único já pronto para colar no LinkedIn (com botão de copiar). A busca manual
+não atualiza nada sozinha e nada é salvo no banco: sem histórico, cada
+clique busca e gera tudo de novo do zero. Mesmo padrão do resto do repo:
+HTML/JS estático + Supabase, sem build. (A pasta e a function continuam se
+chamando `ninanews`/`ninanews-buscar` — só a marca visível na página e no
+e-mail diário mudou para "Notícias de IA".)
 
-**Pipeline dentro da Edge Function:**
+**Pipeline dentro da Edge Function (`ninanews-buscar`):**
 1. **Busca (Firecrawl):** consulta `https://api.firecrawl.dev/v1/search` com
    `lang: "pt"` e `country: "br"`, primeiro restrita às últimas 24h
    (`tbs: "qdr:d"`); se vierem poucos resultados, complementa com uma busca
-   na última semana (`tbs: "qdr:w"`), deduplicando por URL. Cada resultado já
-   vem com o conteúdo em markdown (`scrapeOptions.formats: ["markdown"]`),
-   cortado a 2500 caracteres por candidato para manter o prompt enxuto.
+   na última semana (`tbs: "qdr:w"`), deduplicando por URL. Usa só o snippet
+   de busca (`title`/`description`) — sem pedir scrape completo em markdown,
+   que tornava a chamada bem mais lenta sem ganho relevante pro resumo.
 2. **Seleção + resumo (Anthropic, `claude-sonnet-5`, saída estruturada via
-   `output_config.format`):** recebe até 12 notícias candidatas e escolhe
-   exatamente 5, distintas entre si, priorizando sempre fontes brasileiras
-   (só recorre a fontes internacionais se não houver 5 opções boas em
-   português). Para cada uma gera título + resumo executivo, e monta um
-   `post_final` único reunindo as 5, em texto puro (sem markdown, já que o
-   LinkedIn não renderiza `**`/`#`), com até 3 hashtags ao final.
+   `output_config.format`, `thinking` desligado):** recebe até 12 notícias
+   candidatas e escolhe exatamente 5, distintas entre si, priorizando sempre
+   fontes brasileiras (só recorre a fontes internacionais se não houver 5
+   opções boas em português). Para cada uma gera título + resumo executivo, e
+   monta um `post_final` único reunindo as 5, em texto puro (sem markdown, já
+   que o LinkedIn não renderiza `**`/`#`), com até 3 hashtags ao final.
+   `thinking` fica desligado de propósito: a `claude-sonnet-5` liga adaptive
+   thinking por padrão, o que é caro em tempo pra uma tarefa de
+   seleção/formatação e não traz ganho de qualidade aqui.
 3. **Limite de 3000 caracteres:** o prompt já instrui o limite rígido no
    `post_final` (usado no LinkedIn), mas se o modelo estourar mesmo assim, a
    function faz uma segunda chamada pedindo para encurtar preservando as 5
@@ -40,6 +45,30 @@ uma mensagem de erro e sugere tentar de novo — sem resultado parcial.
 > `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...` (via CLI, com o
 > projeto linkado) ou pelo dashboard do Supabase em Project Settings → Edge
 > Functions → Secrets. Sem elas, a function responde com erro 502.
+
+### E-mail diário (`noticias-ia-email-diario`)
+
+A Edge Function `noticias-ia-email-diario` chama `ninanews-buscar`
+internamente, monta um e-mail em HTML com as 5 notícias e o `post_final`, e
+envia via Resend (`RESEND_API_KEY`, mesma secret já usada por
+`oraculo-webhook`/`appvendas-lembretes`) para `rodrigosilvapmp@hotmail.com`.
+Remetente `onboarding@resend.dev` (sandbox da Resend) — só entrega de fato
+se esse for o e-mail cadastrado na conta Resend; para enviar a qualquer
+destinatário é preciso verificar um domínio próprio na Resend e trocar o
+`RESEND_FROM` no código.
+
+**Agendamento:** disparada 1x por dia às 05:00 (`America/Sao_Paulo`) por um
+job do `pg_cron`/`pg_net` criado na migration
+`agenda_email_diario_noticias_ia` (extensões `pg_cron` e `pg_net` habilitadas
+na mesma migration). O job faz um `net.http_post` pra
+`.../functions/v1/noticias-ia-email-diario` usando a publishable key do
+projeto (a mesma já exposta no front-end) — a function não exige nenhuma
+secret adicional além das já usadas por `ninanews-buscar` mais
+`RESEND_API_KEY`. Como a publishable key é pública, qualquer chamada válida
+ao endpoint dispara o envio; o único efeito de um disparo indevido é gerar
+um e-mail extra e consumir crédito das APIs (Firecrawl/Anthropic/Resend) —
+se isso virar um problema, dá pra proteger com um segredo compartilhado
+depois.
 
 ## Gerador de post para LinkedIn (`/linkedin`)
 
