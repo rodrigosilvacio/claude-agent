@@ -112,7 +112,52 @@ interface AgenteResposta {
   post_final: string;
 }
 
-async function chamarAnthropic(body: Record<string, unknown>): Promise<string> {
+class AnthropicError extends Error {
+  constructor(message: string, readonly status?: number, readonly retryAfterMs?: number) {
+    super(message);
+  }
+}
+
+// Status tipicamente transitórios (rate limit, sobrecarga, instabilidade
+// momentânea) — vale tentar de novo. Erros como 400/401 não entram aqui
+// porque tentar de novo não muda o resultado.
+const STATUS_RETRYAVEIS = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
+
+// Tempo de espera máximo entre tentativas — a Anthropic pode pedir um
+// retry-after bem longo sob rate limit forte, e não vale a pena esperar
+// tanto a ponto de estourar o tempo de execução da function.
+const ESPERA_MAXIMA_MS = 12_000;
+
+async function comRetry<T>(
+  fn: () => Promise<T>,
+  opts: {
+    tentativas: number;
+    esperaBaseMs: number;
+    label: string;
+    podeTentarDeNovo?: (err: unknown) => boolean;
+    esperaMinimaMs?: (err: unknown) => number | undefined;
+  },
+): Promise<T> {
+  let ultimoErro: unknown;
+  for (let i = 0; i < opts.tentativas; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      ultimoErro = err;
+      const ultimaTentativa = i === opts.tentativas - 1;
+      const podeTentarDeNovo = opts.podeTentarDeNovo ? opts.podeTentarDeNovo(err) : true;
+      if (ultimaTentativa || !podeTentarDeNovo) break;
+      const esperaCalculada = opts.esperaBaseMs * 2 ** i + Math.random() * 300;
+      const esperaMinima = opts.esperaMinimaMs?.(err) ?? 0;
+      const espera = Math.min(Math.max(esperaCalculada, esperaMinima), ESPERA_MAXIMA_MS);
+      console.error(`${opts.label}: tentativa ${i + 1} falhou, tentando de novo em ${Math.round(espera)}ms.`, err);
+      await new Promise((r) => setTimeout(r, espera));
+    }
+  }
+  throw ultimoErro;
+}
+
+async function chamarAnthropicUmaVez(body: Record<string, unknown>): Promise<string> {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -126,16 +171,33 @@ async function chamarAnthropic(body: Record<string, unknown>): Promise<string> {
   if (!response.ok) {
     const errText = await response.text();
     console.error("Anthropic API error:", response.status, errText);
-    throw new Error("Falha ao chamar o modelo.");
+    const retryAfterHeader = response.headers.get("retry-after");
+    const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : undefined;
+    throw new AnthropicError("Falha ao chamar o modelo.", response.status, retryAfterMs);
   }
 
   const data = await response.json();
   const text = data.content?.find((b: { type: string }) => b.type === "text")?.text;
-  if (!text) throw new Error("Resposta inesperada do modelo.");
+  if (!text) throw new AnthropicError("Resposta inesperada do modelo.");
   return text;
 }
 
-async function selecionarEResumir(candidatos: Candidato[], hojeExtenso: string): Promise<AgenteResposta> {
+// A API da Anthropic falha de forma intermitente sob rate limit ou
+// instabilidade momentânea; sem isso, um 429/503 esporádico virava um 502
+// para o usuário mesmo quando uma segunda tentativa teria funcionado. Sob
+// 429, respeitamos o retry-after devolvido pela API em vez de tentar de
+// novo cedo demais e desperdiçar a única tentativa extra.
+async function chamarAnthropic(body: Record<string, unknown>): Promise<string> {
+  return comRetry(() => chamarAnthropicUmaVez(body), {
+    tentativas: 2,
+    esperaBaseMs: 700,
+    label: "Chamada à Anthropic",
+    podeTentarDeNovo: (err) => !(err instanceof AnthropicError) || err.status === undefined || STATUS_RETRYAVEIS.has(err.status),
+    esperaMinimaMs: (err) => (err instanceof AnthropicError ? err.retryAfterMs : undefined),
+  });
+}
+
+async function selecionarEResumirUmaVez(candidatos: Candidato[], hojeExtenso: string): Promise<AgenteResposta> {
   const listaCandidatos = candidatos
     .map((c) => `[${c.id}] fonte: ${c.fonte}\ntítulo: ${c.titulo}\nurl: ${c.url}\nconteúdo: ${c.conteudo}`)
     .join("\n\n");
@@ -166,8 +228,6 @@ async function selecionarEResumir(candidatos: Candidato[], hojeExtenso: string):
           properties: {
             selecionadas: {
               type: "array",
-              minItems: 5,
-              maxItems: 5,
               items: {
                 type: "object",
                 properties: {
@@ -188,7 +248,22 @@ async function selecionarEResumir(candidatos: Candidato[], hojeExtenso: string):
     },
   });
 
-  return JSON.parse(text);
+  const resposta = JSON.parse(text) as AgenteResposta;
+  if (!Array.isArray(resposta.selecionadas) || resposta.selecionadas.length !== 5 || typeof resposta.post_final !== "string") {
+    throw new Error("Resposta do modelo não trouxe exatamente 5 notícias selecionadas.");
+  }
+  return resposta;
+}
+
+// O modelo eventualmente erra a contagem (mais ou menos de 5 notícias) ou
+// devolve um JSON malformado mesmo com o schema estruturado — tentar de
+// novo resolve a grande maioria desses casos sem precisar expor o erro.
+async function selecionarEResumir(candidatos: Candidato[], hojeExtenso: string): Promise<AgenteResposta> {
+  return comRetry(() => selecionarEResumirUmaVez(candidatos, hojeExtenso), {
+    tentativas: 2,
+    esperaBaseMs: 400,
+    label: "Seleção e resumo das notícias",
+  });
 }
 
 // Melhor esforço: se o modelo estourar o limite mesmo com a instrução,
@@ -241,9 +316,6 @@ Deno.serve(async (req: Request) => {
     });
 
     const agente = await selecionarEResumir(candidatos, hojeExtenso);
-    if (!Array.isArray(agente.selecionadas) || agente.selecionadas.length !== 5) {
-      return json({ error: "Falha ao selecionar as 5 notícias. Tente novamente." }, 502);
-    }
 
     const porId = new Map(candidatos.map((c) => [c.id, c]));
     const noticias = agente.selecionadas.map((s) => {
