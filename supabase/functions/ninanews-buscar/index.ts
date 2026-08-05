@@ -40,6 +40,13 @@ interface FirecrawlResult {
 // a função inteira arrastar até o gateway derrubar a conexão com 502.
 const TIMEOUT_FIRECRAWL_MS = 12_000;
 const TIMEOUT_ANTHROPIC_MS = 30_000;
+// Testado na prática: uma Edge Function no Supabase é derrubada com
+// WORKER_RESOURCE_LIMIT perto de 150s de execução total. Uma única chamada
+// gerando os 5 resumos longos (até 700 palavras cada) de uma vez estourava
+// esse teto. Por isso os resumos longos são gerados em chamadas separadas
+// por notícia, em paralelo (ver expandirResumos) — cada uma pequena e
+// rápida — em vez de uma chamada gigante sequencial.
+const TIMEOUT_ANTHROPIC_RESUMO_MS = 25_000;
 
 async function firecrawlSearch(query: string, tbs?: string): Promise<FirecrawlResult[]> {
   const res = await fetch("https://api.firecrawl.dev/v1/search", {
@@ -166,7 +173,7 @@ async function comRetry<T>(
   throw ultimoErro;
 }
 
-async function chamarAnthropicUmaVez(body: Record<string, unknown>): Promise<string> {
+async function chamarAnthropicUmaVez(body: Record<string, unknown>, timeoutMs = TIMEOUT_ANTHROPIC_MS): Promise<string> {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -175,7 +182,7 @@ async function chamarAnthropicUmaVez(body: Record<string, unknown>): Promise<str
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_ANTHROPIC_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -281,6 +288,63 @@ async function selecionarEResumir(candidatos: Candidato[], hojeExtenso: string):
   });
 }
 
+// Reescreve o resumo curto de uma notícia como uma matéria executiva mais
+// completa (até ~700 palavras). Uma chamada pequena e independente por
+// notícia — chamadas separadas em paralelo (ver expandirResumos) terminam
+// bem mais rápido que uma única chamada gerando os 5 resumos longos de
+// uma vez, que estourava o limite de execução da function.
+async function expandirResumoUmaVez(candidato: Candidato, tituloEscolhido: string): Promise<string> {
+  const text = await chamarAnthropicUmaVez({
+    model: "claude-sonnet-5",
+    max_tokens: 1600,
+    thinking: { type: "disabled" },
+    system:
+      "Você é um editor que escreve matérias executivas sobre inteligência artificial para um público de negócios brasileiro. " +
+      "A partir do título e do material fornecido sobre UMA notícia, escreva um resumo executivo completo em português, com até 700 palavras, podendo usar múltiplos parágrafos: " +
+      "explique o que aconteceu, o contexto, os principais números, declarações ou detalhes técnicos relevantes, os players envolvidos e por que isso importa para quem toma decisão de negócio. " +
+      "Seja completo e aprofundado, não superficial — desenvolva a partir do material fornecido e do que você sabe do tema, mas não invente fatos que não estejam implícitos nele. " +
+      "Responda apenas com o texto do resumo, sem título, sem markdown e sem comentários.",
+    messages: [
+      {
+        role: "user",
+        content: `Título: ${tituloEscolhido}\nFonte: ${candidato.fonte}\nURL: ${candidato.url}\nMaterial disponível: ${candidato.conteudo}`,
+      },
+    ],
+  }, TIMEOUT_ANTHROPIC_RESUMO_MS);
+
+  const resumo = text.trim();
+  if (!resumo) throw new Error("Resumo expandido veio vazio.");
+  return resumo;
+}
+
+// Roda a expansão das 5 notícias em paralelo (não sequencial) para manter o
+// tempo total baixo, e usa o resumo curto original como fallback por item
+// se a expansão daquela notícia falhar ou estourar o timeout — melhor
+// entregar um resumo mais curto do que derrubar a edição inteira por causa
+// de uma única chamada lenta.
+async function expandirResumos(
+  selecionadas: Selecionada[],
+  porId: Map<number, Candidato>,
+): Promise<Map<number, string>> {
+  const resultados = await Promise.allSettled(
+    selecionadas.map(async (s) => {
+      const candidato = porId.get(s.id);
+      if (!candidato) throw new Error(`Candidato ${s.id} não encontrado.`);
+      return [s.id, await expandirResumoUmaVez(candidato, s.titulo)] as const;
+    }),
+  );
+
+  const porIdExpandido = new Map<number, string>();
+  for (const r of resultados) {
+    if (r.status === "fulfilled") {
+      porIdExpandido.set(r.value[0], r.value[1]);
+    } else {
+      console.error("Falha ao expandir resumo de uma notícia, mantendo o resumo curto:", r.reason);
+    }
+  }
+  return porIdExpandido;
+}
+
 // Melhor esforço: se o modelo estourar o limite mesmo com a instrução,
 // pede pra ele mesmo cortar preservando as 5 notícias antes de truncar
 // no braço como último recurso.
@@ -334,11 +398,12 @@ Deno.serve(async (req: Request) => {
     const agente = await selecionarEResumir(candidatos, hojeExtenso);
 
     const porId = new Map(candidatos.map((c) => [c.id, c]));
+    const resumosExpandidos = await expandirResumos(agente.selecionadas, porId);
     const noticias = agente.selecionadas.map((s) => {
       const candidato = porId.get(s.id);
       return {
         titulo: s.titulo,
-        resumo: s.resumo,
+        resumo: resumosExpandidos.get(s.id) ?? s.resumo,
         fonte: candidato?.fonte ?? "",
         url: candidato?.url ?? "",
       };
