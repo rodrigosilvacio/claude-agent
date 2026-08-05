@@ -128,9 +128,9 @@ function montarHtml(edicao: EdicaoResposta): string {
       <div style="font-size:14px;line-height:1.6;color:#211c15;margin-bottom:8px;">
         ${escapeHtml(n.resumo)}
       </div>
-      <a href="${n.url}" style="font-family:monospace;font-size:12px;color:#2f5c53;text-decoration:none;">
-        ${escapeHtml(n.fonte)} ↗
-      </a>
+      <div style="font-family:monospace;font-size:12px;color:#6e6656;">
+        Fonte: <a href="${n.url}" style="color:#2f5c53;text-decoration:none;">${escapeHtml(n.fonte)} ↗</a>
+      </div>
     </li>`,
     )
     .join("");

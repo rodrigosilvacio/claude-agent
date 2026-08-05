@@ -190,6 +190,38 @@
     }
     .dispatch a:hover { border-bottom-color: var(--wire); }
 
+    .dispatch-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem 0.75rem;
+      margin-top: 0.15rem;
+    }
+
+    .dispatch-fonte {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--ink-soft);
+      word-break: break-word;
+    }
+
+    .copy-mini {
+      flex-shrink: 0;
+      background: transparent;
+      color: var(--ink-soft);
+      border: 1px solid var(--paper-edge);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0.32rem 0.65rem;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .copy-mini:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
     .tear {
       height: 1px;
       margin: 1.9rem 0 1.65rem;
@@ -410,14 +442,36 @@
         li.appendChild(h2);
         li.appendChild(p);
 
+        const foot = document.createElement("div");
+        foot.className = "dispatch-foot";
+
+        const fonteEl = document.createElement("span");
+        fonteEl.className = "dispatch-fonte";
         if (n.url) {
+          fonteEl.append("Fonte: ");
           const a = document.createElement("a");
           a.href = n.url;
           a.target = "_blank";
           a.rel = "noopener noreferrer";
           a.textContent = `${n.fonte || n.url} ↗`;
-          li.appendChild(a);
+          fonteEl.appendChild(a);
+        } else if (n.fonte) {
+          fonteEl.textContent = `Fonte: ${n.fonte}`;
         }
+        foot.appendChild(fonteEl);
+
+        const copyMiniBtn = document.createElement("button");
+        copyMiniBtn.type = "button";
+        copyMiniBtn.className = "copy-mini";
+        copyMiniBtn.textContent = "Copiar";
+        copyMiniBtn.addEventListener("click", async () => {
+          await navigator.clipboard.writeText(`${n.titulo}\n\n${n.resumo}`);
+          copyMiniBtn.textContent = "Copiado!";
+          setTimeout(() => { copyMiniBtn.textContent = "Copiar"; }, 1500);
+        });
+        foot.appendChild(copyMiniBtn);
+
+        li.appendChild(foot);
 
         noticiasListEl.appendChild(li);
       });
