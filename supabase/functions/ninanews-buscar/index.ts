@@ -42,10 +42,10 @@ const TIMEOUT_FIRECRAWL_MS = 12_000;
 const TIMEOUT_ANTHROPIC_MS = 30_000;
 // Testado na prática: uma Edge Function no Supabase é derrubada com
 // WORKER_RESOURCE_LIMIT perto de 150s de execução total. Uma única chamada
-// gerando os 5 resumos longos (até 700 palavras cada) de uma vez estourava
-// esse teto. Por isso os resumos longos são gerados em chamadas separadas
-// por notícia, em paralelo (ver expandirResumos) — cada uma pequena e
-// rápida — em vez de uma chamada gigante sequencial.
+// gerando os 5 resumos longos de uma vez estourava esse teto. Por isso os
+// resumos são gerados em chamadas separadas por notícia, em paralelo (ver
+// expandirResumos) — cada uma pequena e rápida — em vez de uma chamada
+// gigante sequencial.
 const TIMEOUT_ANTHROPIC_RESUMO_MS = 25_000;
 
 async function firecrawlSearch(query: string, tbs?: string): Promise<FirecrawlResult[]> {
@@ -236,9 +236,10 @@ async function selecionarEResumirUmaVez(candidatos: Candidato[], hojeExtenso: st
       "Depois monte 'post_final': um único texto pronto para publicar no LinkedIn, em português, reunindo as 5 notícias. " +
       "Regras do post_final: tom executivo e profissional; comece com uma linha de abertura curta contextualizando o dia; " +
       "liste as 5 notícias numeradas, cada uma com título e resumo curto, separadas por linha em branco para leitura fácil no celular; " +
-      "NÃO use markdown (sem **, #, - de lista) pois o LinkedIn não renderiza — use apenas texto simples, números e no máximo 1 emoji por item; " +
+      "NÃO use markdown (sem **, #, - de lista) pois o LinkedIn não renderiza; use apenas texto simples, números e no máximo 1 emoji por item; " +
       "termine com até 3 hashtags relevantes (ex: #InteligenciaArtificial); " +
-      "LIMITE RÍGIDO: o campo post_final inteiro (contando espaços, emojis e hashtags) não pode ultrapassar 3000 caracteres — conte com cuidado antes de responder.",
+      "NÃO use travessão (—) em nenhum dos textos (titulo, resumo, post_final); prefira vírgula, ponto ou parênteses. " +
+      "LIMITE RÍGIDO: o campo post_final inteiro (contando espaços, emojis e hashtags) não pode ultrapassar 3000 caracteres; conte com cuidado antes de responder.",
     messages: [
       { role: "user", content: `Notícias candidatas:\n\n${listaCandidatos}` },
     ],
@@ -289,20 +290,25 @@ async function selecionarEResumir(candidatos: Candidato[], hojeExtenso: string):
 }
 
 // Reescreve o resumo curto de uma notícia como uma matéria executiva mais
-// completa (até ~700 palavras). Uma chamada pequena e independente por
-// notícia — chamadas separadas em paralelo (ver expandirResumos) terminam
-// bem mais rápido que uma única chamada gerando os 5 resumos longos de
-// uma vez, que estourava o limite de execução da function.
+// completa (entre 300 e 350 palavras). Uma chamada pequena e independente
+// por notícia — chamadas separadas em paralelo (ver expandirResumos)
+// terminam bem mais rápido que uma única chamada gerando os 5 resumos de
+// uma vez, que estourava o limite de execução da function. max_tokens tem
+// bastante folga sobre o esperado para ~350 palavras (~500 tokens em
+// português) justamente para o modelo nunca ser cortado no meio de uma
+// frase por falta de espaço.
 async function expandirResumoUmaVez(candidato: Candidato, tituloEscolhido: string): Promise<string> {
   const text = await chamarAnthropicUmaVez({
     model: "claude-sonnet-5",
-    max_tokens: 1600,
+    max_tokens: 1000,
     thinking: { type: "disabled" },
     system:
       "Você é um editor que escreve matérias executivas sobre inteligência artificial para um público de negócios brasileiro. " +
-      "A partir do título e do material fornecido sobre UMA notícia, escreva um resumo executivo completo em português, com até 700 palavras, podendo usar múltiplos parágrafos: " +
+      "A partir do título e do material fornecido sobre UMA notícia, escreva um resumo executivo em português, com entre 300 e 350 palavras, podendo usar 2 ou 3 parágrafos: " +
       "explique o que aconteceu, o contexto, os principais números, declarações ou detalhes técnicos relevantes, os players envolvidos e por que isso importa para quem toma decisão de negócio. " +
-      "Seja completo e aprofundado, não superficial — desenvolva a partir do material fornecido e do que você sabe do tema, mas não invente fatos que não estejam implícitos nele. " +
+      "Seja completo mas direto, não superficial nem prolixo; desenvolva a partir do material fornecido e do que você sabe do tema, mas não invente fatos que não estejam implícitos nele. " +
+      "NÃO use travessão (—) em nenhuma frase; prefira vírgula, ponto ou parênteses. " +
+      "O texto tem que terminar em uma frase completa e com conclusão; nunca finalize no meio de uma frase, mesmo que isso signifique ficar um pouco abaixo de 300 palavras. " +
       "Responda apenas com o texto do resumo, sem título, sem markdown e sem comentários.",
     messages: [
       {
@@ -358,7 +364,7 @@ async function encurtarSeNecessario(postFinal: string): Promise<string> {
       thinking: { type: "disabled" },
       system:
         "Reduza o texto do usuário para no máximo 3000 caracteres no total, mantendo as 5 notícias, o tom executivo e sem markdown. " +
-        "Não corte frases pela metade. Responda apenas com o texto final, sem comentários.",
+        "Não corte frases pela metade. Não use travessão (—); prefira vírgula, ponto ou parênteses. Responda apenas com o texto final, sem comentários.",
       messages: [{ role: "user", content: postFinal }],
     });
     if (encurtado.trim().length <= 3000) return encurtado.trim();
