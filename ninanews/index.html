@@ -138,6 +138,23 @@
       margin: 0 0 1.4rem;
     }
 
+    .dispatches-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.9rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .dispatches-label {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--ink);
+    }
+
     .dispatches {
       list-style: none;
       margin: 0 0 0.4rem;
@@ -373,6 +390,11 @@
     <div id="result" class="result" hidden>
       <p class="timestamp" id="buscado-em"></p>
 
+      <div class="dispatches-head">
+        <span class="dispatches-label" id="dispatches-label">5 despachos de hoje</span>
+        <button type="button" class="ghost" id="copy-all-btn" aria-live="polite">Copiar todas</button>
+      </div>
+
       <ol class="dispatches" id="noticias-list"></ol>
 
       <div class="tear" aria-hidden="true"></div>
@@ -406,12 +428,36 @@
     const messageEl = document.getElementById("message");
     const resultEl = document.getElementById("result");
     const buscadoEmEl = document.getElementById("buscado-em");
+    const dispatchesLabelEl = document.getElementById("dispatches-label");
     const noticiasListEl = document.getElementById("noticias-list");
+    const copyAllBtn = document.getElementById("copy-all-btn");
     const postFinalEl = document.getElementById("post-final");
     const charCountEl = document.getElementById("char-count");
     const copyBtn = document.getElementById("copy-btn");
     const stampEl = document.getElementById("stamp");
     const datelineEl = document.getElementById("dateline");
+
+    // Notícias da edição atual, guardadas pra o botão "Copiar todas" montar
+    // o texto combinado sem precisar buscar de novo.
+    let noticiasAtuais = [];
+
+    // Um único despacho formatado pra colar direto num post: título, resumo
+    // (já pode vir em parágrafos) e a fonte, sempre separados por linha em
+    // branco pra manter a leitura fácil em qualquer editor.
+    function formatarDespacho(n) {
+      const partes = [n.titulo.trim(), n.resumo.trim()];
+      if (n.fonte) partes.push(`Fonte: ${n.fonte}`);
+      return partes.join("\n\n");
+    }
+
+    // Várias notícias juntas: cada despacho numerado (igual ao rótulo
+    // "DESPACHO 0X" já usado nos cards) e separados por duas linhas em
+    // branco, pra ficar claro onde uma termina e a próxima começa.
+    function formatarTodosDespachos(noticias) {
+      return noticias
+        .map((n, i) => `[DESPACHO ${String(i + 1).padStart(2, "0")}] ${formatarDespacho(n)}`)
+        .join("\n\n\n");
+    }
 
     const MESES = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
     function dataDateline(d) {
@@ -465,7 +511,7 @@
         copyMiniBtn.className = "copy-mini";
         copyMiniBtn.textContent = "Copiar";
         copyMiniBtn.addEventListener("click", async () => {
-          await navigator.clipboard.writeText(`${n.titulo}\n\n${n.resumo}`);
+          await navigator.clipboard.writeText(formatarDespacho(n));
           copyMiniBtn.textContent = "Copiado!";
           setTimeout(() => { copyMiniBtn.textContent = "Copiar"; }, 1500);
         });
@@ -508,6 +554,10 @@
         });
         buscadoEmEl.textContent = `Edição buscada em ${dataFormatada}`;
 
+        noticiasAtuais = data.noticias;
+        dispatchesLabelEl.textContent = `${data.noticias.length} despacho${data.noticias.length === 1 ? "" : "s"} de hoje`;
+        copyAllBtn.textContent = "Copiar todas";
+
         renderNoticias(data.noticias);
         postFinalEl.value = data.post_final;
         renderCharCount(data.post_final_length ?? data.post_final.length);
@@ -524,6 +574,13 @@
       await navigator.clipboard.writeText(postFinalEl.value);
       copyBtn.textContent = "Copiado!";
       setTimeout(() => { copyBtn.textContent = "Copiar texto"; }, 1500);
+    });
+
+    copyAllBtn.addEventListener("click", async () => {
+      if (!noticiasAtuais.length) return;
+      await navigator.clipboard.writeText(formatarTodosDespachos(noticiasAtuais));
+      copyAllBtn.textContent = "Copiado!";
+      setTimeout(() => { copyAllBtn.textContent = "Copiar todas"; }, 1500);
     });
   </script>
 </body>

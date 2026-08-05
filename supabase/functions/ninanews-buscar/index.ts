@@ -87,25 +87,47 @@ function hostnameOf(url: string): string {
   }
 }
 
-// Notícias de hoje primeiro; se vier pouca coisa (dia fraco de publicações),
-// completa com uma janela maior para garantir candidatos suficientes.
-async function buscarCandidatos(): Promise<Candidato[]> {
-  const query = "inteligência artificial notícias hoje Brasil";
-  let resultados = await firecrawlSearch(query, "qdr:d");
-  if (resultados.length < 6) {
-    const extra = await firecrawlSearch(query, "qdr:w");
-    const vistos = new Set(resultados.map((r) => r.url));
-    for (const r of extra) {
-      if (r.url && !vistos.has(r.url)) {
-        resultados.push(r);
-        vistos.add(r.url);
-      }
+// Busca geral de IA no Brasil raramente traz a Anthropic nos resultados
+// (é uma empresa estrangeira, e a instrução de priorizar fontes brasileiras
+// na seleção acaba afundando esse tipo de notícia) — por isso uma segunda
+// busca dedicada à Anthropic/Claude roda em paralelo, garantindo que, se
+// houver algo relevante e recente, o modelo tenha a opção de escolher.
+const QUERY_GERAL = "inteligência artificial notícias hoje Brasil";
+const QUERY_ANTHROPIC = "Anthropic Claude IA notícias";
+
+function mesclarSemDuplicar(base: FirecrawlResult[], extra: FirecrawlResult[]): FirecrawlResult[] {
+  const vistos = new Set(base.map((r) => r.url));
+  for (const r of extra) {
+    if (r.url && !vistos.has(r.url)) {
+      base.push(r);
+      vistos.add(r.url);
     }
+  }
+  return base;
+}
+
+// Notícias de hoje primeiro; se vier pouca coisa (dia fraco de publicações),
+// completa com uma janela maior para garantir candidatos suficientes. As
+// duas buscas (geral e Anthropic) rodam em paralelo em cada rodada para não
+// dobrar a latência.
+async function buscarCandidatos(): Promise<Candidato[]> {
+  const [geralHoje, anthropicHoje] = await Promise.all([
+    firecrawlSearch(QUERY_GERAL, "qdr:d"),
+    firecrawlSearch(QUERY_ANTHROPIC, "qdr:d"),
+  ]);
+  let resultados = mesclarSemDuplicar([...geralHoje], anthropicHoje);
+
+  if (resultados.length < 6) {
+    const [geralSemana, anthropicSemana] = await Promise.all([
+      firecrawlSearch(QUERY_GERAL, "qdr:w"),
+      firecrawlSearch(QUERY_ANTHROPIC, "qdr:w"),
+    ]);
+    resultados = mesclarSemDuplicar(mesclarSemDuplicar(resultados, geralSemana), anthropicSemana);
   }
 
   return resultados
     .filter((r) => r.url && (r.title || r.description))
-    .slice(0, 12)
+    .slice(0, 14)
     .map((r, i) => ({
       id: i + 1,
       titulo: r.title ?? "",
@@ -230,7 +252,9 @@ async function selecionarEResumirUmaVez(candidatos: Candidato[], hojeExtenso: st
     system:
       `Você é um editor que curadoria notícias de inteligência artificial para um público executivo brasileiro. Hoje é ${hojeExtenso}. ` +
       "Você recebe uma lista de notícias candidatas (numeradas). Escolha exatamente 5, distintas entre si (não repita o mesmo fato coberto por veículos diferentes), " +
-      "priorizando sempre fontes brasileiras (sites .com.br e veículos brasileiros conhecidos); só use fontes internacionais se não houver 5 boas opções brasileiras entre os candidatos. " +
+      "priorizando fontes brasileiras (sites .com.br e veículos brasileiros conhecidos); só use fontes internacionais se não houver 5 boas opções brasileiras entre os candidatos. " +
+      "EXCEÇÃO: se houver entre os candidatos alguma notícia relevante e atual sobre a Anthropic (a empresa por trás do Claude), inclua-a nas 5 selecionadas mesmo vindo de fonte internacional; " +
+      "só descarte essa notícia da Anthropic se ela for irrelevante, claramente desatualizada, ou repetir um fato já coberto por outra notícia selecionada. " +
       "Para cada uma: 'titulo' é uma manchete clara em português (pode reescrever a original para maior clareza, sem sensacionalismo); " +
       "'resumo' explica em 2 a 4 frases, em tom executivo (direto, sem jargão técnico desnecessário, focado no que aconteceu e por que importa para quem toma decisão de negócio). " +
       "Depois monte 'post_final': um único texto pronto para publicar no LinkedIn, em português, reunindo as 5 notícias. " +
