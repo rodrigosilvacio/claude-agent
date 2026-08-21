@@ -1,0 +1,571 @@
+:root {
+  --ink: #1d1f20;
+  --ink-dark: #1d2d3d;
+  --muted: #5d5d60;
+  --faint: #7a7a7d;
+  --accent: #5980a6;
+  --accent-hover: #597ea3;
+  --accent-active: #416180;
+  --accent-bg: #eef6ff;
+  --accent-text: #2c455d;
+  --line: rgba(29, 31, 32, 0.16);
+  --line-soft: rgba(29, 31, 32, 0.1);
+  --bg-app: #f2f2f3;
+  --bg-page: #e7e7ea;
+  --track: #e7e7ea;
+  --dot-off: #b7b7ba;
+  --border-off: #98989b;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg-page);
+  color: var(--ink);
+  font-family: "Barlow", -apple-system, system-ui, sans-serif;
+}
+
+.app {
+  max-width: 460px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: var(--bg-app);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+[hidden] {
+  display: none !important;
+}
+
+.screen-head {
+  padding: max(20px, env(safe-area-inset-top)) 22px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.eyebrow {
+  font: 400 10px/1 "Barlow", sans-serif;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.title {
+  margin: 0;
+  font: 600 32px/1.05 "Barlow Condensed", sans-serif;
+  letter-spacing: -0.015em;
+}
+
+.screen-body {
+  flex: 1;
+  overflow: auto;
+  padding: 18px 22px 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* ── ticket card w/ "+" corner marks ── */
+.ticket {
+  position: relative;
+  border: 1px solid var(--line);
+  padding: 18px 16px 16px;
+}
+
+.corner {
+  position: absolute;
+  font: 400 13px/1 "Barlow", sans-serif;
+  color: var(--accent);
+}
+.corner.tl { top: -8px; left: -5px; }
+.corner.tr { top: -8px; right: -5px; }
+.corner.bl { bottom: -9px; left: -5px; }
+.corner.br { bottom: -9px; right: -5px; }
+
+/* ── total card ── */
+.label {
+  font: 400 10px/1 "Barlow", sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.total-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.total-hours {
+  font: 600 68px/0.85 "Barlow Condensed", sans-serif;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.total-mins {
+  font: 600 22px/1 "Barlow Condensed", sans-serif;
+  color: var(--accent);
+  padding-bottom: 6px;
+}
+
+.bar {
+  margin-top: 14px;
+  height: 8px;
+  background: var(--track);
+  position: relative;
+}
+
+.bar-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--accent);
+  width: 0%;
+  transition: width 0.25s ease;
+}
+
+.bar-caption {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font: 400 11px/1.3 "Barlow", sans-serif;
+  color: var(--muted);
+}
+
+/* ── sections ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  font: 600 12px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.section-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.section-note {
+  font: 400 11px/1 "Barlow", sans-serif;
+  color: var(--muted);
+}
+
+/* ── splits (breakdown by type) ── */
+.splits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.split-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.split-row:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.split-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.split-name {
+  font: 500 14px/1.2 "Barlow", sans-serif;
+}
+
+.split-value {
+  font: 600 15px/1 "Barlow Condensed", sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-text);
+}
+
+.split-bar {
+  height: 14px;
+  background: var(--track);
+  position: relative;
+}
+
+.split-bar-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--accent);
+  width: 0%;
+}
+
+.split-pct {
+  position: absolute;
+  right: 5px; top: 1px;
+  font: 400 10px/12px "Barlow", sans-serif;
+  color: var(--muted);
+}
+
+/* ── records ── */
+.records-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.record-row {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.record-row:first-child { border-top: 0; }
+
+.record-day {
+  font: 600 15px/1 "Barlow Condensed", sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-text);
+}
+
+.record-mid {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.record-type {
+  font: 500 14px/1.25 "Barlow", sans-serif;
+}
+
+.record-local {
+  font: 400 11px/1.3 "Barlow", sans-serif;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-dur {
+  font: 400 10px/1 "Barlow", sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 7px;
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+
+.empty-state {
+  margin: 4px 0 0;
+  font: 400 13px/1.5 "Barlow", sans-serif;
+  color: var(--faint);
+}
+
+/* ── mode tabs (registrar) ── */
+.mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  margin-top: 10px;
+}
+
+.mode-tab {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding: 11px 0;
+  font: 600 13px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--muted);
+}
+
+.mode-tab.active {
+  background: var(--accent);
+  color: var(--bg-app);
+}
+
+/* ── timer card ── */
+.timer-card {
+  padding: 26px 16px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.timer-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  background: var(--dot-off);
+}
+
+.dot.running {
+  background: var(--accent);
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+#timer-run-label {
+  font: 400 10px/1 "Barlow", sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.clock {
+  font: 600 82px/0.82 "Barlow Condensed", sans-serif;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.btn {
+  appearance: none;
+  cursor: pointer;
+  font-family: "Barlow Condensed", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+
+.btn-primary {
+  flex: 1;
+  border: 1px solid var(--accent);
+  padding: 13px 0;
+  font: 600 14px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.1em;
+  background: var(--accent);
+  color: var(--bg-app);
+}
+.btn-primary.is-running {
+  background: transparent;
+  color: var(--accent-active);
+}
+
+.btn-ghost {
+  flex: none;
+  width: 96px;
+  background: transparent;
+  border: 1px solid var(--line);
+  font: 600 14px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+.btn-ghost:hover { background: rgba(29, 31, 32, 0.07); }
+
+/* ── manual fields ── */
+.manual-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font: 400 10px/1 "Barlow", sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input[type="date"],
+input[type="text"],
+input[type="number"] {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 11px 12px;
+  font: 400 15px/1.2 "Barlow", sans-serif;
+  color: var(--ink);
+  border-radius: 0;
+  width: 100%;
+}
+
+.mins-input {
+  font: 600 22px/1.2 "Barlow Condensed", sans-serif !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── workout type picker ── */
+.type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.type-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  cursor: pointer;
+  padding: 13px 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+
+.type-option.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.type-mark {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  background: transparent;
+  border: 1px solid var(--border-off);
+}
+
+.type-option.active .type-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.type-name {
+  font: 500 15px/1.2 "Barlow", sans-serif;
+}
+
+.type-hint {
+  margin-left: auto;
+  font: 400 11px/1 "Barlow", sans-serif;
+  color: var(--faint);
+}
+
+/* ── summary ── */
+.summary-row {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  font: 400 12px/1.4 "Barlow", sans-serif;
+  color: var(--muted);
+}
+.summary-row span:last-child {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* ── save bar ── */
+.save-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0; right: 0;
+  padding: 14px 22px calc(14px + env(safe-area-inset-bottom));
+  background: var(--bg-app);
+  border-top: 1px solid var(--line);
+}
+
+.toast {
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  background: var(--accent-bg);
+  font: 500 12px/1.3 "Barlow", sans-serif;
+  color: var(--accent-text);
+}
+
+.btn-save {
+  position: relative;
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--bg-app);
+  padding: 15px 0;
+  font: 600 16px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.btn-save:hover { background: var(--accent-hover); }
+.btn-save:active { background: var(--accent-active); }
+.btn-save .corner { color: rgba(242, 242, 243, 0.65); }
+
+/* ── tab bar ── */
+.tabbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg-app);
+  border-top: 1px solid var(--line);
+  padding: 10px 0 calc(8px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 0;
+  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.tab-mark {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--border-off);
+}
+
+.tab-btn.active {
+  color: var(--ink);
+}
+.tab-btn.active .tab-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+@media (hover: hover) {
+  .tab-btn:hover { opacity: 0.7; }
+}
