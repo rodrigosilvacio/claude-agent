@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>PandaFit · Registro de treinos</title>
+<meta name="theme-color" content="#f2f2f3" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%BC%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ───────── Painel da semana ───────── -->
+  <main class="screen" id="screen-painel" data-screen="painel">
+    <div class="screen-head">
+      <div class="eyebrow" id="week-label">Semana</div>
+      <h1 class="title">Semana em movimento</h1>
+    </div>
+
+    <div class="screen-body">
+
+      <div class="ticket total-card">
+        <span class="corner tl">+</span><span class="corner tr">+</span>
+        <span class="corner bl">+</span><span class="corner br">+</span>
+        <div class="label">Total na semana</div>
+        <div class="total-row">
+          <span class="total-hours" id="week-hours">0</span>
+          <span class="total-mins" id="week-mins">h 00</span>
+        </div>
+        <div class="bar">
+          <div class="bar-fill" id="goal-bar"></div>
+        </div>
+        <div class="bar-caption">
+          <span id="goal-pct">0% da meta</span>
+          <span id="goal-meta">meta 8h · 0 sessões</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Divisão por treino</div>
+        <div id="splits-list" class="splits-list"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head-row">
+          <span class="section-title">Registros</span>
+          <span class="section-note" id="session-count-note">0 nesta semana</span>
+        </div>
+        <div id="records-list" class="records-list">
+          <p class="empty-state">Nenhum treino registrado nesta semana ainda.</p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ───────── Registrar treino ───────── -->
+  <main class="screen" id="screen-registrar" data-screen="registrar" hidden>
+    <div class="screen-head">
+      <h1 class="title">Registrar treino</h1>
+      <div class="mode-tabs">
+        <button type="button" class="mode-tab" data-mode="timer">Cronômetro</button>
+        <button type="button" class="mode-tab" data-mode="manual">Manual</button>
+      </div>
+    </div>
+
+    <div class="screen-body">
+
+      <div class="ticket timer-card" id="timer-card">
+        <span class="corner tl">+</span><span class="corner tr">+</span>
+        <span class="corner bl">+</span><span class="corner br">+</span>
+        <div class="timer-status">
+          <span class="dot" id="timer-dot"></span>
+          <span id="timer-run-label">Pausado</span>
+        </div>
+        <div class="clock" id="clock">00:00</div>
+        <div class="timer-actions">
+          <button type="button" class="btn btn-primary" id="btn-toggle-run">Iniciar</button>
+          <button type="button" class="btn btn-ghost" id="btn-reset-run">Zerar</button>
+        </div>
+      </div>
+
+      <div class="manual-fields" id="manual-fields" hidden>
+        <label class="field">
+          <span class="field-label">Data</span>
+          <input type="date" id="input-date" />
+        </label>
+        <label class="field">
+          <span class="field-label">Duração (minutos)</span>
+          <input type="number" inputmode="numeric" min="1" id="input-mins" class="mins-input" />
+        </label>
+      </div>
+
+      <div class="section">
+        <span class="field-label">Tipo de treino</span>
+        <div id="type-options" class="type-options"></div>
+      </div>
+
+      <label class="field">
+        <span class="field-label">Local</span>
+        <input type="text" id="input-local" placeholder="Academia, CT, parque…" />
+      </label>
+
+      <div class="summary-row">
+        <span>Resumo</span>
+        <span id="summary-value">Musculação · 0 min</span>
+      </div>
+    </div>
+
+    <div class="save-bar">
+      <div class="toast" id="toast" hidden></div>
+      <button type="button" class="btn btn-save" id="btn-save">
+        <span class="corner tl">+</span><span class="corner tr">+</span>
+        <span class="corner bl">+</span><span class="corner br">+</span>
+        Salvar treino
+      </button>
+    </div>
+  </main>
+
+  <!-- ───────── Tab bar ───────── -->
+  <nav class="tabbar">
+    <button type="button" class="tab-btn" data-tab="painel">
+      <span class="tab-mark"></span>
+      <span>Painel</span>
+    </button>
+    <button type="button" class="tab-btn" data-tab="registrar">
+      <span class="tab-mark"></span>
+      <span>Registrar</span>
+    </button>
+  </nav>
+
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

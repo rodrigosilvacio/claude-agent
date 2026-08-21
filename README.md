@@ -146,6 +146,28 @@ stateless do `cep-agent`).
 > `grade-linkedin-post`, `cowork-generate-document` e `oraculo-webhook`.
 > Nenhuma secret nova é necessária.
 
+## PandaFit — Registro de Treinos (`/pandafit`)
+
+App de duas telas para registrar treinos e acompanhar a semana, mobile-first
+(coluna centralizada de até 460px, aba fixa no rodapé). Mesmo padrão do
+resto do repo: HTML/CSS/JS estático, sem build e sem backend — os treinos
+ficam salvos em `localStorage` no navegador (`pandafit.workouts`), sem
+sincronização entre dispositivos.
+
+Reproduz o protótipo de design em anexo (Barlow / Barlow Condensed, paleta
+azul-marinho `#1d2d3d` + azul acinzentado `#5980a6`, cartões com cantos retos
+e marcas "+" nos vértices, estilo ticket/recibo).
+
+- **Painel**: cabeçalho com o número da semana ISO e o mês atual; cartão de
+  total da semana (soma dos treinos de segunda a domingo) com barra de
+  progresso até a meta fixa de 8h/semana; divisão do tempo por tipo de
+  treino (Musculação, Jiu Jitsu, Corrida); lista dos registros da semana
+  (dia, tipo, local, duração).
+- **Registrar**: alterna entre **Cronômetro** (inicia/pausa/zera, registra a
+  duração corrida ao salvar) e **Manual** (data + duração em minutos digitadas
+  à mão); seletor do tipo de treino; campo opcional de local; resumo ao vivo
+  e confirmação por toast ao salvar.
+
 ## Painel de Reports (`/reports`)
 
 Painel interno para centralizar dashboards em HTML gerados pelo Claude:
