@@ -17,19 +17,22 @@
   --border-off: #98989b;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg-page);
   color: var(--ink);
   font-family: "Barlow", -apple-system, system-ui, sans-serif;
+  overscroll-behavior-y: none;
 }
 
 .app {
   max-width: 460px;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   background: var(--bg-app);
   display: flex;
@@ -73,6 +76,8 @@ html, body {
 .screen-body {
   flex: 1;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   padding: 18px 22px 100px;
   display: flex;
   flex-direction: column;
@@ -231,9 +236,9 @@ html, body {
 
 .record-row {
   display: grid;
-  grid-template-columns: 46px 1fr auto;
+  grid-template-columns: 46px 1fr auto auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 11px 0;
   border-top: 1px solid var(--line-soft);
 }
@@ -279,6 +284,65 @@ html, body {
   color: var(--faint);
 }
 
+.record-delete {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  background: transparent;
+  width: 40px;
+  height: 40px;
+  margin: -8px -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  flex-shrink: 0;
+}
+.record-delete:active { color: #b3423f; }
+@media (hover: hover) {
+  .record-delete:hover { color: #b3423f; }
+}
+
+/* ── pagination ── */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.pager-btn {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  min-height: 44px;
+  padding: 0 14px;
+  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.pager-btn:disabled {
+  color: var(--dot-off);
+  border-color: var(--line-soft);
+  cursor: default;
+}
+@media (hover: hover) {
+  .pager-btn:not(:disabled):hover { background: rgba(29, 31, 32, 0.07); }
+}
+
+.pager-note {
+  font: 400 11px/1 "Barlow", sans-serif;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ── mode tabs (registrar) ── */
 .mode-tabs {
   display: grid;
@@ -291,7 +355,9 @@ html, body {
   appearance: none;
   border: 0;
   cursor: pointer;
-  padding: 11px 0;
+  -webkit-touch-callout: none;
+  min-height: 44px;
+  padding: 15px 0;
   font: 600 13px/1 "Barlow Condensed", sans-serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -357,6 +423,7 @@ html, body {
 .btn {
   appearance: none;
   cursor: pointer;
+  -webkit-touch-callout: none;
   font-family: "Barlow Condensed", sans-serif;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -365,8 +432,9 @@ html, body {
 
 .btn-primary {
   flex: 1;
+  min-height: 44px;
   border: 1px solid var(--accent);
-  padding: 13px 0;
+  padding: 15px 0;
   font: 600 14px/1 "Barlow Condensed", sans-serif;
   letter-spacing: 0.1em;
   background: var(--accent);
@@ -380,6 +448,7 @@ html, body {
 .btn-ghost {
   flex: none;
   width: 96px;
+  min-height: 44px;
   background: transparent;
   border: 1px solid var(--line);
   font: 600 14px/1 "Barlow Condensed", sans-serif;
@@ -415,10 +484,13 @@ input[type="number"] {
   background: transparent;
   border: 1px solid var(--line);
   padding: 11px 12px;
-  font: 400 15px/1.2 "Barlow", sans-serif;
+  /* 16px minimum: iOS Safari auto-zooms the page on focus for any input
+     with a smaller computed font-size. */
+  font: 400 16px/1.2 "Barlow", sans-serif;
   color: var(--ink);
   border-radius: 0;
   width: 100%;
+  min-height: 44px;
 }
 
 .mins-input {
@@ -438,9 +510,11 @@ input[type="number"] {
   align-items: center;
   gap: 11px;
   width: 100%;
+  min-height: 44px;
   text-align: left;
   appearance: none;
   cursor: pointer;
+  -webkit-touch-callout: none;
   padding: 13px 12px;
   border: 1px solid var(--line);
   background: transparent;
@@ -541,10 +615,13 @@ input[type="number"] {
   border: 0;
   background: transparent;
   cursor: pointer;
+  -webkit-touch-callout: none;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  min-height: 44px;
   padding: 6px 0;
   font: 600 11px/1 "Barlow Condensed", sans-serif;
   letter-spacing: 0.12em;
