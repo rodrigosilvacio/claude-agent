@@ -150,9 +150,16 @@ stateless do `cep-agent`).
 
 App de duas telas para registrar treinos e acompanhar a semana, mobile-first
 (coluna centralizada de até 460px, aba fixa no rodapé). Mesmo padrão do
-resto do repo: HTML/CSS/JS estático, sem build e sem backend — os treinos
-ficam salvos em `localStorage` no navegador (`pandafit.workouts`), sem
-sincronização entre dispositivos.
+resto do repo: HTML/CSS/JS estático, sem build. Os treinos ficam gravados na
+tabela `pandafit_workouts` do Supabase (`ClaudeProjects`) — os dados
+persistem no banco e aparecem em qualquer dispositivo/navegador, não só no
+que fez o registro.
+
+Ferramenta pessoal sem tela de login (o protótipo de design não previa
+autenticação), então a leitura e a escrita ficam abertas para o role `anon`
+via RLS — qualquer pessoa com a URL da página consegue ver e adicionar
+treinos. Aceitável para o uso pretendido (uso pessoal, dado de baixo risco),
+mas vale lembrar caso o link circule.
 
 Reproduz o protótipo de design em anexo (Barlow / Barlow Condensed, paleta
 azul-marinho `#1d2d3d` + azul acinzentado `#5980a6`, cartões com cantos retos
