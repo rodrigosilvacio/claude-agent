@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient.js';
 
 var WEEKLY_GOAL_HOURS = 8;
+var RECORDS_PAGE_SIZE = 5;
 
 var WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -24,6 +25,8 @@ var state = {
   loading: true,
   loadError: false,
   saving: false,
+  recordsPage: 0,
+  deletingId: null,
 };
 var timerHandle = null;
 var toastHandle = null;
@@ -94,6 +97,14 @@ async function insertWorkout(row) {
   return data;
 }
 
+async function deleteWorkout(id) {
+  var { error } = await supabase
+    .from('pandafit_workouts')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ── DOM refs ──
 var $ = function (sel) { return document.querySelector(sel); };
 
@@ -111,6 +122,10 @@ var els = {
   splitsList: $('#splits-list'),
   recordsList: $('#records-list'),
   sessionCountNote: $('#session-count-note'),
+  recordsPager: $('#records-pager'),
+  pagerPrev: $('#pager-prev'),
+  pagerNext: $('#pager-next'),
+  pagerNote: $('#pager-note'),
 
   modeTabs: document.querySelectorAll('.mode-tab'),
   timerCard: $('#timer-card'),
@@ -144,6 +159,18 @@ function setTab(tab) {
   });
   if (tab === 'painel') renderPainel();
 }
+
+// ── records pagination ──
+els.pagerPrev.addEventListener('click', function () {
+  if (state.recordsPage > 0) {
+    state.recordsPage -= 1;
+    renderPainel();
+  }
+});
+els.pagerNext.addEventListener('click', function () {
+  state.recordsPage += 1;
+  renderPainel();
+});
 
 // ── mode tabs (Cronômetro / Manual) ──
 els.modeTabs.forEach(function (btn) {
@@ -254,6 +281,7 @@ els.btnSave.addEventListener('click', function () {
   insertWorkout({ date: dateISO, type: state.type, minutes: min, local: local })
     .then(function (row) {
       state.workouts.unshift(row);
+      state.recordsPage = 0;
 
       if (wasTimer) {
         state.secs = 0;
@@ -273,6 +301,25 @@ els.btnSave.addEventListener('click', function () {
       els.btnSave.disabled = false;
     });
 });
+
+function handleDeleteClick(id) {
+  if (state.deletingId) return;
+  if (!window.confirm('Excluir este treino? Essa ação não pode ser desfeita.')) return;
+
+  state.deletingId = id;
+  deleteWorkout(id)
+    .then(function () {
+      state.workouts = state.workouts.filter(function (w) { return w.id !== id; });
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir treino', err);
+      window.alert('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingId = null;
+      renderPainel();
+    });
+}
 
 function showToast(msg) {
   clearTimeout(toastHandle);
@@ -348,18 +395,41 @@ function renderPainel() {
       '</div>';
   }).join('');
 
-  // recent records (this week, most recent first)
+  // recent records (this week, most recent first), paginated 5 at a time
   if (weekWorkouts.length === 0) {
     els.recordsList.innerHTML = '<p class="empty-state">Nenhum treino registrado nesta semana ainda.</p>';
+    els.recordsPager.hidden = true;
+    state.recordsPage = 0;
   } else {
-    els.recordsList.innerHTML = weekWorkouts.slice(0, 8).map(function (w) {
+    var pageCount = Math.ceil(weekWorkouts.length / RECORDS_PAGE_SIZE);
+    if (state.recordsPage >= pageCount) state.recordsPage = pageCount - 1;
+    if (state.recordsPage < 0) state.recordsPage = 0;
+
+    var start = state.recordsPage * RECORDS_PAGE_SIZE;
+    var pageItems = weekWorkouts.slice(start, start + RECORDS_PAGE_SIZE);
+
+    els.recordsList.innerHTML = pageItems.map(function (w) {
       return '<div class="record-row">' +
         '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
         '<span class="record-mid"><span class="record-type">' + w.type + '</span>' +
         '<span class="record-local">' + (w.local || 'Sem local') + '</span></span>' +
         '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
+        '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir treino">' +
+        '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+        '</button>' +
         '</div>';
     }).join('');
+
+    els.recordsList.querySelectorAll('.record-delete').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        handleDeleteClick(Number(btn.dataset.id));
+      });
+    });
+
+    els.recordsPager.hidden = pageCount <= 1;
+    els.pagerNote.textContent = 'Página ' + (state.recordsPage + 1) + ' de ' + pageCount;
+    els.pagerPrev.disabled = state.recordsPage === 0;
+    els.pagerNext.disabled = state.recordsPage >= pageCount - 1;
   }
 }
 
