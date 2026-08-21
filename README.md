@@ -171,10 +171,10 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   treino (Musculação, Jiu Jitsu, Corrida); lista dos registros da semana
   (dia, tipo, local, duração), paginada de 5 em 5, com botão de excluir
   (confirmação antes de apagar) em cada linha.
-- **Registrar**: alterna entre **Cronômetro** (inicia/pausa/zera, registra a
-  duração corrida ao salvar) e **Manual** (data + duração em minutos digitadas
-  à mão); seletor do tipo de treino; campo opcional de local; resumo ao vivo
-  e confirmação por toast ao salvar.
+- **Registrar**: alterna entre **Manual** (aba padrão — data + duração em
+  minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
+  duração corrida ao salvar); seletor do tipo de treino; campo opcional de
+  local; resumo ao vivo e confirmação por toast ao salvar.
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`

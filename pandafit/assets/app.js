@@ -14,7 +14,7 @@ var MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 
 // ── state ──
 var state = {
   tab: 'painel',
-  mode: 'timer',
+  mode: 'manual',
   running: false,
   secs: 0,
   type: WORKOUT_TYPES[0].name,
