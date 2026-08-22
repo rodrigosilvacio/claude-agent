@@ -167,7 +167,9 @@ e marcas "+" nos vértices, estilo ticket/recibo).
 
 - **Painel**: cabeçalho com o número da semana ISO e o mês atual; cartão de
   total da semana (soma dos treinos de segunda a domingo) com barra de
-  progresso até a meta fixa de 8h/semana; divisão do tempo por tipo de
+  progresso até a meta fixa de 1h/semana (1 treino de qualquer
+  modalidade, com duração de 1 hora, já cumpre a meta); divisão do
+  tempo por tipo de
   treino (Musculação, Jiu Jitsu, Corrida); lista dos registros da semana
   (dia, tipo, local, duração), paginada de 5 em 5, com botão de excluir
   (confirmação antes de apagar) em cada linha.
