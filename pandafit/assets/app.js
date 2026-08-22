@@ -139,7 +139,6 @@ var els = {
   inputMins: $('#input-mins'),
   typeOptions: $('#type-options'),
   inputLocal: $('#input-local'),
-  summaryValue: $('#summary-value'),
   toast: $('#toast'),
   btnSave: $('#btn-save'),
 };
@@ -188,7 +187,6 @@ function startTimerLoop() {
     if (state.running) {
       state.secs += 1;
       updateClock();
-      updateSummary();
     }
   }, 1000);
 }
@@ -208,7 +206,6 @@ els.btnResetRun.addEventListener('click', function () {
   state.secs = 0;
   updateTimerControls();
   updateClock();
-  updateSummary();
 });
 
 function updateClock() {
@@ -226,11 +223,9 @@ function updateTimerControls() {
 // ── manual fields ──
 els.inputDate.addEventListener('change', function (e) {
   state.dateVal = e.target.value || todayISO();
-  updateSummary();
 });
 els.inputMins.addEventListener('input', function (e) {
   state.minsVal = e.target.value;
-  updateSummary();
 });
 els.inputLocal.addEventListener('input', function (e) {
   state.local = e.target.value;
@@ -250,7 +245,6 @@ function renderTypeOptions() {
     btn.addEventListener('click', function () {
       state.type = btn.dataset.type;
       renderTypeOptions();
-      updateSummary();
     });
   });
 }
@@ -261,10 +255,6 @@ function liveMinutes() {
     return Math.max(1, Math.round(state.secs / 60));
   }
   return Math.max(1, parseInt(state.minsVal, 10) || 0);
-}
-
-function updateSummary() {
-  els.summaryValue.textContent = state.type + ' · ' + fmtDuration(liveMinutes());
 }
 
 els.btnSave.addEventListener('click', function () {
@@ -289,7 +279,6 @@ els.btnSave.addEventListener('click', function () {
         updateTimerControls();
         updateClock();
       }
-      updateSummary();
       showToast(state.type + ' de ' + fmtDuration(min) + ' registrado. Boa!');
     })
     .catch(function (err) {
@@ -343,7 +332,6 @@ function renderRegistrar() {
   updateTimerControls();
   updateClock();
   renderTypeOptions();
-  updateSummary();
 }
 
 // ── render: Painel screen ──

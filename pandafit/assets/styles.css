@@ -81,7 +81,7 @@ html, body {
   padding: 18px 22px;
   /* Clears the absolutely-positioned .save-bar on the Registrar screen —
      it grows taller on devices with a home-indicator safe area, so the
-     reserved space has to grow with it or the last row (Resumo) ends up
+     reserved space has to grow with it or the last content row ends up
      covered. */
   padding-bottom: calc(100px + env(safe-area-inset-bottom));
   display: flex;
@@ -552,20 +552,6 @@ input[type="number"] {
   margin-left: auto;
   font: 400 11px/1 "Barlow", sans-serif;
   color: var(--faint);
-}
-
-/* ── summary ── */
-.summary-row {
-  border-top: 1px solid var(--line-soft);
-  padding-top: 16px;
-  display: flex;
-  justify-content: space-between;
-  font: 400 12px/1.4 "Barlow", sans-serif;
-  color: var(--muted);
-}
-.summary-row span:last-child {
-  color: var(--ink);
-  font-weight: 500;
 }
 
 /* ── save bar ── */
