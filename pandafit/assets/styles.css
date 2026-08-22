@@ -78,7 +78,12 @@ html, body {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  padding: 18px 22px 100px;
+  padding: 18px 22px;
+  /* Clears the absolutely-positioned .save-bar on the Registrar screen —
+     it grows taller on devices with a home-indicator safe area, so the
+     reserved space has to grow with it or the last row (Resumo) ends up
+     covered. */
+  padding-bottom: calc(100px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 22px;
