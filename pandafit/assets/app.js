@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-var WEEKLY_GOAL_HOURS = 8;
+var WEEKLY_GOAL_HOURS = 1;
 var RECORDS_PAGE_SIZE = 5;
 
 var WORKOUT_TYPES = [
