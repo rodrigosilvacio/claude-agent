@@ -174,7 +174,7 @@ e marcas "+" nos vértices, estilo ticket/recibo).
 - **Registrar**: alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
   duração corrida ao salvar); seletor do tipo de treino; campo opcional de
-  local; resumo ao vivo e confirmação por toast ao salvar.
+  local; confirmação por toast ao salvar.
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`
