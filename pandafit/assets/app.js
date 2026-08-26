@@ -1,7 +1,8 @@
 import { supabase } from './supabaseClient.js';
 
-var WEEKLY_GOAL_HOURS = 1;
+var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
+var EVOLUTION_MONTHS = 6;
 
 var WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -27,9 +28,10 @@ var state = {
   saving: false,
   recordsPage: 0,
   deletingId: null,
+  monthlyGoal: DEFAULT_MONTHLY_GOAL,
+  savingGoal: false,
 };
 var timerHandle = null;
-var toastHandle = null;
 
 // ── helpers ──
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -49,25 +51,12 @@ function fmtDayLabel(iso) {
   return parts[2] + '/' + parts[1];
 }
 
-// Monday 00:00 .. Sunday 23:59:59 for the ISO week containing `date`.
-function isoWeekRange(date) {
-  var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  var dow = (d.getDay() + 6) % 7; // 0 = Monday
-  var monday = new Date(d);
-  monday.setDate(d.getDate() - dow);
-  var sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  sunday.setHours(23, 59, 59, 999);
-  return { start: monday, end: sunday };
-}
-
-function isoWeekNumber(date) {
-  var d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  var dayNum = (d.getUTCDay() + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - dayNum + 3);
-  var firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  var diff = (d - firstThursday) / 86400000;
-  return 1 + Math.round(diff / 7);
+// First day 00:00 .. last day 23:59:59 of the calendar month containing `date`.
+function monthRange(date) {
+  var start = new Date(date.getFullYear(), date.getMonth(), 1);
+  var end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  end.setHours(23, 59, 59, 999);
+  return { start: start, end: end };
 }
 
 function parseISO(iso) {
@@ -105,6 +94,24 @@ async function deleteWorkout(id) {
   if (error) throw error;
 }
 
+async function fetchSettings() {
+  var { data, error } = await supabase
+    .from('pandafit_settings')
+    .select('monthly_goal')
+    .eq('id', 1)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function updateSettings(monthlyGoal) {
+  var { error } = await supabase
+    .from('pandafit_settings')
+    .update({ monthly_goal: monthlyGoal, updated_at: new Date().toISOString() })
+    .eq('id', 1);
+  if (error) throw error;
+}
+
 // ── DOM refs ──
 var $ = function (sel) { return document.querySelector(sel); };
 
@@ -112,10 +119,11 @@ var els = {
   screens: {
     painel: $('#screen-painel'),
     registrar: $('#screen-registrar'),
+    meta: $('#screen-meta'),
   },
-  weekLabel: $('#week-label'),
-  weekHours: $('#week-hours'),
-  weekMins: $('#week-mins'),
+  monthLabel: $('#month-label'),
+  monthCount: $('#month-count'),
+  monthGoalSuffix: $('#month-goal-suffix'),
   goalBar: $('#goal-bar'),
   goalPct: $('#goal-pct'),
   goalMeta: $('#goal-meta'),
@@ -141,6 +149,14 @@ var els = {
   inputLocal: $('#input-local'),
   toast: $('#toast'),
   btnSave: $('#btn-save'),
+
+  inputGoal: $('#input-goal'),
+  btnSaveGoal: $('#btn-save-goal'),
+  goalToast: $('#goal-toast'),
+  metaProgressBar: $('#meta-progress-bar'),
+  metaProgressPct: $('#meta-progress-pct'),
+  metaProgressCount: $('#meta-progress-count'),
+  evolutionList: $('#evolution-list'),
 };
 
 // ── tab bar wiring ──
@@ -157,6 +173,12 @@ function setTab(tab) {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
   if (tab === 'painel') renderPainel();
+  if (tab === 'meta') renderMeta();
+}
+
+function renderActiveTab() {
+  if (state.tab === 'painel') renderPainel();
+  if (state.tab === 'meta') renderMeta();
 }
 
 // ── records pagination ──
@@ -310,12 +332,18 @@ function handleDeleteClick(id) {
     });
 }
 
-function showToast(msg) {
-  clearTimeout(toastHandle);
-  els.toast.textContent = msg;
-  els.toast.hidden = false;
-  toastHandle = setTimeout(function () { els.toast.hidden = true; }, 4000);
+function makeToaster(el) {
+  var handle = null;
+  return function (msg) {
+    clearTimeout(handle);
+    el.textContent = msg;
+    el.hidden = false;
+    handle = setTimeout(function () { el.hidden = true; }, 4000);
+  };
 }
+
+var showToast = makeToaster(els.toast);
+var showGoalToast = makeToaster(els.goalToast);
 
 // ── render: Registrar screen ──
 function renderRegistrar() {
@@ -337,9 +365,7 @@ function renderRegistrar() {
 // ── render: Painel screen ──
 function renderPainel() {
   var now = new Date();
-  var weekNumber = isoWeekNumber(now);
-  var monthLabel = MONTHS_PT[now.getMonth()] + ' ' + now.getFullYear();
-  els.weekLabel.textContent = 'Semana ' + weekNumber + ' · ' + monthLabel;
+  els.monthLabel.textContent = MONTHS_PT[now.getMonth()] + ' ' + now.getFullYear();
 
   if (state.loading) {
     els.recordsList.innerHTML = '<p class="empty-state">Carregando treinos…</p>';
@@ -353,28 +379,29 @@ function renderPainel() {
     return;
   }
 
-  var range = isoWeekRange(now);
-  var weekWorkouts = state.workouts.filter(function (w) {
+  var range = monthRange(now);
+  var monthWorkouts = state.workouts.filter(function (w) {
     var d = parseISO(w.date);
     return d >= range.start && d <= range.end;
   });
 
-  var total = weekWorkouts.reduce(function (a, w) { return a + w.minutes; }, 0);
-  var goalMinutes = WEEKLY_GOAL_HOURS * 60;
-  var goalPct = goalMinutes ? Math.min(100, Math.round((total / goalMinutes) * 100)) : 0;
+  var goal = state.monthlyGoal;
+  var count = monthWorkouts.length;
+  var goalPct = goal ? Math.min(100, Math.round((count / goal) * 100)) : 0;
 
-  els.weekHours.textContent = Math.floor(total / 60);
-  els.weekMins.textContent = 'h ' + pad(total % 60);
+  els.monthCount.textContent = count;
+  els.monthGoalSuffix.textContent = 'de ' + goal;
   els.goalBar.style.width = goalPct + '%';
   els.goalPct.textContent = goalPct + '% da meta';
-  els.goalMeta.textContent = 'meta ' + WEEKLY_GOAL_HOURS + 'h · ' + weekWorkouts.length + (weekWorkouts.length === 1 ? ' sessão' : ' sessões');
-  els.sessionCountNote.textContent = weekWorkouts.length + ' nesta semana';
+  els.goalMeta.textContent = 'meta ' + goal + (goal === 1 ? ' treino/mês' : ' treinos/mês');
+  els.sessionCountNote.textContent = count + ' neste mês';
 
   // breakdown by type
+  var totalMinutes = monthWorkouts.reduce(function (a, w) { return a + w.minutes; }, 0);
   els.splitsList.innerHTML = WORKOUT_TYPES.map(function (t) {
-    var min = weekWorkouts.filter(function (w) { return w.type === t.name; })
+    var min = monthWorkouts.filter(function (w) { return w.type === t.name; })
       .reduce(function (a, w) { return a + w.minutes; }, 0);
-    var pct = total ? Math.round((min / total) * 100) : 0;
+    var pct = totalMinutes ? Math.round((min / totalMinutes) * 100) : 0;
     return '<div class="split-row">' +
       '<div class="split-top"><span class="split-name">' + t.name + '</span>' +
       '<span class="split-value">' + fmtDuration(min) + '</span></div>' +
@@ -383,18 +410,18 @@ function renderPainel() {
       '</div>';
   }).join('');
 
-  // recent records (this week, most recent first), paginated 5 at a time
-  if (weekWorkouts.length === 0) {
-    els.recordsList.innerHTML = '<p class="empty-state">Nenhum treino registrado nesta semana ainda.</p>';
+  // recent records (this month, most recent first), paginated 5 at a time
+  if (monthWorkouts.length === 0) {
+    els.recordsList.innerHTML = '<p class="empty-state">Nenhum treino registrado neste mês ainda.</p>';
     els.recordsPager.hidden = true;
     state.recordsPage = 0;
   } else {
-    var pageCount = Math.ceil(weekWorkouts.length / RECORDS_PAGE_SIZE);
+    var pageCount = Math.ceil(monthWorkouts.length / RECORDS_PAGE_SIZE);
     if (state.recordsPage >= pageCount) state.recordsPage = pageCount - 1;
     if (state.recordsPage < 0) state.recordsPage = 0;
 
     var start = state.recordsPage * RECORDS_PAGE_SIZE;
-    var pageItems = weekWorkouts.slice(start, start + RECORDS_PAGE_SIZE);
+    var pageItems = monthWorkouts.slice(start, start + RECORDS_PAGE_SIZE);
 
     els.recordsList.innerHTML = pageItems.map(function (w) {
       return '<div class="record-row">' +
@@ -421,6 +448,77 @@ function renderPainel() {
   }
 }
 
+// ── render: Meta screen ──
+function renderMeta() {
+  els.inputGoal.value = state.monthlyGoal;
+
+  if (state.loading || state.loadError) {
+    els.evolutionList.innerHTML = '';
+    return;
+  }
+
+  var now = new Date();
+  var goal = state.monthlyGoal;
+  var range = monthRange(now);
+  var monthCount = state.workouts.filter(function (w) {
+    var d = parseISO(w.date);
+    return d >= range.start && d <= range.end;
+  }).length;
+  var pct = goal ? Math.min(100, Math.round((monthCount / goal) * 100)) : 0;
+
+  els.metaProgressBar.style.width = pct + '%';
+  els.metaProgressPct.textContent = pct + '% da meta';
+  els.metaProgressCount.textContent = monthCount + ' de ' + goal + (goal === 1 ? ' treino' : ' treinos');
+
+  var months = [];
+  for (var i = EVOLUTION_MONTHS - 1; i >= 0; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth(), label: MONTHS_PT[d.getMonth()] + '/' + String(d.getFullYear()).slice(2) });
+  }
+
+  els.evolutionList.innerHTML = months.map(function (m) {
+    var mCount = state.workouts.filter(function (w) {
+      var d = parseISO(w.date);
+      return d.getFullYear() === m.year && d.getMonth() === m.month;
+    }).length;
+    var barPct = goal ? Math.min(100, Math.round((mCount / goal) * 100)) : 0;
+    var isCurrent = m.year === now.getFullYear() && m.month === now.getMonth();
+    return '<div class="evolution-row' + (isCurrent ? ' is-current' : '') + '">' +
+      '<span class="evolution-label">' + m.label + '</span>' +
+      '<div class="evolution-bar"><div class="evolution-bar-fill" style="width:' + barPct + '%"></div></div>' +
+      '<span class="evolution-count">' + mCount + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+els.btnSaveGoal.addEventListener('click', function () {
+  if (state.savingGoal) return;
+
+  var val = parseInt(els.inputGoal.value, 10);
+  if (!val || val < 1) val = 1;
+  if (val > 30) val = 30;
+  els.inputGoal.value = val;
+
+  state.savingGoal = true;
+  els.btnSaveGoal.disabled = true;
+
+  updateSettings(val)
+    .then(function () {
+      state.monthlyGoal = val;
+      renderPainel();
+      renderMeta();
+      showGoalToast('Meta atualizada para ' + val + (val === 1 ? ' treino/mês.' : ' treinos/mês.'));
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar meta', err);
+      showGoalToast('Não foi possível salvar a meta. Tente de novo.');
+    })
+    .finally(function () {
+      state.savingGoal = false;
+      els.btnSaveGoal.disabled = false;
+    });
+});
+
 // ── init ──
 els.inputDate.value = state.dateVal;
 startTimerLoop();
@@ -437,6 +535,13 @@ fetchWorkouts()
     state.loading = false;
     state.loadError = true;
   })
-  .finally(function () {
-    if (state.tab === 'painel') renderPainel();
-  });
+  .finally(renderActiveTab);
+
+fetchSettings()
+  .then(function (row) {
+    state.monthlyGoal = row.monthly_goal;
+  })
+  .catch(function (err) {
+    console.error('Falha ao carregar meta', err);
+  })
+  .finally(renderActiveTab);
