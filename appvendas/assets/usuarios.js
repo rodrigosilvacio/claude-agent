@@ -61,7 +61,7 @@ async function loadRows(view, term) {
 
   const { data, error } = await supabase
     .from("usuarios")
-    .select("id, nome, login, role, ativo, created_at, empresa:empresas(nome_fantasia)")
+    .select("id, nome, login, role, ativo, empresa_id, created_at, empresa:empresas(nome_fantasia)")
     .order("nome", { ascending: true });
 
   const card = view.querySelector(".card");
