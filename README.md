@@ -356,20 +356,30 @@ de estoque, quando (e se) a proposta virar uma venda de verdade.
   `create-stripe-checkout`), reaproveitando a mesma infra Resend do
   `appvendas-lembretes`/Oráculo. Marca a proposta como `enviada`
   automaticamente se ainda estiver em `draft`.
-- **Integração com Vendas (nenhuma proposta aprovada fica "solta"):** ao
-  aprovar, `crm.js` pergunta se a proposta vira venda agora. Se sim, monta um
-  "prefill" (cliente/lead, itens, desconto, observações — mesmo mecanismo
-  `setVendaPrefill`/`consumeVendaPrefill` já usado por Agenda → Vendas) e
-  navega para `#/vendas`; a proposta só é marcada como convertida
-  (`propostas.venda_id`/`convertida_em`, migration `0032`) **depois** que a
-  venda é registrada de verdade em `vendas.js` — nunca antes, senão um
-  pagamento Stripe abandonado deixaria a proposta "convertida" sem venda por
-  trás. Quem recusar a conversão na hora não perde a chance: enquanto
-  `venda_id` for nulo, o detalhe da proposta mostra "Aprovada, ainda não
-  convertida" e o botão "Converter em venda" continua disponível. Itens de
-  serviço (tipo `servico`) não migram para a venda — Loja só vende produto
-  físico, serviço é Matrícula (mesma regra de `catalogo.js`); o usuário é
-  avisado de quais itens ficaram de fora. Depois de vinculada a uma venda, a
+- **Integração com Vendas/Matrículas (nenhuma proposta aprovada fica
+  "solta"):** ao aprovar, `crm.js` pergunta se a proposta já vira negócio
+  agora. Item de produto físico vira **Venda** (Loja); item de serviço vira
+  **Matrícula** — mesma separação de `catalogo.js` (Loja só vende produto
+  físico; serviço é sempre Matrícula). Uma proposta pode ter só um tipo, ou
+  os dois — nesse caso os dois destinos são preenchidos em sequência (venda
+  primeiro, depois matrícula), sem o vendedor ter que reabrir a proposta e
+  copiar os dados na mão. Em qualquer caso, o "prefill" (mesmo mecanismo
+  `setVendaPrefill`/`setMatriculaPrefill` já usado por Agenda → Vendas/
+  Matrículas) carrega cliente/lead, itens, **o preço negociado na proposta**
+  (não o de catálogo — `criar_matricula` ganhou o parâmetro
+  `p_valor_servico_override` pra isso, migration `0033`) e o desconto
+  (aplicado uma única vez, no primeiro registro gerado, pra não descontar a
+  mesma proposta duas vezes quando ela vira venda + matrícula). Uma proposta
+  só é marcada como convertida (`propostas.venda_id`/`matricula_id`/
+  `convertida_em`, migrations `0032`/`0033`) **depois** que o registro existe
+  de verdade em `vendas.js`/`matriculas.js` — nunca antes, senão um
+  pagamento Stripe abandonado deixaria a proposta "convertida" sem nada por
+  trás. Quem recusar a conversão na hora não perde a chance: o detalhe da
+  proposta mostra "Aprovada, ainda não convertida em venda/matrícula"
+  separadamente pra cada destino que ela precisa, e o botão "Converter…"
+  continua disponível enquanto sobrar algum. Matrícula exige cliente
+  cadastrado (não aceita lead sem cadastro) — um lead com item de serviço é
+  avisado a virar cliente primeiro. Depois de qualquer conversão iniciada, a
   proposta trava (sem editar/aprovar/reprovar) — só imprimir/reenviar.
 
 **Banco:** migration `0031_create_crm_propostas.sql` cria as tabelas
@@ -379,7 +389,11 @@ funções `criar_proposta`/`atualizar_proposta`/`atualizar_status_proposta`
 `anon`, que ganha `EXECUTE` por padrão em toda função nova neste projeto;
 mesma pegadinha corrigida em `0006`/`0012` para funções anteriores). A
 migration `0032_propostas_venda_link.sql` acrescenta `propostas.venda_id`
-(FK para `vendas`) e `convertida_em`.
+(FK para `vendas`) e `convertida_em`. A migration
+`0033_propostas_matricula_link_e_preco_override.sql` acrescenta
+`propostas.matricula_id` (FK para `matriculas`) e o parâmetro
+`p_valor_servico_override` em `criar_matricula` (preço negociado na
+proposta, no lugar do preço de catálogo do curso/serviço).
 
 ### Lembretes e cobranças (`supabase/functions/appvendas-lembretes`)
 

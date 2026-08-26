@@ -13,7 +13,8 @@
 import { supabase } from "./supabaseClient.js";
 import {
   showToast, openModal, closeModal, confirmDialog, formatCurrency, formatDate, escapeHtml,
-  createSearchSelect, registerAutoRefresh, withButtonLock, friendlyPgError, exportCsv, formatCsvNumber, setVendaPrefill,
+  createSearchSelect, registerAutoRefresh, withButtonLock, friendlyPgError, exportCsv, formatCsvNumber,
+  setVendaPrefill, setMatriculaPrefill,
 } from "./app.js";
 import { isAdmin, getCurrentUsuario } from "./auth.js";
 import { loadClientesAtivos, loadProdutosAtivos, loadEmpresasAtivas, clienteSearchOptions, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
@@ -503,7 +504,7 @@ async function loadHistorico(content, state, opts = {}) {
   const from = state.page * HISTORICO_PAGE_SIZE;
   let query = supabase
     .from("propostas")
-    .select("id, numero, tipo_contato, lead_nome, data_proposta, total, status, venda_id, venda:vendas(numero), cliente:clientes(nome), vendedor:usuarios(nome)", { count: "exact" })
+    .select("id, numero, tipo_contato, lead_nome, data_proposta, total, status, venda_id, venda:vendas(numero), matricula_id, matricula:matriculas(numero), cliente:clientes(nome), vendedor:usuarios(nome)", { count: "exact" })
     .order("numero", { ascending: false });
   if (state.status) query = query.eq("status", state.status);
 
@@ -540,7 +541,9 @@ async function loadHistorico(content, state, opts = {}) {
             <td class="cell-num">${formatCurrency(p.total)}</td>
             <td>
               <span class="status status--${p.status}">${statusLabel(p.status)}</span>
-              ${p.status === "aprovada" ? (p.venda_id ? `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">Venda #${p.venda?.numero ?? "?"}</div>` : `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">Não convertida</div>`) : ""}
+              ${p.status === "aprovada" ? `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">${
+                [p.venda_id ? `Venda #${p.venda?.numero ?? "?"}` : null, p.matricula_id ? `Matrícula #${p.matricula?.numero ?? "?"}` : null].filter(Boolean).join(" · ") || "Não convertida"
+              }</div>` : ""}
             </td>
             <td class="cell-actions">
               <button type="button" class="btn btn--ghost btn--sm" data-detail="${p.id}">Detalhes</button>
@@ -615,19 +618,26 @@ async function editarProposta(id) {
   activateTab("nova");
 }
 
-// ── Conversão em venda (integração CRM → Vendas) ─────────────────────────
+// ── Conversão (integração CRM → Vendas/Matrículas) ──────────────────────
 //
 // Objetivo: nenhuma proposta aprovada deve ficar "solta" sem se saber se
-// virou negócio de fato. Em vez de criar a venda por baixo dos panos aqui
-// (duplicando toda a lógica de carrinho/pagamento/estoque de vendas.js),
-// isto só monta o "prefill" e navega pra tela de Vendas — ela é quem
-// finaliza a venda de verdade (RPC criar_venda) e só DEPOIS disso, no
-// sucesso, marca a proposta como convertida (ver finalizarComSucesso em
-// vendas.js). Assim, uma venda abandonada no meio do caminho (aba fechada,
-// pagamento Stripe cancelado) nunca deixa a proposta marcada como
-// "convertida" sem uma venda de verdade por trás — mesmo racional do fluxo
-// Agenda → Vendas já existente (setVendaPrefill/consumeVendaPrefill).
-async function iniciarConversaoParaVenda(propostaId) {
+// virou negócio de fato. Regra: item de produto físico vira Venda (Loja);
+// item de serviço vira Matrícula — mesma separação que já existe no resto
+// do app (catalogo.js: Loja só vende produto físico, serviço é parcelado
+// só em Matrículas). Uma proposta pode ter só um tipo, ou os dois — nesse
+// caso os dois destinos são preenchidos, um depois do outro.
+//
+// Em vez de criar venda/matrícula por baixo dos panos aqui (duplicando toda
+// a lógica de carrinho/pagamento/estoque/parcelamento), isto só monta o
+// "prefill" e navega pra tela certa — quem finaliza de verdade (RPC
+// criar_venda/criar_matricula) é vendas.js/matriculas.js, e só DEPOIS do
+// sucesso é que a proposta é marcada como convertida
+// (propostas.venda_id/matricula_id/convertida_em). Assim, uma venda ou
+// matrícula abandonada no meio do caminho (aba fechada, Stripe cancelado)
+// nunca deixa a proposta "convertida" sem um registro de verdade por trás —
+// mesmo racional do fluxo Agenda → Vendas/Matrículas já existente
+// (setVendaPrefill/setMatriculaPrefill).
+async function iniciarConversaoProposta(propostaId) {
   const [{ data: proposta, error }, { data: itensData }] = await Promise.all([
     supabase.from("propostas").select("*, cliente:clientes(nome)").eq("id", propostaId).single(),
     supabase.from("proposta_itens").select("*, produto:produtos(nome, tipo)").eq("proposta_id", propostaId).order("created_at", { ascending: true }),
@@ -638,17 +648,22 @@ async function iniciarConversaoParaVenda(propostaId) {
     return;
   }
 
-  // Vendas (Loja) só aceita produto físico — serviço é vendido/parcelado só
-  // por Matrículas (mesma regra de catalogo.js/loadProdutosVendaveis). Uma
-  // proposta pode misturar os dois tipos; só os itens físicos migram para o
-  // carrinho da venda, e avisamos claramente sobre o que ficou de fora em
-  // vez de tentar adicionar e falhar silenciosamente lá na frente.
-  const itensFisicos = (itensData || []).filter((i) => i.produto?.tipo !== "servico");
+  const itensProduto = (itensData || []).filter((i) => i.produto?.tipo !== "servico");
   const itensServico = (itensData || []).filter((i) => i.produto?.tipo === "servico");
 
-  if (itensFisicos.length === 0) {
-    showToast("Esta proposta só tem itens de serviço — registre-os como Matrícula, não como venda.", "error");
+  if (itensProduto.length === 0 && itensServico.length === 0) {
+    showToast("Esta proposta não tem itens para converter.", "error");
     return;
+  }
+
+  // Matrícula sempre exige um cliente cadastrado (matriculas.cliente_id não
+  // aceita nulo) — diferente de venda, que aceita cliente em branco. Um lead
+  // com item de serviço não tem como virar matrícula direto.
+  const clienteIdReal = proposta.tipo_contato === "cliente" ? proposta.cliente_id : null;
+  const podeMatricula = itensServico.length > 0 && Boolean(clienteIdReal);
+  if (itensServico.length > 0 && !clienteIdReal) {
+    showToast("Esta proposta tem item(ns) de serviço, mas o contato é um lead sem cadastro — cadastre-o como cliente antes de converter em matrícula.", "error");
+    if (itensProduto.length === 0) return;
   }
 
   const obsPartes = [`Convertida da proposta #${proposta.numero}.`];
@@ -658,27 +673,64 @@ async function iniciarConversaoParaVenda(propostaId) {
     if (proposta.contato_email) obsPartes.push(`E-mail: ${proposta.contato_email}.`);
   }
   if (proposta.observacoes) obsPartes.push(`Obs. da proposta: ${proposta.observacoes}`);
-  if (itensServico.length > 0) {
-    obsPartes.push(`${itensServico.length} item(ns) de serviço não migrado(s) (registrar como Matrícula): ${itensServico.map((i) => i.produto?.nome || "Produto").join(", ")}.`);
-  }
+  const observacoes = obsPartes.join(" ");
+
+  // O desconto da proposta é um valor único sobre o total — aplicado só no
+  // primeiro registro gerado (venda, se houver produto; senão a 1ª
+  // matrícula), pra não descontar a mesma quantia mais de uma vez quando a
+  // proposta se desdobra em vários registros.
+  const descontoTotal = Number(proposta.desconto || 0);
+  const descontoNaVenda = itensProduto.length > 0 ? descontoTotal : 0;
+  const descontoNaPrimeiraMatricula = itensProduto.length === 0 ? descontoTotal : 0;
+
+  const filaServicos = podeMatricula
+    ? itensServico.map((i) => ({ produto_id: i.produto_id, nome: i.produto?.nome || "Produto", preco_unitario: Number(i.preco_unitario) }))
+    : [];
 
   closeModal();
 
-  if (itensServico.length > 0) {
-    showToast(`${itensServico.length} item(ns) de serviço da proposta não foram para o carrinho — registre-os como Matrícula.`, "error");
+  if (itensServico.length > 0 && !podeMatricula) {
+    showToast(`${itensServico.length} item(ns) de serviço da proposta não foram migrados — cadastre o lead como cliente e registre-os como Matrícula manualmente.`, "error");
   }
 
-  setVendaPrefill({
-    propostaId: proposta.id,
-    propostaNumero: proposta.numero,
-    clienteId: proposta.tipo_contato === "cliente" ? proposta.cliente_id : null,
-    clienteNome: proposta.cliente?.nome || null,
-    empresaId: proposta.empresa_id,
-    desconto: Number(proposta.desconto || 0),
-    itens: itensFisicos.map((i) => ({ produto_id: i.produto_id, nome: i.produto?.nome || "Produto", quantidade: i.quantidade, preco_unitario: Number(i.preco_unitario) })),
-    observacoes: obsPartes.join(" "),
-  });
-  window.location.hash = "#/vendas";
+  if (itensProduto.length > 0) {
+    setVendaPrefill({
+      propostaId: proposta.id,
+      propostaNumero: proposta.numero,
+      clienteId: clienteIdReal,
+      clienteNome: proposta.cliente?.nome || null,
+      empresaId: proposta.empresa_id,
+      desconto: descontoNaVenda,
+      itens: itensProduto.map((i) => ({ produto_id: i.produto_id, nome: i.produto?.nome || "Produto", quantidade: i.quantidade, preco_unitario: Number(i.preco_unitario) })),
+      observacoes,
+      // Fila de serviços pendentes: vendas.js não faz nada com isto além de
+      // repassar pra Matrículas depois que a venda for finalizada (ver
+      // finalizarComSucesso em vendas.js) — mantém os dois destinos da mesma
+      // proposta encadeados num só fluxo, sem o vendedor ter que caçar o
+      // resto manualmente.
+      pendingServicos: filaServicos,
+      pendingServicosDesconto: descontoNaPrimeiraMatricula,
+    });
+    window.location.hash = "#/vendas";
+    return;
+  }
+
+  if (podeMatricula) {
+    const [primeiro, ...resto] = filaServicos;
+    setMatriculaPrefill({
+      propostaId: proposta.id,
+      propostaNumero: proposta.numero,
+      clienteId: clienteIdReal,
+      clienteNome: proposta.cliente?.nome || null,
+      empresaId: proposta.empresa_id,
+      produtoId: primeiro.produto_id,
+      precoUnitario: primeiro.preco_unitario,
+      desconto: descontoNaPrimeiraMatricula,
+      observacoes,
+      pendingServicos: resto,
+    });
+    window.location.hash = "#/matriculas";
+  }
 }
 
 // ── Envio por e-mail (edge function enviar-proposta) ────────────────────
@@ -769,7 +821,7 @@ async function showDetail(propostaId, onClose) {
   body.innerHTML = `<div class="empty-state">Carregando…</div>`;
 
   const [{ data: proposta, error: propostaError }, { data: itensData }] = await Promise.all([
-    supabase.from("propostas").select("*, cliente:clientes(nome, telefone, email), vendedor:usuarios(nome), empresa:empresas(nome_fantasia, nome_aplicacao), venda:vendas(numero)").eq("id", propostaId).single(),
+    supabase.from("propostas").select("*, cliente:clientes(nome, telefone, email), vendedor:usuarios(nome), empresa:empresas(nome_fantasia, nome_aplicacao), venda:vendas(numero), matricula:matriculas(numero)").eq("id", propostaId).single(),
     supabase.from("proposta_itens").select("*, produto:produtos(nome, tipo)").eq("proposta_id", propostaId).order("created_at", { ascending: true }),
   ]);
 
@@ -784,6 +836,15 @@ async function showDetail(propostaId, onClose) {
   const contatoTelefone = proposta.contato_telefone || proposta.cliente?.telefone || "—";
   const contatoEmail = proposta.contato_email || proposta.cliente?.email || "";
   const podeEnviarEmail = Boolean(contatoEmail);
+  const temItemProduto = (itensData || []).some((i) => i.produto?.tipo !== "servico");
+  const temItemServico = (itensData || []).some((i) => i.produto?.tipo === "servico");
+  // "Convertida" só quando cada destino que a proposta precisa (venda e/ou
+  // matrícula, conforme os tipos de item que ela carrega) já tem registro
+  // vinculado — uma proposta mista só some do radar quando os dois lados
+  // existirem de verdade.
+  const totalmenteConvertida = (!temItemProduto || proposta.venda_id) && (!temItemServico || proposta.matricula_id);
+  const algumaConversaoFeita = Boolean(proposta.venda_id || proposta.matricula_id);
+  const labelConverter = temItemProduto && temItemServico ? "Converter (venda + matrícula)" : temItemServico ? "Converter em matrícula" : "Converter em venda";
 
   body.innerHTML = `
     <div class="receipt receipt--plain" style="padding: 0;">
@@ -797,7 +858,8 @@ async function showDetail(propostaId, onClose) {
       ${proposta.condicoes_pagamento ? `<div class="receipt__row"><span>Pagamento</span><span>${escapeHtml(proposta.condicoes_pagamento)}</span></div>` : ""}
       ${proposta.prazo_entrega ? `<div class="receipt__row"><span>Entrega</span><span>${escapeHtml(proposta.prazo_entrega)}</span></div>` : ""}
       <div class="receipt__row"><span>Status</span><span class="status status--${proposta.status}">${statusLabel(proposta.status)}</span></div>
-      ${proposta.status === "aprovada" ? `<div class="receipt__row"><span>Venda</span><span>${proposta.venda_id ? `Convertida — venda #${proposta.venda?.numero ?? "?"}` : "Ainda não convertida em venda"}</span></div>` : ""}
+      ${proposta.status === "aprovada" && temItemProduto ? `<div class="receipt__row"><span>Venda</span><span>${proposta.venda_id ? `Convertida — venda #${proposta.venda?.numero ?? "?"}` : "Ainda não convertida em venda"}</span></div>` : ""}
+      ${proposta.status === "aprovada" && temItemServico ? `<div class="receipt__row"><span>Matrícula</span><span>${proposta.matricula_id ? `Convertida — matrícula #${proposta.matricula?.numero ?? "?"}` : "Ainda não convertida em matrícula"}</span></div>` : ""}
       ${proposta.status === "reprovada" && proposta.motivo ? `<div class="receipt__row"><span>Motivo</span><span>${escapeHtml(proposta.motivo)}</span></div>` : ""}
       ${proposta.observacoes ? `<div class="receipt__row"><span>Obs.</span><span>${escapeHtml(proposta.observacoes)}</span></div>` : ""}
       <div class="receipt__tear"></div>
@@ -821,10 +883,10 @@ async function showDetail(propostaId, onClose) {
     <div class="form-actions" style="justify-content: flex-start; flex-wrap: wrap;">
       <button type="button" class="btn btn--ghost" id="detail-imprimir">Imprimir / PDF</button>
       <button type="button" class="btn btn--ghost" id="detail-email" ${podeEnviarEmail ? "" : "disabled title=\"Sem e-mail cadastrado para este contato\""}>Enviar por e-mail</button>
-      ${proposta.status === "draft" && !proposta.venda_id ? `<button type="button" class="btn btn--ghost" id="detail-editar">Editar</button>` : ""}
-      ${proposta.status !== "aprovada" && proposta.status !== "reprovada" && !proposta.venda_id ? `<button type="button" class="btn btn--primary" id="detail-aprovar">Aprovar</button>` : ""}
-      ${proposta.status === "aprovada" && !proposta.venda_id ? `<button type="button" class="btn btn--primary" id="detail-converter-venda">Converter em venda</button>` : ""}
-      ${proposta.status !== "reprovada" && !proposta.venda_id ? `<button type="button" class="btn btn--danger" id="detail-reprovar">Reprovar</button>` : ""}
+      ${proposta.status === "draft" && !algumaConversaoFeita ? `<button type="button" class="btn btn--ghost" id="detail-editar">Editar</button>` : ""}
+      ${proposta.status !== "aprovada" && proposta.status !== "reprovada" && !algumaConversaoFeita ? `<button type="button" class="btn btn--primary" id="detail-aprovar">Aprovar</button>` : ""}
+      ${proposta.status === "aprovada" && !totalmenteConvertida ? `<button type="button" class="btn btn--primary" id="detail-converter">${escapeHtml(labelConverter)}</button>` : ""}
+      ${proposta.status !== "reprovada" && !algumaConversaoFeita ? `<button type="button" class="btn btn--danger" id="detail-reprovar">Reprovar</button>` : ""}
     </div>
   `;
 
@@ -858,23 +920,23 @@ async function showDetail(propostaId, onClose) {
     }
     showToast("Proposta aprovada.");
 
-    // Integração CRM → Vendas: uma proposta aprovada não deve ficar "solta"
-    // sem se saber se virou negócio — por isso perguntamos na hora. Quem
-    // recusar não perde a chance depois: enquanto não houver venda vinculada,
-    // o botão "Converter em venda" continua disponível no detalhe (ver botão
-    // #detail-converter-venda mais abaixo).
+    // Integração CRM → Vendas/Matrículas: uma proposta aprovada não deve
+    // ficar "solta" sem se saber se virou negócio — por isso perguntamos na
+    // hora. Quem recusar não perde a chance depois: enquanto não estiver
+    // totalmente convertida, o botão "Converter…" continua disponível no
+    // detalhe (ver botão #detail-converter mais abaixo).
     const converter = await confirmDialog(
-      "Proposta aprovada! Deseja transformar esta proposta em uma venda agora?",
-      { confirmLabel: "Sim, criar venda", danger: false },
+      "Proposta aprovada! Deseja transformar esta proposta em uma venda/matrícula agora?",
+      { confirmLabel: "Sim, converter", danger: false },
     );
     if (converter) {
-      await iniciarConversaoParaVenda(proposta.id);
+      await iniciarConversaoProposta(proposta.id);
       return;
     }
     await showDetail(proposta.id, onClose);
   }));
 
-  body.querySelector("#detail-converter-venda")?.addEventListener("click", (e) => withButtonLock(e.currentTarget, () => iniciarConversaoParaVenda(proposta.id)));
+  body.querySelector("#detail-converter")?.addEventListener("click", (e) => withButtonLock(e.currentTarget, () => iniciarConversaoProposta(proposta.id)));
 
   const reprovarBtn = body.querySelector("#detail-reprovar");
   reprovarBtn?.addEventListener("click", () => {

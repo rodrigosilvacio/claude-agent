@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient.js";
-import { showToast, openModal, confirmDialog, formatCurrency, formatDate, formatDateTime, escapeHtml, createSearchSelect, registerAutoRefresh, consumeVendaPrefill, withButtonLock, friendlyPgError, exportCsv } from "./app.js";
+import { showToast, openModal, confirmDialog, formatCurrency, formatDate, formatDateTime, escapeHtml, createSearchSelect, registerAutoRefresh, consumeVendaPrefill, setMatriculaPrefill, withButtonLock, friendlyPgError, exportCsv } from "./app.js";
 import { isAdmin } from "./auth.js";
 import { loadClientesAtivos, loadProdutosVendaveis, loadEmpresasAtivas, clienteSearchOptions, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
 import { paytilesHtml, mountPaytiles, chamarCriarCheckoutStripe, mostrarModalStripe } from "./pagamento.js";
@@ -13,12 +13,19 @@ let cart = [];
 // app.js). Sempre no máximo um dos dois preenchido; null numa venda avulsa.
 let agendamentoOrigemId = null;
 let propostaOrigemId = null;
+// Itens de serviço da mesma proposta, ainda pendentes de virar Matrícula
+// depois que esta venda for finalizada (proposta mista: produto físico vira
+// Venda, serviço vira Matrícula — ver iniciarConversaoProposta em crm.js).
+// Null quando a origem não é uma proposta, ou quando ela não tinha item de
+// serviço nenhum.
+let pendingServicosOrigem = null;
 
 export async function render(view, actionsEl) {
   actionsEl.innerHTML = "";
   cart = [];
   agendamentoOrigemId = null;
   propostaOrigemId = null;
+  pendingServicosOrigem = null;
 
   view.innerHTML = `
     <div class="toolbar" style="margin-bottom: 1.25rem;">
@@ -59,6 +66,18 @@ function renderNovaVenda(content) {
   const prefill = consumeVendaPrefill();
   agendamentoOrigemId = prefill?.agendamentoId || null;
   propostaOrigemId = prefill?.propostaId || null;
+  pendingServicosOrigem = propostaOrigemId && prefill?.pendingServicos?.length
+    ? {
+        itens: prefill.pendingServicos,
+        clienteId: prefill.clienteId,
+        clienteNome: prefill.clienteNome,
+        empresaId: prefill.empresaId,
+        desconto: prefill.pendingServicosDesconto || 0,
+        observacoes: prefill.observacoes,
+        propostaId: prefill.propostaId,
+        propostaNumero: prefill.propostaNumero,
+      }
+    : null;
   const admin = isAdmin();
 
   content.innerHTML = `
@@ -344,6 +363,35 @@ function renderNovaVenda(content) {
         .from("propostas")
         .update({ venda_id: vendaId, convertida_em: new Date().toISOString() })
         .eq("id", propostaOrigemId);
+
+      // Proposta mista (produto + serviço): depois da venda, continua o
+      // encadeamento pra Matrículas com o(s) item(ns) de serviço que
+      // ficaram de fora do carrinho — ver iniciarConversaoProposta em
+      // crm.js. Sem isso o vendedor teria que abrir Matrículas na mão e
+      // digitar tudo de novo.
+      if (!propError && pendingServicosOrigem) {
+        const [primeiro, ...resto] = pendingServicosOrigem.itens;
+        setMatriculaPrefill({
+          propostaId: pendingServicosOrigem.propostaId,
+          propostaNumero: pendingServicosOrigem.propostaNumero,
+          clienteId: pendingServicosOrigem.clienteId,
+          clienteNome: pendingServicosOrigem.clienteNome,
+          empresaId: pendingServicosOrigem.empresaId,
+          produtoId: primeiro.produto_id,
+          precoUnitario: primeiro.preco_unitario,
+          desconto: pendingServicosOrigem.desconto,
+          observacoes: pendingServicosOrigem.observacoes,
+          pendingServicos: resto,
+        });
+        showToast("Venda registrada. Agora finalize a matrícula do(s) item(ns) de serviço da mesma proposta.");
+        agendamentoOrigemId = null;
+        propostaOrigemId = null;
+        pendingServicosOrigem = null;
+        cart = [];
+        window.location.hash = "#/matriculas";
+        return;
+      }
+
       showToast(propError ? "Venda registrada, mas não foi possível marcar a proposta como convertida." : "Venda registrada e proposta marcada como convertida.", propError ? "error" : "success");
     } else {
       showToast(mensagemBase);
@@ -351,6 +399,7 @@ function renderNovaVenda(content) {
 
     agendamentoOrigemId = null;
     propostaOrigemId = null;
+    pendingServicosOrigem = null;
     cart = [];
     produtosOptions = await loadProdutosVendaveis();
     renderNovaVenda(content);
