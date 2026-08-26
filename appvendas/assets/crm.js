@@ -551,8 +551,17 @@ async function loadHistorico(content, state, opts = {}) {
     </table>
   `;
 
+  // Reconsulta a lista assim que o modal de detalhe fecha — sem isso, uma
+  // troca de status feita lá dentro (aprovar/reprovar/enviar) só aparecia na
+  // tabela depois do próximo ciclo do auto-refresh (até 15s) ou de um F5, já
+  // que o auto-refresh fica pausado com o modal aberto (ver isBusy() em
+  // registerAutoRefresh, app.js). A checagem de `#propostas-table` evita
+  // recarregar em cima de outra aba, caso o modal feche depois de já ter
+  // navegado pra "Nova proposta" (ex.: botão Editar).
   tableWrap.querySelectorAll("[data-detail]").forEach((btn) => {
-    btn.addEventListener("click", () => showDetail(btn.dataset.detail));
+    btn.addEventListener("click", () => showDetail(btn.dataset.detail, () => {
+      if (content.querySelector("#propostas-table")) loadHistorico(content, state, { silent: true });
+    }));
   });
 
   renderHistoricoPagination(content, state, count);
@@ -755,8 +764,8 @@ function imprimirProposta(proposta, itensData) {
 }
 
 // ── Detalhe (modal): visão completa + troca de status + imprimir/enviar ─
-async function showDetail(propostaId) {
-  const body = openModal("Detalhes da proposta");
+async function showDetail(propostaId, onClose) {
+  const body = openModal("Detalhes da proposta", { onClose });
   body.innerHTML = `<div class="empty-state">Carregando…</div>`;
 
   const [{ data: proposta, error: propostaError }, { data: itensData }] = await Promise.all([
@@ -829,7 +838,7 @@ async function showDetail(propostaId) {
       try {
         const res = await chamarEnviarProposta(proposta.id);
         showToast(`Proposta enviada para ${res.destinatario}.`);
-        await showDetail(proposta.id);
+        await showDetail(proposta.id, onClose);
       } catch (err) {
         errorEl.innerHTML = `<div class="form-error">${escapeHtml(err.message)}</div>`;
       }
@@ -862,7 +871,7 @@ async function showDetail(propostaId) {
       await iniciarConversaoParaVenda(proposta.id);
       return;
     }
-    await showDetail(proposta.id);
+    await showDetail(proposta.id, onClose);
   }));
 
   body.querySelector("#detail-converter-venda")?.addEventListener("click", (e) => withButtonLock(e.currentTarget, () => iniciarConversaoParaVenda(proposta.id)));
@@ -890,7 +899,7 @@ async function showDetail(propostaId) {
         return;
       }
       showToast("Proposta reprovada.");
-      await showDetail(proposta.id);
+      await showDetail(proposta.id, onClose);
     });
   });
 }
