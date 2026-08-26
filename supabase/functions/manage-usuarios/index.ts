@@ -63,10 +63,20 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
+  // `admin.auth.getUser(token)` faz uma checagem "ao vivo" contra a sessão no
+  // GoTrue (diferente de RLS/auth.uid(), que só decodifica o JWT) — por isso
+  // esta é a única rota do app onde uma sessão revogada/expirada aparece como
+  // falha (as outras telas falam com o Postgres via RLS, que não confere a
+  // sessão). Guardamos separado se "havia token mas a sessão não é mais
+  // válida" para não confundir isso com "não é administrador" (ver uso logo
+  // abaixo) — um admin de verdade vendo "acesso restrito a administradores"
+  // não tem como adivinhar que o problema é sessão expirada, não permissão.
   let caller: { id: string } | null = null;
+  let sessaoInvalida = false;
   if (token) {
     const { data, error } = await admin.auth.getUser(token);
     if (!error && data.user) caller = { id: data.user.id };
+    else sessaoInvalida = true;
   }
 
   const { count, error: countError } = await admin
@@ -103,7 +113,10 @@ Deno.serve(async (req: Request) => {
     }
     body.role = "admin";
   } else if (!callerIsAdmin) {
-    return json({ error: "Acesso restrito a administradores." }, 403);
+    const msg = sessaoInvalida
+      ? "Sua sessão expirou. Atualize a página e faça login novamente."
+      : "Acesso restrito a administradores.";
+    return json({ error: msg }, 403);
   }
 
   // No bootstrap, ninguém está logado ainda (caller é null) — trata como

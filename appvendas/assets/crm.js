@@ -12,8 +12,8 @@
 
 import { supabase } from "./supabaseClient.js";
 import {
-  showToast, openModal, closeModal, formatCurrency, formatDate, escapeHtml,
-  createSearchSelect, registerAutoRefresh, withButtonLock, friendlyPgError, exportCsv, formatCsvNumber,
+  showToast, openModal, closeModal, confirmDialog, formatCurrency, formatDate, escapeHtml,
+  createSearchSelect, registerAutoRefresh, withButtonLock, friendlyPgError, exportCsv, formatCsvNumber, setVendaPrefill,
 } from "./app.js";
 import { isAdmin, getCurrentUsuario } from "./auth.js";
 import { loadClientesAtivos, loadProdutosAtivos, loadEmpresasAtivas, clienteSearchOptions, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
@@ -503,7 +503,7 @@ async function loadHistorico(content, state, opts = {}) {
   const from = state.page * HISTORICO_PAGE_SIZE;
   let query = supabase
     .from("propostas")
-    .select("id, numero, tipo_contato, lead_nome, data_proposta, total, status, cliente:clientes(nome), vendedor:usuarios(nome)", { count: "exact" })
+    .select("id, numero, tipo_contato, lead_nome, data_proposta, total, status, venda_id, venda:vendas(numero), cliente:clientes(nome), vendedor:usuarios(nome)", { count: "exact" })
     .order("numero", { ascending: false });
   if (state.status) query = query.eq("status", state.status);
 
@@ -538,7 +538,10 @@ async function loadHistorico(content, state, opts = {}) {
             <td>${escapeHtml(p.tipo_contato === "cliente" ? (p.cliente?.nome || "—") : (p.lead_nome || "—"))} <span class="cell-muted">(${p.tipo_contato === "cliente" ? "cliente" : "lead"})</span></td>
             <td class="cell-muted">${escapeHtml(p.vendedor?.nome || "—")}</td>
             <td class="cell-num">${formatCurrency(p.total)}</td>
-            <td><span class="status status--${p.status}">${statusLabel(p.status)}</span></td>
+            <td>
+              <span class="status status--${p.status}">${statusLabel(p.status)}</span>
+              ${p.status === "aprovada" ? (p.venda_id ? `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">Venda #${p.venda?.numero ?? "?"}</div>` : `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">Não convertida</div>`) : ""}
+            </td>
             <td class="cell-actions">
               <button type="button" class="btn btn--ghost btn--sm" data-detail="${p.id}">Detalhes</button>
             </td>
@@ -548,8 +551,17 @@ async function loadHistorico(content, state, opts = {}) {
     </table>
   `;
 
+  // Reconsulta a lista assim que o modal de detalhe fecha — sem isso, uma
+  // troca de status feita lá dentro (aprovar/reprovar/enviar) só aparecia na
+  // tabela depois do próximo ciclo do auto-refresh (até 15s) ou de um F5, já
+  // que o auto-refresh fica pausado com o modal aberto (ver isBusy() em
+  // registerAutoRefresh, app.js). A checagem de `#propostas-table` evita
+  // recarregar em cima de outra aba, caso o modal feche depois de já ter
+  // navegado pra "Nova proposta" (ex.: botão Editar).
   tableWrap.querySelectorAll("[data-detail]").forEach((btn) => {
-    btn.addEventListener("click", () => showDetail(btn.dataset.detail));
+    btn.addEventListener("click", () => showDetail(btn.dataset.detail, () => {
+      if (content.querySelector("#propostas-table")) loadHistorico(content, state, { silent: true });
+    }));
   });
 
   renderHistoricoPagination(content, state, count);
@@ -601,6 +613,72 @@ async function editarProposta(id) {
     preco_unitario: Number(i.preco_unitario),
   }));
   activateTab("nova");
+}
+
+// ── Conversão em venda (integração CRM → Vendas) ─────────────────────────
+//
+// Objetivo: nenhuma proposta aprovada deve ficar "solta" sem se saber se
+// virou negócio de fato. Em vez de criar a venda por baixo dos panos aqui
+// (duplicando toda a lógica de carrinho/pagamento/estoque de vendas.js),
+// isto só monta o "prefill" e navega pra tela de Vendas — ela é quem
+// finaliza a venda de verdade (RPC criar_venda) e só DEPOIS disso, no
+// sucesso, marca a proposta como convertida (ver finalizarComSucesso em
+// vendas.js). Assim, uma venda abandonada no meio do caminho (aba fechada,
+// pagamento Stripe cancelado) nunca deixa a proposta marcada como
+// "convertida" sem uma venda de verdade por trás — mesmo racional do fluxo
+// Agenda → Vendas já existente (setVendaPrefill/consumeVendaPrefill).
+async function iniciarConversaoParaVenda(propostaId) {
+  const [{ data: proposta, error }, { data: itensData }] = await Promise.all([
+    supabase.from("propostas").select("*, cliente:clientes(nome)").eq("id", propostaId).single(),
+    supabase.from("proposta_itens").select("*, produto:produtos(nome, tipo)").eq("proposta_id", propostaId).order("created_at", { ascending: true }),
+  ]);
+
+  if (error || !proposta) {
+    showToast(error ? friendlyPgError(error) : "Proposta não encontrada.", "error");
+    return;
+  }
+
+  // Vendas (Loja) só aceita produto físico — serviço é vendido/parcelado só
+  // por Matrículas (mesma regra de catalogo.js/loadProdutosVendaveis). Uma
+  // proposta pode misturar os dois tipos; só os itens físicos migram para o
+  // carrinho da venda, e avisamos claramente sobre o que ficou de fora em
+  // vez de tentar adicionar e falhar silenciosamente lá na frente.
+  const itensFisicos = (itensData || []).filter((i) => i.produto?.tipo !== "servico");
+  const itensServico = (itensData || []).filter((i) => i.produto?.tipo === "servico");
+
+  if (itensFisicos.length === 0) {
+    showToast("Esta proposta só tem itens de serviço — registre-os como Matrícula, não como venda.", "error");
+    return;
+  }
+
+  const obsPartes = [`Convertida da proposta #${proposta.numero}.`];
+  if (proposta.tipo_contato === "lead") {
+    obsPartes.push(`Lead: ${proposta.lead_nome}.`);
+    if (proposta.contato_telefone) obsPartes.push(`Tel.: ${proposta.contato_telefone}.`);
+    if (proposta.contato_email) obsPartes.push(`E-mail: ${proposta.contato_email}.`);
+  }
+  if (proposta.observacoes) obsPartes.push(`Obs. da proposta: ${proposta.observacoes}`);
+  if (itensServico.length > 0) {
+    obsPartes.push(`${itensServico.length} item(ns) de serviço não migrado(s) (registrar como Matrícula): ${itensServico.map((i) => i.produto?.nome || "Produto").join(", ")}.`);
+  }
+
+  closeModal();
+
+  if (itensServico.length > 0) {
+    showToast(`${itensServico.length} item(ns) de serviço da proposta não foram para o carrinho — registre-os como Matrícula.`, "error");
+  }
+
+  setVendaPrefill({
+    propostaId: proposta.id,
+    propostaNumero: proposta.numero,
+    clienteId: proposta.tipo_contato === "cliente" ? proposta.cliente_id : null,
+    clienteNome: proposta.cliente?.nome || null,
+    empresaId: proposta.empresa_id,
+    desconto: Number(proposta.desconto || 0),
+    itens: itensFisicos.map((i) => ({ produto_id: i.produto_id, nome: i.produto?.nome || "Produto", quantidade: i.quantidade, preco_unitario: Number(i.preco_unitario) })),
+    observacoes: obsPartes.join(" "),
+  });
+  window.location.hash = "#/vendas";
 }
 
 // ── Envio por e-mail (edge function enviar-proposta) ────────────────────
@@ -686,13 +764,13 @@ function imprimirProposta(proposta, itensData) {
 }
 
 // ── Detalhe (modal): visão completa + troca de status + imprimir/enviar ─
-async function showDetail(propostaId) {
-  const body = openModal("Detalhes da proposta");
+async function showDetail(propostaId, onClose) {
+  const body = openModal("Detalhes da proposta", { onClose });
   body.innerHTML = `<div class="empty-state">Carregando…</div>`;
 
   const [{ data: proposta, error: propostaError }, { data: itensData }] = await Promise.all([
-    supabase.from("propostas").select("*, cliente:clientes(nome, telefone, email), vendedor:usuarios(nome), empresa:empresas(nome_fantasia, nome_aplicacao)").eq("id", propostaId).single(),
-    supabase.from("proposta_itens").select("*, produto:produtos(nome)").eq("proposta_id", propostaId).order("created_at", { ascending: true }),
+    supabase.from("propostas").select("*, cliente:clientes(nome, telefone, email), vendedor:usuarios(nome), empresa:empresas(nome_fantasia, nome_aplicacao), venda:vendas(numero)").eq("id", propostaId).single(),
+    supabase.from("proposta_itens").select("*, produto:produtos(nome, tipo)").eq("proposta_id", propostaId).order("created_at", { ascending: true }),
   ]);
 
   if (!proposta) {
@@ -719,6 +797,7 @@ async function showDetail(propostaId) {
       ${proposta.condicoes_pagamento ? `<div class="receipt__row"><span>Pagamento</span><span>${escapeHtml(proposta.condicoes_pagamento)}</span></div>` : ""}
       ${proposta.prazo_entrega ? `<div class="receipt__row"><span>Entrega</span><span>${escapeHtml(proposta.prazo_entrega)}</span></div>` : ""}
       <div class="receipt__row"><span>Status</span><span class="status status--${proposta.status}">${statusLabel(proposta.status)}</span></div>
+      ${proposta.status === "aprovada" ? `<div class="receipt__row"><span>Venda</span><span>${proposta.venda_id ? `Convertida — venda #${proposta.venda?.numero ?? "?"}` : "Ainda não convertida em venda"}</span></div>` : ""}
       ${proposta.status === "reprovada" && proposta.motivo ? `<div class="receipt__row"><span>Motivo</span><span>${escapeHtml(proposta.motivo)}</span></div>` : ""}
       ${proposta.observacoes ? `<div class="receipt__row"><span>Obs.</span><span>${escapeHtml(proposta.observacoes)}</span></div>` : ""}
       <div class="receipt__tear"></div>
@@ -742,9 +821,10 @@ async function showDetail(propostaId) {
     <div class="form-actions" style="justify-content: flex-start; flex-wrap: wrap;">
       <button type="button" class="btn btn--ghost" id="detail-imprimir">Imprimir / PDF</button>
       <button type="button" class="btn btn--ghost" id="detail-email" ${podeEnviarEmail ? "" : "disabled title=\"Sem e-mail cadastrado para este contato\""}>Enviar por e-mail</button>
-      ${proposta.status === "draft" ? `<button type="button" class="btn btn--ghost" id="detail-editar">Editar</button>` : ""}
-      ${proposta.status !== "aprovada" && proposta.status !== "reprovada" ? `<button type="button" class="btn btn--primary" id="detail-aprovar">Aprovar</button>` : ""}
-      ${proposta.status !== "reprovada" ? `<button type="button" class="btn btn--danger" id="detail-reprovar">Reprovar</button>` : ""}
+      ${proposta.status === "draft" && !proposta.venda_id ? `<button type="button" class="btn btn--ghost" id="detail-editar">Editar</button>` : ""}
+      ${proposta.status !== "aprovada" && proposta.status !== "reprovada" && !proposta.venda_id ? `<button type="button" class="btn btn--primary" id="detail-aprovar">Aprovar</button>` : ""}
+      ${proposta.status === "aprovada" && !proposta.venda_id ? `<button type="button" class="btn btn--primary" id="detail-converter-venda">Converter em venda</button>` : ""}
+      ${proposta.status !== "reprovada" && !proposta.venda_id ? `<button type="button" class="btn btn--danger" id="detail-reprovar">Reprovar</button>` : ""}
     </div>
   `;
 
@@ -758,7 +838,7 @@ async function showDetail(propostaId) {
       try {
         const res = await chamarEnviarProposta(proposta.id);
         showToast(`Proposta enviada para ${res.destinatario}.`);
-        await showDetail(proposta.id);
+        await showDetail(proposta.id, onClose);
       } catch (err) {
         errorEl.innerHTML = `<div class="form-error">${escapeHtml(err.message)}</div>`;
       }
@@ -777,8 +857,24 @@ async function showDetail(propostaId) {
       return;
     }
     showToast("Proposta aprovada.");
-    await showDetail(proposta.id);
+
+    // Integração CRM → Vendas: uma proposta aprovada não deve ficar "solta"
+    // sem se saber se virou negócio — por isso perguntamos na hora. Quem
+    // recusar não perde a chance depois: enquanto não houver venda vinculada,
+    // o botão "Converter em venda" continua disponível no detalhe (ver botão
+    // #detail-converter-venda mais abaixo).
+    const converter = await confirmDialog(
+      "Proposta aprovada! Deseja transformar esta proposta em uma venda agora?",
+      { confirmLabel: "Sim, criar venda", danger: false },
+    );
+    if (converter) {
+      await iniciarConversaoParaVenda(proposta.id);
+      return;
+    }
+    await showDetail(proposta.id, onClose);
   }));
+
+  body.querySelector("#detail-converter-venda")?.addEventListener("click", (e) => withButtonLock(e.currentTarget, () => iniciarConversaoParaVenda(proposta.id)));
 
   const reprovarBtn = body.querySelector("#detail-reprovar");
   reprovarBtn?.addEventListener("click", () => {
@@ -803,7 +899,7 @@ async function showDetail(propostaId) {
         return;
       }
       showToast("Proposta reprovada.");
-      await showDetail(proposta.id);
+      await showDetail(proposta.id, onClose);
     });
   });
 }

@@ -356,13 +356,30 @@ de estoque, quando (e se) a proposta virar uma venda de verdade.
   `create-stripe-checkout`), reaproveitando a mesma infra Resend do
   `appvendas-lembretes`/Oráculo. Marca a proposta como `enviada`
   automaticamente se ainda estiver em `draft`.
+- **Integração com Vendas (nenhuma proposta aprovada fica "solta"):** ao
+  aprovar, `crm.js` pergunta se a proposta vira venda agora. Se sim, monta um
+  "prefill" (cliente/lead, itens, desconto, observações — mesmo mecanismo
+  `setVendaPrefill`/`consumeVendaPrefill` já usado por Agenda → Vendas) e
+  navega para `#/vendas`; a proposta só é marcada como convertida
+  (`propostas.venda_id`/`convertida_em`, migration `0032`) **depois** que a
+  venda é registrada de verdade em `vendas.js` — nunca antes, senão um
+  pagamento Stripe abandonado deixaria a proposta "convertida" sem venda por
+  trás. Quem recusar a conversão na hora não perde a chance: enquanto
+  `venda_id` for nulo, o detalhe da proposta mostra "Aprovada, ainda não
+  convertida" e o botão "Converter em venda" continua disponível. Itens de
+  serviço (tipo `servico`) não migram para a venda — Loja só vende produto
+  físico, serviço é Matrícula (mesma regra de `catalogo.js`); o usuário é
+  avisado de quais itens ficaram de fora. Depois de vinculada a uma venda, a
+  proposta trava (sem editar/aprovar/reprovar) — só imprimir/reenviar.
 
-**Banco (migration `0031_create_crm_propostas.sql`):** tabelas `propostas`
-e `proposta_itens`, RLS multiempresa igual ao restante do app, funções
-`criar_proposta`/`atualizar_proposta`/`atualizar_status_proposta`
+**Banco:** migration `0031_create_crm_propostas.sql` cria as tabelas
+`propostas`/`proposta_itens`, RLS multiempresa igual ao restante do app, e as
+funções `criar_proposta`/`atualizar_proposta`/`atualizar_status_proposta`
 (`security definer`, `EXECUTE` restrito a `authenticated` — revogado de
 `anon`, que ganha `EXECUTE` por padrão em toda função nova neste projeto;
-mesma pegadinha corrigida em `0006`/`0012` para funções anteriores).
+mesma pegadinha corrigida em `0006`/`0012` para funções anteriores). A
+migration `0032_propostas_venda_link.sql` acrescenta `propostas.venda_id`
+(FK para `vendas`) e `convertida_em`.
 
 ### Lembretes e cobranças (`supabase/functions/appvendas-lembretes`)
 

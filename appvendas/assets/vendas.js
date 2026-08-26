@@ -8,14 +8,17 @@ let clientesOptions = [];
 let produtosOptions = [];
 let empresasOptions = [];
 let cart = [];
-// Id do agendamento que originou a venda em andamento (fluxo Agenda → Vendas,
-// via setVendaPrefill/consumeVendaPrefill em app.js). Null numa venda avulsa.
+// Id do agendamento ou da proposta que originou a venda em andamento (fluxos
+// Agenda → Vendas e CRM → Vendas, via setVendaPrefill/consumeVendaPrefill em
+// app.js). Sempre no máximo um dos dois preenchido; null numa venda avulsa.
 let agendamentoOrigemId = null;
+let propostaOrigemId = null;
 
 export async function render(view, actionsEl) {
   actionsEl.innerHTML = "";
   cart = [];
   agendamentoOrigemId = null;
+  propostaOrigemId = null;
 
   view.innerHTML = `
     <div class="toolbar" style="margin-bottom: 1.25rem;">
@@ -55,14 +58,20 @@ export async function render(view, actionsEl) {
 function renderNovaVenda(content) {
   const prefill = consumeVendaPrefill();
   agendamentoOrigemId = prefill?.agendamentoId || null;
+  propostaOrigemId = prefill?.propostaId || null;
   const admin = isAdmin();
 
   content.innerHTML = `
     <div class="venda-layout">
       <div class="card card-section venda-itens">
-        ${prefill ? `
+        ${agendamentoOrigemId ? `
           <div class="form-info">
             Confirmando venda do atendimento de ${escapeHtml(prefill.clienteNome || "cliente sem cadastro")} em ${formatDate(prefill.dataAgendamento)} às ${prefill.horario}. Revise os dados e finalize para registrar a venda.
+          </div>
+        ` : ""}
+        ${propostaOrigemId ? `
+          <div class="form-info">
+            Convertendo a proposta #${prefill.propostaNumero} em venda. Revise os dados e finalize para registrar — a proposta será marcada como convertida.
           </div>
         ` : ""}
         ${admin ? `
@@ -124,7 +133,7 @@ function renderNovaVenda(content) {
         <div class="receipt__row"><span>Subtotal</span><span id="r-subtotal">${formatCurrency(0)}</span></div>
         <div class="receipt__row">
           <span>Desconto</span>
-          <input class="input" type="number" id="v-desconto" min="0" step="0.01" value="0" style="width: 110px; text-align:right; font-family: var(--font-mono);" />
+          <input class="input" type="number" id="v-desconto" min="0" step="0.01" value="${prefill?.desconto || 0}" style="width: 110px; text-align:right; font-family: var(--font-mono);" />
         </div>
         <div class="receipt__tear"></div>
         <div class="receipt__total"><span>Total</span><span id="r-total">${formatCurrency(0)}</span></div>
@@ -147,10 +156,14 @@ function renderNovaVenda(content) {
     obsInput.focus();
   });
 
-  if (prefill) {
+  if (agendamentoOrigemId) {
     obsField.hidden = false;
     obsToggle.hidden = true;
     obsInput.value = `Venda referente ao atendimento agendado em ${formatDate(prefill.dataAgendamento)} às ${prefill.horario}.${prefill.observacoes ? ` Obs. do agendamento: ${prefill.observacoes}` : ""}`;
+  } else if (propostaOrigemId) {
+    obsField.hidden = false;
+    obsToggle.hidden = true;
+    obsInput.value = prefill.observacoes || `Convertida da proposta #${prefill.propostaNumero}.`;
   }
 
   const empresaSelect = admin
@@ -158,6 +171,7 @@ function renderNovaVenda(content) {
         container: content.querySelector('[data-mount="v-empresa"]'),
         placeholder: "Buscar empresa…",
         options: empresaSearchOptions(empresasOptions),
+        value: prefill?.empresaId || null,
         allowClear: false,
       })
     : null;
@@ -196,6 +210,14 @@ function renderNovaVenda(content) {
     const produto = produtosOptions.find((p) => p.id === prefill.produtoId);
     if (produto) cart.push({ produto_id: produto.id, nome: produto.nome, quantidade: 1, preco_unitario: produto.preco });
     else showToast("Produto do atendimento não encontrado no catálogo de vendas.", "error");
+  } else if (prefill?.itens?.length) {
+    // Vindo de uma proposta aprovada: preço pode ter sido negociado (diferente
+    // do preço de tabela), por isso usa o preço da proposta, não o do catálogo.
+    prefill.itens.forEach((item) => {
+      const produto = produtosOptions.find((p) => p.id === item.produto_id);
+      if (produto) cart.push({ produto_id: produto.id, nome: produto.nome, quantidade: item.quantidade, preco_unitario: item.preco_unitario });
+      else showToast(`Produto "${item.nome}" da proposta não encontrado no catálogo de vendas.`, "error");
+    });
   }
 
   function renderCart() {
@@ -296,29 +318,39 @@ function renderNovaVenda(content) {
       return;
     }
 
-    const { error } = await supabase.rpc("criar_venda", { ...payload, p_forma_pagamento: formaPagamento });
+    const { data: novaVendaId, error } = await supabase.rpc("criar_venda", { ...payload, p_forma_pagamento: formaPagamento });
 
     if (error) {
       errorEl.innerHTML = `<div class="form-error">${escapeHtml(friendlyPgError(error))}</div>`;
       return;
     }
 
-    await finalizarComSucesso();
+    await finalizarComSucesso(novaVendaId);
   }));
 
   // Fluxo Stripe: a venda só é criada (e só fecha) depois do pagamento —
-  // ver iniciarPagamentoStripe/mostrarModalStripe abaixo. `agendamentoOrigemId`
-  // e `cart` seguem em memória durante todo o processo, por isso
-  // finalizarComSucesso lê essas variáveis do escopo de renderNovaVenda.
-  async function finalizarComSucesso(mensagemBase = "Venda registrada com sucesso.") {
+  // ver iniciarPagamentoStripe/mostrarModalStripe abaixo. `agendamentoOrigemId`/
+  // `propostaOrigemId` e `cart` seguem em memória durante todo o processo, por
+  // isso finalizarComSucesso lê essas variáveis do escopo de renderNovaVenda.
+  async function finalizarComSucesso(vendaId, mensagemBase = "Venda registrada com sucesso.") {
     if (agendamentoOrigemId) {
       const { error: agError } = await supabase.from("agendamentos").update({ status: "atendido" }).eq("id", agendamentoOrigemId);
       showToast(agError ? "Venda registrada, mas não foi possível confirmar o atendimento na agenda." : "Venda registrada e atendimento confirmado.", agError ? "error" : "success");
+    } else if (propostaOrigemId) {
+      // Só marca a proposta como convertida DEPOIS da venda existir de fato —
+      // nunca antes, senão um pagamento Stripe abandonado (ou uma falha aqui)
+      // deixaria a proposta "convertida" sem venda nenhuma por trás.
+      const { error: propError } = await supabase
+        .from("propostas")
+        .update({ venda_id: vendaId, convertida_em: new Date().toISOString() })
+        .eq("id", propostaOrigemId);
+      showToast(propError ? "Venda registrada, mas não foi possível marcar a proposta como convertida." : "Venda registrada e proposta marcada como convertida.", propError ? "error" : "success");
     } else {
       showToast(mensagemBase);
     }
 
     agendamentoOrigemId = null;
+    propostaOrigemId = null;
     cart = [];
     produtosOptions = await loadProdutosVendaveis();
     renderNovaVenda(content);
@@ -347,7 +379,7 @@ function renderNovaVenda(content) {
       table: "vendas",
       successStatus: "confirmada",
       checkoutUrl: data.url,
-      onConfirmada: () => finalizarComSucesso("Pagamento confirmado. Venda registrada."),
+      onConfirmada: () => finalizarComSucesso(data.venda_id, "Pagamento confirmado. Venda registrada."),
     });
   }
 
