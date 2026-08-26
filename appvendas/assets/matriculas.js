@@ -22,6 +22,10 @@ let empresasOptions = [];
 // Matrículas, via setMatriculaPrefill/consumeMatriculaPrefill em app.js).
 // Null numa matrícula avulsa ou numa renovação.
 let agendamentoOrigemId = null;
+// Id da proposta que originou a matrícula em andamento (fluxo CRM →
+// Matrículas, via setMatriculaPrefill/consumeMatriculaPrefill em app.js).
+// Null numa matrícula avulsa, renovação ou vinda de agendamento.
+let propostaOrigemId = null;
 // Referência à função activate(tab) de render() — permite que "Renovar
 // matrícula" (chamada de dentro do modal de detalhes, na aba Histórico)
 // volte pra aba "Nova matrícula" já com os dados prontos, sem depender de
@@ -39,6 +43,7 @@ function todayStr() {
 export async function render(view, actionsEl) {
   actionsEl.innerHTML = "";
   agendamentoOrigemId = null;
+  propostaOrigemId = null;
 
   view.innerHTML = `
     <div class="toolbar" style="margin-bottom: 1.25rem;">
@@ -73,6 +78,7 @@ export async function render(view, actionsEl) {
 function renderNovaMatricula(content) {
   const prefill = consumeMatriculaPrefill();
   agendamentoOrigemId = prefill?.agendamentoId || null;
+  propostaOrigemId = prefill?.propostaId || null;
   const admin = isAdmin();
 
   content.innerHTML = `
@@ -83,6 +89,10 @@ function renderNovaMatricula(content) {
     ` : prefill?.renovacao ? `
       <div class="form-info">
         Renovando a matrícula #${prefill.origemNumero} de ${escapeHtml(prefill.clienteNome || "cliente")}. Cliente, curso, duração, parcelas e forma de pagamento vieram preenchidos — revise e finalize para criar a nova matrícula.
+      </div>
+    ` : propostaOrigemId ? `
+      <div class="form-info">
+        Convertendo a proposta #${prefill.propostaNumero} em matrícula${prefill.pendingServicos?.length ? ` (restam ${prefill.pendingServicos.length + 1} itens de serviço desta proposta, um de cada vez)` : ""}. Revise os dados e finalize — a proposta será marcada como convertida.
       </div>
     ` : ""}
 
@@ -160,9 +170,10 @@ function renderNovaMatricula(content) {
 
         <div class="enroll-summary__lines">
           <div class="enroll-summary__row"><span>Valor do curso/serviço</span><span id="r-mensalidade">${formatCurrency(0)}</span></div>
+          <p class="field-hint" id="r-mensalidade-hint" ${prefill?.precoUnitario != null ? "" : "hidden"} style="margin: -0.4rem 0 0.4rem;">Preço negociado na proposta de origem — diferente do preço de catálogo do curso.</p>
           <div class="enroll-summary__row enroll-summary__row--input">
             <span>Desconto</span>
-            <input class="input enroll-summary__discount" type="number" id="m-desconto" min="0" step="0.01" value="0" />
+            <input class="input enroll-summary__discount" type="number" id="m-desconto" min="0" step="0.01" value="${prefill?.desconto || 0}" />
           </div>
           <div class="enroll-summary__row"><span>Total contratado</span><span id="r-total">${formatCurrency(0)}</span></div>
         </div>
@@ -206,6 +217,10 @@ function renderNovaMatricula(content) {
     obsField.hidden = false;
     obsToggle.hidden = true;
     obsInput.value = `Renovação da matrícula #${prefill.origemNumero}.`;
+  } else if (propostaOrigemId) {
+    obsField.hidden = false;
+    obsToggle.hidden = true;
+    obsInput.value = prefill.observacoes || `Convertida da proposta #${prefill.propostaNumero}.`;
   }
 
   const empresaSelect = admin
@@ -213,6 +228,7 @@ function renderNovaMatricula(content) {
         container: content.querySelector('[data-mount="m-empresa"]'),
         placeholder: "Buscar empresa…",
         options: empresaSearchOptions(empresasOptions),
+        value: prefill?.empresaId || null,
         allowClear: false,
       })
     : null;
@@ -226,6 +242,13 @@ function renderNovaMatricula(content) {
     onChange: () => updateAlunoInfo(),
   });
 
+  // Preço negociado numa proposta do CRM — substitui o preço de catálogo do
+  // curso enquanto o produto selecionado continuar sendo o da proposta.
+  // Trocar o curso manualmente invalida o valor negociado (era o preço de UM
+  // produto específico, não vale pra outro) — por isso onChange abaixo
+  // sempre zera, mesmo quando o novo valor é o mesmo id de novo.
+  let precoOverride = prefill?.precoUnitario != null ? Number(prefill.precoUnitario) : null;
+
   const produtoSelect = createSearchSelect({
     container: content.querySelector('[data-mount="m-produto"]'),
     placeholder: "Buscar curso/serviço por nome ou SKU…",
@@ -233,6 +256,7 @@ function renderNovaMatricula(content) {
     value: prefill?.produtoId || null,
     allowClear: false,
     onChange: () => {
+      precoOverride = null;
       updateTotals();
       updateCursoInfo();
     },
@@ -313,11 +337,14 @@ function renderNovaMatricula(content) {
   }
 
   // Duração (meses) é só um campo informativo — não entra nesta conta.
-  // Quem define o valor é o preço do produto (curso/serviço), ver
+  // Quem define o valor é o preço do produto (curso/serviço) — ou o preço
+  // negociado na proposta de origem, se houver (precoOverride) —, ver
   // criar_matricula.
   function updateTotals() {
     const produto = produtosOptions.find((p) => p.id === produtoSelect.getValue());
-    const valorServico = produto ? Number(produto.preco || 0) : 0;
+    const valorServico = precoOverride != null ? precoOverride : (produto ? Number(produto.preco || 0) : 0);
+    const hintEl = content.querySelector("#r-mensalidade-hint");
+    if (hintEl) hintEl.hidden = precoOverride == null;
     const parcelas = Math.max(Number(parcelasInput.value || 0), 1);
     const desconto = Number(descontoInput.value || 0);
     const total = Math.max(valorServico - desconto, 0);
@@ -383,6 +410,7 @@ function renderNovaMatricula(content) {
       p_observacoes: content.querySelector("#m-obs").value || null,
     };
     if (admin) payload.p_empresa_id = empresaSelect.getValue();
+    if (precoOverride != null) payload.p_valor_servico_override = precoOverride;
 
     const formaPagamento = paytiles.getValue();
 
@@ -391,25 +419,68 @@ function renderNovaMatricula(content) {
       return;
     }
 
-    const { error } = await supabase.rpc("criar_matricula", { ...payload, p_forma_pagamento: formaPagamento });
+    const { data: novaMatriculaId, error } = await supabase.rpc("criar_matricula", { ...payload, p_forma_pagamento: formaPagamento });
 
     if (error) {
       errorEl.innerHTML = `<div class="form-error">${escapeHtml(friendlyPgError(error))}</div>`;
       return;
     }
 
-    await finalizarComSucesso();
+    await finalizarComSucesso(novaMatriculaId);
   }));
 
-  async function finalizarComSucesso(mensagemBase = "Matrícula registrada com sucesso.") {
+  // `prefill` (closure de renderNovaMatricula) segue disponível aqui — é de
+  // onde vem a fila de itens de serviço pendentes (pendingServicos) quando a
+  // origem é uma proposta do CRM com mais de um serviço.
+  async function finalizarComSucesso(matriculaId, mensagemBase = "Matrícula registrada com sucesso.") {
     if (agendamentoOrigemId) {
       const { error: agError } = await supabase.from("agendamentos").update({ status: "atendido" }).eq("id", agendamentoOrigemId);
       showToast(agError ? "Matrícula registrada, mas não foi possível confirmar o atendimento na agenda." : "Matrícula registrada e atendimento confirmado.", agError ? "error" : "success");
+    } else if (propostaOrigemId) {
+      // Só marca a proposta como convertida DEPOIS da matrícula existir de
+      // fato — nunca antes (mesmo racional do fluxo CRM → Vendas em
+      // vendas.js). Sobrescreve matricula_id a cada matrícula desta mesma
+      // proposta (pode gerar mais de uma, se houver mais de um curso na
+      // proposta) — a última criada é a que fica vinculada; as anteriores
+      // continuam rastreáveis pelo texto "Convertida da proposta #N" que
+      // cada uma leva nas observações.
+      const { error: propError } = await supabase
+        .from("propostas")
+        .update({ matricula_id: matriculaId, convertida_em: new Date().toISOString() })
+        .eq("id", propostaOrigemId);
+
+      const proximo = prefill?.pendingServicos?.[0];
+      if (!propError && proximo) {
+        const resto = prefill.pendingServicos.slice(1);
+        setMatriculaPrefill({
+          propostaId: prefill.propostaId,
+          propostaNumero: prefill.propostaNumero,
+          clienteId: prefill.clienteId,
+          clienteNome: prefill.clienteNome,
+          empresaId: prefill.empresaId,
+          produtoId: proximo.produto_id,
+          precoUnitario: proximo.preco_unitario,
+          // O desconto da proposta já foi aplicado nesta 1ª matrícula — as
+          // seguintes da mesma fila não descontam de novo.
+          desconto: 0,
+          observacoes: prefill.observacoes,
+          pendingServicos: resto,
+        });
+        showToast("Matrícula registrada. Continue com o próximo item de serviço da mesma proposta.");
+        agendamentoOrigemId = null;
+        propostaOrigemId = null;
+        produtosOptions = await loadProdutosServicos(PRODUTO_SERVICO_COLUMNS);
+        renderNovaMatricula(content);
+        return;
+      }
+
+      showToast(propError ? "Matrícula registrada, mas não foi possível marcar a proposta como convertida." : "Matrícula registrada e proposta marcada como convertida.", propError ? "error" : "success");
     } else {
       showToast(mensagemBase);
     }
 
     agendamentoOrigemId = null;
+    propostaOrigemId = null;
     produtosOptions = await loadProdutosServicos(PRODUTO_SERVICO_COLUMNS);
     renderNovaMatricula(content);
   }
@@ -438,7 +509,7 @@ function renderNovaMatricula(content) {
       table: "matriculas",
       successStatus: "ativa",
       checkoutUrl: data.url,
-      onConfirmada: () => finalizarComSucesso("Pagamento confirmado. Matrícula registrada."),
+      onConfirmada: () => finalizarComSucesso(data.matricula_id, "Pagamento confirmado. Matrícula registrada."),
     });
   }
 

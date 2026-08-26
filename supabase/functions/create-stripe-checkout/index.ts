@@ -164,6 +164,10 @@ async function criarCheckoutMatricula(
     p_observacoes: body.p_observacoes ?? null,
     p_empresa_id: body.p_empresa_id ?? null,
     p_status: "aguardando_pagamento",
+    // Valor negociado numa proposta do CRM (ver crm.js/matriculas.js) — sem
+    // isso, uma matrícula convertida via Stripe cobraria o preço de
+    // catálogo do curso, ignorando o que foi negociado na proposta.
+    p_valor_servico_override: body.p_valor_servico_override ?? null,
   });
 
   if (criarError || !matriculaId) {
