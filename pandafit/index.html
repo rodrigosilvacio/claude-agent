@@ -20,11 +20,11 @@
 
 <div class="app">
 
-  <!-- ───────── Painel da semana ───────── -->
+  <!-- ───────── Painel do mês ───────── -->
   <main class="screen" id="screen-painel" data-screen="painel">
     <div class="screen-head">
-      <div class="eyebrow" id="week-label">Semana</div>
-      <h1 class="title">Semana em movimento</h1>
+      <div class="eyebrow" id="month-label">Mês</div>
+      <h1 class="title">Mês em movimento</h1>
     </div>
 
     <div class="screen-body">
@@ -32,17 +32,17 @@
       <div class="ticket total-card">
         <span class="corner tl">+</span><span class="corner tr">+</span>
         <span class="corner bl">+</span><span class="corner br">+</span>
-        <div class="label">Total na semana</div>
+        <div class="label">Treinos no mês</div>
         <div class="total-row">
-          <span class="total-hours" id="week-hours">0</span>
-          <span class="total-mins" id="week-mins">h 00</span>
+          <span class="total-hours" id="month-count">0</span>
+          <span class="total-mins" id="month-goal-suffix">de 12</span>
         </div>
         <div class="bar">
           <div class="bar-fill" id="goal-bar"></div>
         </div>
         <div class="bar-caption">
           <span id="goal-pct">0% da meta</span>
-          <span id="goal-meta">meta 1h · 0 sessões</span>
+          <span id="goal-meta">meta 12 treinos/mês</span>
         </div>
       </div>
 
@@ -54,10 +54,10 @@
       <div class="section">
         <div class="section-head-row">
           <span class="section-title">Registros</span>
-          <span class="section-note" id="session-count-note">0 nesta semana</span>
+          <span class="section-note" id="session-count-note">0 neste mês</span>
         </div>
         <div id="records-list" class="records-list">
-          <p class="empty-state">Nenhum treino registrado nesta semana ainda.</p>
+          <p class="empty-state">Nenhum treino registrado neste mês ainda.</p>
         </div>
         <div id="records-pager" class="pager" hidden>
           <button type="button" class="pager-btn" id="pager-prev">‹ Anterior</button>
@@ -127,6 +127,45 @@
     </div>
   </main>
 
+  <!-- ───────── Meta ───────── -->
+  <main class="screen" id="screen-meta" data-screen="meta" hidden>
+    <div class="screen-head">
+      <h1 class="title">Meta</h1>
+    </div>
+
+    <div class="screen-body">
+
+      <div class="ticket goal-card">
+        <span class="corner tl">+</span><span class="corner tr">+</span>
+        <span class="corner bl">+</span><span class="corner br">+</span>
+        <div class="label">Meta mensal</div>
+        <label class="field goal-field">
+          <span class="field-label">Treinos por mês (1 a 30)</span>
+          <input type="number" id="input-goal" min="1" max="30" step="1" inputmode="numeric" />
+        </label>
+        <div class="toast" id="goal-toast" hidden></div>
+        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-goal">Salvar meta</button>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Progresso do mês</div>
+        <div class="bar">
+          <div class="bar-fill" id="meta-progress-bar"></div>
+        </div>
+        <div class="bar-caption">
+          <span id="meta-progress-pct">0% da meta</span>
+          <span id="meta-progress-count">0 de 12 treinos</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Evolução</div>
+        <div id="evolution-list" class="evolution-list"></div>
+      </div>
+
+    </div>
+  </main>
+
   <!-- ───────── Tab bar ───────── -->
   <nav class="tabbar">
     <button type="button" class="tab-btn" data-tab="painel">
@@ -136,6 +175,10 @@
     <button type="button" class="tab-btn" data-tab="registrar">
       <span class="tab-mark"></span>
       <span>Registrar</span>
+    </button>
+    <button type="button" class="tab-btn" data-tab="meta">
+      <span class="tab-mark"></span>
+      <span>Meta</span>
     </button>
   </nav>
 
