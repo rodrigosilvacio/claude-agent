@@ -289,6 +289,9 @@ estático + Supabase, sem build, no projeto `ClaudeProjects`.
   `cliente_id`, `produto_id`, `observacoes`).
 - `appvendas/assets/relatorios.js` — faturamento, ticket médio, produtos
   mais vendidos, melhores clientes e estoque baixo.
+- `appvendas/assets/crm.js` — tela "CRM" (grupo Movimentações): cadastro
+  de **Propostas** (orçamento para lead ou cliente). Ver subseção própria
+  abaixo.
 
 **Banco (migration `0004_create_appvendas_schema.sql`, já aplicada no
 projeto `ClaudeProjects`):** tabelas `clientes`, `fornecedores`, `produtos`,
@@ -327,6 +330,39 @@ retroativamente se mexer no schema de novo.
 > usada para validar telas end-to-end (Vendas, Agendamento) sem usar uma
 > conta pessoal — a senha está no gerenciador de senhas interno, não neste
 > arquivo. Rotacionar/remover antes de abrir o app além do piloto interno.
+
+### CRM · Propostas (`appvendas/assets/crm.js`, migration `0031`)
+
+Cadastro de propostas comerciais (orçamento) para um **lead** (nome digitado
+livremente, sem cadastro) ou um **cliente** já cadastrado — telefone/e-mail
+são buscados do cadastro do cliente (campo travado) ou digitados livremente
+para um lead. Cada proposta leva N produtos com preço editável por item (é
+um orçamento, não uma venda a preço de tabela) e calcula o total
+automaticamente; **nunca mexe em estoque** — só a tela de Vendas faz baixa
+de estoque, quando (e se) a proposta virar uma venda de verdade.
+
+- **Status:** `draft` → `enviada` → `aprovada`/`reprovada` (RPC
+  `atualizar_status_proposta`). Reprovar exige motivo (campo obrigatório,
+  também reforçado por `check` constraint na tabela). Sem matriz rígida de
+  transição — dá pra corrigir um status errado a qualquer momento.
+- **Edição:** só permitida em `draft` (RPC `atualizar_proposta` — depois de
+  enviada, mudar os itens por baixo geraria uma proposta diferente da que o
+  contato recebeu).
+- **Impressão/PDF:** sem lib nova — `crm.js` monta a proposta num container
+  escondido (`#print-proposta`) e chama `window.print()`; o diálogo de
+  impressão do navegador já oferece "Salvar como PDF" como destino.
+- **Envio por e-mail:** edge function `supabase/functions/enviar-proposta`
+  (verify_jwt ligado — chamado autenticado, mesmo racional de
+  `create-stripe-checkout`), reaproveitando a mesma infra Resend do
+  `appvendas-lembretes`/Oráculo. Marca a proposta como `enviada`
+  automaticamente se ainda estiver em `draft`.
+
+**Banco (migration `0031_create_crm_propostas.sql`):** tabelas `propostas`
+e `proposta_itens`, RLS multiempresa igual ao restante do app, funções
+`criar_proposta`/`atualizar_proposta`/`atualizar_status_proposta`
+(`security definer`, `EXECUTE` restrito a `authenticated` — revogado de
+`anon`, que ganha `EXECUTE` por padrão em toda função nova neste projeto;
+mesma pegadinha corrigida em `0006`/`0012` para funções anteriores).
 
 ### Lembretes e cobranças (`supabase/functions/appvendas-lembretes`)
 

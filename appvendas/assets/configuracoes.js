@@ -14,6 +14,7 @@ const MENU_ITEMS = [
   { key: "clientes", label: "Clientes" },
   { key: "produtos", label: "Produtos" },
   { key: "fornecedores", label: "Fornecedores" },
+  { key: "crm", label: "CRM (Propostas)" },
   { key: "vendas", label: "Loja" },
   { key: "agenda", label: "Agenda" },
   { key: "estoques", label: "Estoques" },

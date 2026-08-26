@@ -1052,6 +1052,10 @@ svg {
 .status--atrasada { color: var(--danger-deep); background: var(--danger-soft); }
 .status--entrada { color: var(--accent-deep); background: var(--accent-soft); }
 .status--saida { color: var(--danger-deep); background: var(--danger-soft); }
+.status--draft { color: var(--text-muted); background: var(--line); }
+.status--enviada { color: var(--info-deep); background: var(--info-soft); }
+.status--aprovada { color: var(--success); background: var(--success-soft); }
+.status--reprovada { color: var(--danger); background: var(--danger-soft); }
 
 /* ── Empty state ───────────────────────────────────────────────────── */
 
@@ -1162,6 +1166,15 @@ svg {
    venceria a media query e travava a linha em 3 colunas apertadas. */
 .form-grid--itens {
   grid-template-columns: 2fr 1fr auto;
+  align-items: end;
+}
+
+/* Linha "produto + quantidade + preço + adicionar" do CRM (Propostas):
+   mesma razão de ser da variante acima, só com uma coluna a mais porque o
+   preço do item é editável ali (é um orçamento, não uma venda a preço de
+   tabela). */
+.form-grid--itens-proposta {
+  grid-template-columns: 2fr 0.8fr 1fr auto;
   align-items: end;
 }
 
@@ -2218,5 +2231,71 @@ svg {
 
   .agenda-slot__actions {
     width: 100%;
+  }
+}
+
+/* ── Impressão de proposta (CRM) ──────────────────────────────────────
+   Sem lib de PDF: crm.js monta o conteúdo dentro de #print-proposta (criado
+   sob demanda) e chama window.print() — o próprio diálogo de impressão do
+   navegador já oferece "Salvar como PDF" como destino. Fica fora do fluxo
+   normal (display:none) e só aparece no @media print, escondendo o resto
+   do app nesse momento (body.is-printing, ligado/desligado por crm.js). */
+#print-proposta {
+  display: none;
+}
+
+@media print {
+  body.is-printing > *:not(#print-proposta) {
+    display: none !important;
+  }
+
+  body.is-printing #print-proposta {
+    display: block;
+    font-family: Arial, sans-serif;
+    color: #111;
+    padding: 1.5rem;
+  }
+
+  #print-proposta h1 {
+    font-size: 1.3rem;
+    margin: 0 0 0.2rem;
+  }
+
+  #print-proposta table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+
+  #print-proposta .print-info td {
+    padding: 0.2rem 0.4rem;
+  }
+
+  #print-proposta .print-info td:first-child {
+    color: #666;
+    width: 40%;
+  }
+
+  #print-proposta .print-itens th,
+  #print-proposta .print-itens td {
+    border-bottom: 1px solid #ddd;
+    padding: 0.35rem 0.5rem;
+    text-align: left;
+  }
+
+  #print-proposta .print-totais {
+    max-width: 260px;
+    margin-left: auto;
+  }
+
+  #print-proposta .print-totais td:last-child {
+    text-align: right;
+  }
+
+  #print-proposta .print-total-row td {
+    font-weight: 800;
+    border-top: 1px solid #111;
+    padding-top: 0.4rem;
   }
 }

@@ -1,0 +1,809 @@
+// ERPConnect — CRM: cadastro de Propostas (grupo Movimentações). Uma
+// proposta é um orçamento para um lead (campo livre) ou um cliente já
+// cadastrado, com múltiplos produtos e valor total — bem diferente de uma
+// venda: criar/editar uma proposta NUNCA mexe em estoque, só quando (e se)
+// ela virar uma venda de verdade pela tela de Vendas já existente.
+//
+// Estrutura das abas (Nova proposta / Propostas) e o carrinho de itens são
+// deliberadamente parecidos com vendas.js — mesmo padrão de tela já
+// validado neste app — mas com preço por item editável (é um orçamento, não
+// uma venda a preço de tabela) e um ciclo de status próprio (rascunho →
+// enviada → aprovada/reprovada).
+
+import { supabase } from "./supabaseClient.js";
+import {
+  showToast, openModal, closeModal, formatCurrency, formatDate, escapeHtml,
+  createSearchSelect, registerAutoRefresh, withButtonLock, friendlyPgError, exportCsv, formatCsvNumber,
+} from "./app.js";
+import { isAdmin, getCurrentUsuario } from "./auth.js";
+import { loadClientesAtivos, loadProdutosAtivos, loadEmpresasAtivas, clienteSearchOptions, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
+
+const ICON_LEAD = '<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6" stroke-dasharray="2 2"/></svg>';
+const ICON_CLIENTE = '<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>';
+
+const STATUS_LABELS = { draft: "Rascunho", enviada: "Enviada", aprovada: "Aprovada", reprovada: "Reprovada" };
+function statusLabel(status) {
+  return STATUS_LABELS[status] || status;
+}
+
+let clientesOptions = [];
+let produtosOptions = [];
+let empresasOptions = [];
+// Carrinho de produtos da proposta em edição e a proposta sendo editada (null
+// = nova proposta do zero). Módulo-scope, mesmo padrão de `cart` em
+// vendas.js: sobrevive à troca entre as abas "Nova proposta"/"Propostas"
+// dentro da mesma visita à tela, só é limpo no load da rota ou depois de
+// salvar/cancelar.
+let itens = [];
+let editingProposta = null;
+let activateTab = () => {};
+
+export async function render(view, actionsEl) {
+  actionsEl.innerHTML = "";
+  itens = [];
+  editingProposta = null;
+
+  view.innerHTML = `
+    <div class="toolbar" style="margin-bottom: 1.25rem;">
+      <div style="display:flex; gap:0.5rem;">
+        <button type="button" class="btn btn--primary" id="tab-nova">Nova proposta</button>
+        <button type="button" class="btn btn--ghost" id="tab-propostas">Propostas</button>
+      </div>
+    </div>
+    <div id="tab-content"></div>
+  `;
+
+  const tabNova = view.querySelector("#tab-nova");
+  const tabPropostas = view.querySelector("#tab-propostas");
+  const content = view.querySelector("#tab-content");
+
+  function activate(tab) {
+    tabNova.className = tab === "nova" ? "btn btn--primary" : "btn btn--ghost";
+    tabPropostas.className = tab === "propostas" ? "btn btn--primary" : "btn btn--ghost";
+    if (tab === "nova") {
+      actionsEl.innerHTML = "";
+      renderNovaProposta(content);
+    } else {
+      actionsEl.innerHTML = `<button type="button" class="btn btn--ghost" id="btn-exportar-csv">Exportar CSV</button>`;
+      actionsEl.querySelector("#btn-exportar-csv").addEventListener("click", exportarPropostasCsv);
+      renderHistorico(content);
+    }
+  }
+  activateTab = activate;
+
+  tabNova.addEventListener("click", () => activate("nova"));
+  tabPropostas.addEventListener("click", () => activate("propostas"));
+
+  [clientesOptions, produtosOptions, empresasOptions] = await Promise.all([loadClientesAtivos(), loadProdutosAtivos(), loadEmpresasAtivas()]);
+
+  activate("nova");
+}
+
+function renderNovaProposta(content) {
+  const admin = isAdmin();
+  const usuario = getCurrentUsuario();
+  const editing = editingProposta;
+  const tipoInicial = editing ? editing.tipo_contato : "lead";
+
+  content.innerHTML = `
+    <div class="venda-layout">
+      <div class="card card-section venda-itens">
+        ${admin && !editing ? `
+          <div class="field">
+            <label>Empresa<span class="field-required">*</span></label>
+            <div data-mount="p-empresa"></div>
+          </div>
+        ` : ""}
+
+        <div class="field">
+          <label>Contato</label>
+          <div class="paytiles" id="p-tipo-contato" role="radiogroup" aria-label="Tipo de contato" style="max-width: 280px;">
+            <button type="button" class="paytile ${tipoInicial === "lead" ? "is-active" : ""}" data-value="lead" role="radio" aria-checked="${tipoInicial === "lead"}">
+              <span class="paytile__icon">${ICON_LEAD}</span>
+              <span class="paytile__label">Lead</span>
+            </button>
+            <button type="button" class="paytile ${tipoInicial === "cliente" ? "is-active" : ""}" data-value="cliente" role="radio" aria-checked="${tipoInicial === "cliente"}">
+              <span class="paytile__icon">${ICON_CLIENTE}</span>
+              <span class="paytile__label">Cliente</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="p-contato-mount" style="margin-top: 0.9rem;"></div>
+
+        <div class="form-grid" style="margin-top: 1rem;">
+          <div class="field">
+            <label for="p-telefone">Telefone</label>
+            <input class="input" type="text" id="p-telefone" value="${escapeHtml(editing?.contato_telefone || "")}" />
+          </div>
+          <div class="field">
+            <label for="p-email">E-mail</label>
+            <input class="input" type="email" id="p-email" value="${escapeHtml(editing?.contato_email || "")}" />
+          </div>
+          <div class="field">
+            <label for="p-data">Data da proposta</label>
+            <input class="input" type="date" id="p-data" value="${editing?.data_proposta || new Date().toISOString().slice(0, 10)}" />
+          </div>
+          <div class="field">
+            <label for="p-validade">Válida até <span class="field-optional">opcional</span></label>
+            <input class="input" type="date" id="p-validade" value="${editing?.validade_ate || ""}" />
+          </div>
+          <div class="field">
+            <label for="p-condicoes">Condições de pagamento <span class="field-optional">opcional</span></label>
+            <input class="input" type="text" id="p-condicoes" placeholder="Ex.: à vista, 3x sem juros…" value="${escapeHtml(editing?.condicoes_pagamento || "")}" />
+          </div>
+          <div class="field">
+            <label for="p-prazo">Prazo de entrega <span class="field-optional">opcional</span></label>
+            <input class="input" type="text" id="p-prazo" placeholder="Ex.: 5 dias úteis" value="${escapeHtml(editing?.prazo_entrega || "")}" />
+          </div>
+        </div>
+
+        <p class="field-hint" style="margin: 0.5rem 0 0;">Vendedor responsável: <strong>${escapeHtml(editing?.vendedor?.nome || usuario?.nome || "—")}</strong></p>
+
+        <p class="section-title" style="margin-top: 1.5rem;">Produtos a oferecer</p>
+        <div class="form-grid form-grid--itens-proposta">
+          <div class="field">
+            <label>Produto</label>
+            <div data-mount="p-produto"></div>
+          </div>
+          <div class="field">
+            <label for="p-qtd">Qtd.</label>
+            <input class="input" type="number" id="p-qtd" min="1" step="1" value="1" />
+          </div>
+          <div class="field">
+            <label for="p-preco">Preço unit.</label>
+            <input class="input" type="number" id="p-preco" min="0" step="0.01" value="0" />
+          </div>
+          <div class="field">
+            <button type="button" class="btn btn--ghost" id="p-add-item">+ Adicionar</button>
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-top: 1rem;">
+          <table class="data-table" id="proposta-itens-table">
+            <thead>
+              <tr><th>Produto</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Preço</th><th style="text-align:right">Subtotal</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="field field--full" style="margin-top: 1rem;">
+          <label for="p-observacoes">Observações / condições gerais</label>
+          <textarea class="input" id="p-observacoes" rows="3">${escapeHtml(editing?.observacoes || "")}</textarea>
+        </div>
+      </div>
+
+      <div class="card receipt receipt--plain">
+        <p class="section-title">Resumo</p>
+        <div class="receipt__tear"></div>
+        <div class="receipt__row"><span>Subtotal</span><span id="p-subtotal">${formatCurrency(0)}</span></div>
+        <div class="receipt__row">
+          <span>Desconto</span>
+          <input class="input" type="number" id="p-desconto" min="0" step="0.01" value="${editing?.desconto || 0}" style="width: 110px; text-align:right; font-family: var(--font-mono);" />
+        </div>
+        <div class="receipt__tear"></div>
+        <div class="receipt__total"><span>Total</span><span id="p-total">${formatCurrency(0)}</span></div>
+        <button type="button" class="btn btn--primary" id="p-salvar" style="width:100%; justify-content:center; margin-top: 1.25rem;">${editing ? "Salvar alterações" : "Salvar rascunho"}</button>
+        ${editing ? `<button type="button" class="btn btn--ghost" id="p-cancelar-edicao" style="width:100%; justify-content:center; margin-top: 0.5rem;">Cancelar edição</button>` : ""}
+        <div id="p-error"></div>
+      </div>
+    </div>
+  `;
+
+  const cartBody = content.querySelector("#proposta-itens-table tbody");
+  const descontoInput = content.querySelector("#p-desconto");
+  const telefoneInput = content.querySelector("#p-telefone");
+  const emailInput = content.querySelector("#p-email");
+  const errorEl = content.querySelector("#p-error");
+  const contatoMount = content.querySelector("#p-contato-mount");
+
+  const empresaSelect = admin && !editing
+    ? createSearchSelect({
+        container: content.querySelector('[data-mount="p-empresa"]'),
+        placeholder: "Buscar empresa…",
+        options: empresaSearchOptions(empresasOptions),
+        allowClear: false,
+      })
+    : null;
+
+  let clienteSelect = null;
+  let tipoAtual = tipoInicial;
+
+  function renderContatoField(tipo) {
+    if (tipo === "cliente") {
+      contatoMount.innerHTML = `
+        <div class="field field--full">
+          <label>Cliente<span class="field-required">*</span></label>
+          <div data-mount="p-cliente"></div>
+        </div>
+      `;
+      clienteSelect = createSearchSelect({
+        container: contatoMount.querySelector('[data-mount="p-cliente"]'),
+        placeholder: "Buscar cliente por nome ou documento…",
+        options: clienteSearchOptions(clientesOptions),
+        value: editing?.cliente_id || null,
+        allowClear: true,
+        onChange: (clienteId) => {
+          const cliente = clientesOptions.find((c) => c.id === clienteId);
+          telefoneInput.value = cliente?.telefone || "";
+          emailInput.value = cliente?.email || "";
+          telefoneInput.readOnly = Boolean(cliente);
+          emailInput.readOnly = Boolean(cliente);
+        },
+      });
+      // Cliente pré-selecionado (edição): trava os campos sem passar pelo
+      // onChange acima, que só dispara em interação do usuário.
+      if (editing?.cliente_id) {
+        const cliente = clientesOptions.find((c) => c.id === editing.cliente_id);
+        telefoneInput.readOnly = Boolean(cliente);
+        emailInput.readOnly = Boolean(cliente);
+      }
+    } else {
+      contatoMount.innerHTML = `
+        <div class="field field--full">
+          <label for="p-lead-nome">Nome do lead<span class="field-required">*</span></label>
+          <input class="input" type="text" id="p-lead-nome" value="${escapeHtml(editing?.lead_nome || "")}" />
+        </div>
+      `;
+      clienteSelect = null;
+      telefoneInput.readOnly = false;
+      emailInput.readOnly = false;
+    }
+  }
+
+  renderContatoField(tipoInicial);
+
+  const tipoGroup = content.querySelector("#p-tipo-contato");
+  tipoGroup.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-value]");
+    if (!btn || btn.dataset.value === tipoAtual) return;
+    tipoAtual = btn.dataset.value;
+    tipoGroup.querySelectorAll(".paytile").forEach((b) => {
+      const active = b.dataset.value === tipoAtual;
+      b.classList.toggle("is-active", active);
+      b.setAttribute("aria-checked", String(active));
+    });
+    renderContatoField(tipoAtual);
+  });
+
+  const qtdInput = content.querySelector("#p-qtd");
+  const precoInput = content.querySelector("#p-preco");
+
+  const produtoSelect = createSearchSelect({
+    container: content.querySelector('[data-mount="p-produto"]'),
+    placeholder: "Buscar produto por nome ou SKU…",
+    options: produtoSearchOptions(produtosOptions, { meta: produtoMetaPrecoEstoque }),
+    allowClear: true,
+    onChange: (value) => {
+      if (!value) return;
+      const produto = produtosOptions.find((p) => p.id === value);
+      qtdInput.value = 1;
+      precoInput.value = produto ? Number(produto.preco).toFixed(2) : 0;
+      qtdInput.focus();
+      qtdInput.select();
+    },
+  });
+
+  function renderItensTable() {
+    if (itens.length === 0) {
+      cartBody.innerHTML = `<tr><td colspan="5" class="empty-state" style="padding: 1.5rem;">Nenhum produto adicionado ainda.</td></tr>`;
+    } else {
+      cartBody.innerHTML = itens.map((item, idx) => `
+        <tr>
+          <td>${escapeHtml(item.nome)}</td>
+          <td class="cell-num">
+            <input type="number" class="input" data-qty="${idx}" min="1" step="1" value="${item.quantidade}" style="width: 64px; text-align:right; padding: 0.35rem 0.5rem; font-family: var(--font-mono);" />
+          </td>
+          <td class="cell-num">
+            <input type="number" class="input" data-price="${idx}" min="0" step="0.01" value="${item.preco_unitario}" style="width: 90px; text-align:right; padding: 0.35rem 0.5rem; font-family: var(--font-mono);" />
+          </td>
+          <td class="cell-num">${formatCurrency(item.quantidade * item.preco_unitario)}</td>
+          <td class="cell-actions"><button type="button" class="icon-btn" data-remove="${idx}" aria-label="Remover">&times;</button></td>
+        </tr>
+      `).join("");
+      cartBody.querySelectorAll("[data-remove]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          itens.splice(Number(btn.dataset.remove), 1);
+          renderItensTable();
+        });
+      });
+      cartBody.querySelectorAll("[data-qty]").forEach((input) => {
+        input.addEventListener("change", () => {
+          const idx = Number(input.dataset.qty);
+          itens[idx].quantidade = Math.max(Math.floor(Number(input.value || 0)), 1);
+          renderItensTable();
+        });
+      });
+      cartBody.querySelectorAll("[data-price]").forEach((input) => {
+        input.addEventListener("change", () => {
+          const idx = Number(input.dataset.price);
+          itens[idx].preco_unitario = Math.max(Number(input.value || 0), 0);
+          renderItensTable();
+        });
+      });
+    }
+    updateTotals();
+  }
+
+  function updateTotals() {
+    const subtotal = itens.reduce((sum, item) => sum + item.quantidade * item.preco_unitario, 0);
+    const desconto = Number(descontoInput.value || 0);
+    content.querySelector("#p-subtotal").textContent = formatCurrency(subtotal);
+    content.querySelector("#p-total").textContent = formatCurrency(Math.max(subtotal - desconto, 0));
+  }
+
+  descontoInput.addEventListener("input", updateTotals);
+
+  function addItem() {
+    const produtoId = produtoSelect.getValue();
+    const produto = produtosOptions.find((p) => p.id === produtoId);
+    const quantidade = Number(qtdInput.value || 0);
+    const preco = Number(precoInput.value || 0);
+
+    if (!produto || quantidade <= 0) return;
+
+    const existing = itens.find((item) => item.produto_id === produto.id);
+    if (existing) existing.quantidade += quantidade;
+    else itens.push({ produto_id: produto.id, nome: produto.nome, quantidade, preco_unitario: preco });
+
+    qtdInput.value = 1;
+    precoInput.value = 0;
+    produtoSelect.reset();
+    produtoSelect.focusInput();
+    renderItensTable();
+  }
+
+  content.querySelector("#p-add-item").addEventListener("click", addItem);
+  qtdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } });
+  precoInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } });
+
+  content.querySelector("#p-salvar").addEventListener("click", (e) => withButtonLock(e.currentTarget, async () => {
+    errorEl.innerHTML = "";
+
+    if (itens.length === 0) {
+      errorEl.innerHTML = `<div class="form-error">Adicione ao menos um produto antes de salvar.</div>`;
+      return;
+    }
+    if (empresaSelect && !empresaSelect.getValue()) {
+      errorEl.innerHTML = `<div class="form-error">Selecione uma empresa.</div>`;
+      return;
+    }
+    if (tipoAtual === "cliente" && !clienteSelect?.getValue()) {
+      errorEl.innerHTML = `<div class="form-error">Selecione um cliente.</div>`;
+      return;
+    }
+    const leadNomeInput = content.querySelector("#p-lead-nome");
+    if (tipoAtual === "lead" && !leadNomeInput?.value.trim()) {
+      errorEl.innerHTML = `<div class="form-error">Informe o nome do lead.</div>`;
+      return;
+    }
+
+    const payload = {
+      p_tipo_contato: tipoAtual,
+      p_cliente_id: tipoAtual === "cliente" ? clienteSelect.getValue() : null,
+      p_lead_nome: tipoAtual === "lead" ? leadNomeInput.value.trim() : null,
+      p_contato_telefone: telefoneInput.value.trim() || null,
+      p_contato_email: emailInput.value.trim() || null,
+      p_data_proposta: content.querySelector("#p-data").value || null,
+      p_validade_ate: content.querySelector("#p-validade").value || null,
+      p_condicoes_pagamento: content.querySelector("#p-condicoes").value.trim() || null,
+      p_prazo_entrega: content.querySelector("#p-prazo").value.trim() || null,
+      p_observacoes: content.querySelector("#p-observacoes").value.trim() || null,
+      p_desconto: Number(descontoInput.value || 0),
+      p_itens: itens.map((item) => ({ produto_id: item.produto_id, quantidade: item.quantidade, preco_unitario: item.preco_unitario })),
+    };
+
+    let rpcError;
+    if (editing) {
+      ({ error: rpcError } = await supabase.rpc("atualizar_proposta", { p_proposta_id: editing.id, ...payload }));
+    } else {
+      if (empresaSelect) payload.p_empresa_id = empresaSelect.getValue();
+      ({ error: rpcError } = await supabase.rpc("criar_proposta", payload));
+    }
+
+    if (rpcError) {
+      errorEl.innerHTML = `<div class="form-error">${escapeHtml(friendlyPgError(rpcError))}</div>`;
+      return;
+    }
+
+    showToast(editing ? "Proposta atualizada." : "Proposta salva como rascunho.");
+    itens = [];
+    editingProposta = null;
+    activateTab("propostas");
+  }));
+
+  content.querySelector("#p-cancelar-edicao")?.addEventListener("click", () => {
+    itens = [];
+    editingProposta = null;
+    activateTab("propostas");
+  });
+
+  renderItensTable();
+
+  registerAutoRefresh(async () => {
+    const [nextClientes, nextProdutos] = await Promise.all([loadClientesAtivos(), loadProdutosAtivos()]);
+    clientesOptions = nextClientes;
+    produtosOptions = nextProdutos;
+    if (clienteSelect) clienteSelect.setOptions(clienteSearchOptions(clientesOptions));
+    produtoSelect.setOptions(produtoSearchOptions(produtosOptions, { meta: produtoMetaPrecoEstoque }));
+  }, 15000);
+}
+
+const HISTORICO_PAGE_SIZE = 50;
+const EXPORT_CAP = 5000;
+
+const STATUS_FILTER_OPTIONS = [
+  { value: "draft", label: "Rascunho" },
+  { value: "enviada", label: "Enviada" },
+  { value: "aprovada", label: "Aprovada" },
+  { value: "reprovada", label: "Reprovada" },
+];
+
+async function exportarPropostasCsv() {
+  const { data, error } = await supabase
+    .from("propostas")
+    .select("numero, data_proposta, tipo_contato, lead_nome, status, total, cliente:clientes(nome), vendedor:usuarios(nome)")
+    .order("numero", { ascending: false })
+    .limit(EXPORT_CAP);
+
+  if (error) {
+    showToast(friendlyPgError(error), "error");
+    return;
+  }
+
+  exportCsv(
+    "propostas.csv",
+    ["Nº", "Data", "Contato", "Tipo", "Vendedor", "Total", "Status"],
+    (data || []).map((p) => [
+      p.numero,
+      p.data_proposta,
+      p.tipo_contato === "cliente" ? (p.cliente?.nome || "") : (p.lead_nome || ""),
+      p.tipo_contato === "cliente" ? "Cliente" : "Lead",
+      p.vendedor?.nome || "",
+      formatCsvNumber(p.total),
+      statusLabel(p.status),
+    ]),
+  );
+}
+
+async function renderHistorico(content) {
+  content.innerHTML = `
+    <div class="toolbar" style="margin-bottom: 1rem;">
+      <div data-mount="p-filtro-status" style="max-width: 240px;"></div>
+    </div>
+    <div class="card"><div class="table-wrap" id="propostas-table"><div class="empty-state">Carregando…</div></div></div>
+    <div id="propostas-pagination"></div>
+  `;
+
+  const state = { page: 0, status: "" };
+
+  createSearchSelect({
+    container: content.querySelector('[data-mount="p-filtro-status"]'),
+    placeholder: "Filtrar por status…",
+    options: STATUS_FILTER_OPTIONS,
+    allowClear: true,
+    onChange: (value) => {
+      state.status = value || "";
+      state.page = 0;
+      loadHistorico(content, state);
+    },
+  });
+
+  await loadHistorico(content, state);
+
+  registerAutoRefresh(() => loadHistorico(content, state, { silent: true }), 15000);
+}
+
+async function loadHistorico(content, state, opts = {}) {
+  const { silent = false } = opts;
+  const tableWrap = content.querySelector("#propostas-table");
+  if (!silent) tableWrap.innerHTML = `<div class="empty-state">Carregando…</div>`;
+
+  const from = state.page * HISTORICO_PAGE_SIZE;
+  let query = supabase
+    .from("propostas")
+    .select("id, numero, tipo_contato, lead_nome, data_proposta, total, status, cliente:clientes(nome), vendedor:usuarios(nome)", { count: "exact" })
+    .order("numero", { ascending: false });
+  if (state.status) query = query.eq("status", state.status);
+
+  const { data, error, count } = await query.range(from, from + HISTORICO_PAGE_SIZE - 1);
+
+  if (error) {
+    tableWrap.innerHTML = `<div class="empty-state"><p class="empty-state__title">Erro ao carregar</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(error))}</p></div>`;
+    return;
+  }
+
+  if ((!data || data.length === 0) && state.page > 0 && count > 0) {
+    state.page = Math.max(0, Math.ceil(count / HISTORICO_PAGE_SIZE) - 1);
+    return loadHistorico(content, state, opts);
+  }
+
+  if (!data || data.length === 0) {
+    tableWrap.innerHTML = `<div class="empty-state"><p class="empty-state__title">Nenhuma proposta encontrada</p></div>`;
+    content.querySelector("#propostas-pagination").innerHTML = "";
+    return;
+  }
+
+  tableWrap.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr><th>Nº</th><th>Data</th><th>Contato</th><th>Vendedor</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        ${data.map((p) => `
+          <tr>
+            <td class="cell-num">#${p.numero}</td>
+            <td>${formatDate(p.data_proposta)}</td>
+            <td>${escapeHtml(p.tipo_contato === "cliente" ? (p.cliente?.nome || "—") : (p.lead_nome || "—"))} <span class="cell-muted">(${p.tipo_contato === "cliente" ? "cliente" : "lead"})</span></td>
+            <td class="cell-muted">${escapeHtml(p.vendedor?.nome || "—")}</td>
+            <td class="cell-num">${formatCurrency(p.total)}</td>
+            <td><span class="status status--${p.status}">${statusLabel(p.status)}</span></td>
+            <td class="cell-actions">
+              <button type="button" class="btn btn--ghost btn--sm" data-detail="${p.id}">Detalhes</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+
+  tableWrap.querySelectorAll("[data-detail]").forEach((btn) => {
+    btn.addEventListener("click", () => showDetail(btn.dataset.detail));
+  });
+
+  renderHistoricoPagination(content, state, count);
+}
+
+function renderHistoricoPagination(content, state, count) {
+  const el = content.querySelector("#propostas-pagination");
+  const totalPages = Math.max(1, Math.ceil(count / HISTORICO_PAGE_SIZE));
+
+  if (totalPages <= 1) {
+    el.innerHTML = "";
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="pagination">
+      <button type="button" class="btn btn--ghost btn--sm" id="propostas-page-prev" ${state.page === 0 ? "disabled" : ""}>‹ Anterior</button>
+      <span class="pagination__label">Página ${state.page + 1} de ${totalPages}</span>
+      <button type="button" class="btn btn--ghost btn--sm" id="propostas-page-next" ${state.page >= totalPages - 1 ? "disabled" : ""}>Próxima ›</button>
+    </div>
+  `;
+
+  el.querySelector("#propostas-page-prev").addEventListener("click", () => {
+    state.page = Math.max(0, state.page - 1);
+    loadHistorico(content, state);
+  });
+  el.querySelector("#propostas-page-next").addEventListener("click", () => {
+    state.page += 1;
+    loadHistorico(content, state);
+  });
+}
+
+async function editarProposta(id) {
+  const [{ data: proposta, error }, { data: itensData }] = await Promise.all([
+    supabase.from("propostas").select("*, vendedor:usuarios(nome)").eq("id", id).single(),
+    supabase.from("proposta_itens").select("*, produto:produtos(nome)").eq("proposta_id", id).order("created_at", { ascending: true }),
+  ]);
+
+  if (error || !proposta) {
+    showToast(error ? friendlyPgError(error) : "Proposta não encontrada.", "error");
+    return;
+  }
+
+  editingProposta = proposta;
+  itens = (itensData || []).map((i) => ({
+    produto_id: i.produto_id,
+    nome: i.produto?.nome || "Produto",
+    quantidade: i.quantidade,
+    preco_unitario: Number(i.preco_unitario),
+  }));
+  activateTab("nova");
+}
+
+// ── Envio por e-mail (edge function enviar-proposta) ────────────────────
+// Mesmo padrão de erro de callManageUsuarios/chamarCriarCheckoutStripe: a
+// edge function devolve `{ error }` em JSON tanto em falhas de validação
+// quanto o supabase-js embrulha isso — o corpo de verdade só é acessível
+// via error.context.
+async function chamarEnviarProposta(propostaId) {
+  const { data, error } = await supabase.functions.invoke("enviar-proposta", { body: { proposta_id: propostaId } });
+
+  if (error) {
+    let message = error.message;
+    try {
+      const body = await error.context.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // resposta não era JSON — mantém a mensagem original do erro de rede
+    }
+    throw new Error(message);
+  }
+
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+// ── Impressão / PDF ──────────────────────────────────────────────────────
+// Sem lib de PDF (nenhuma outra tela deste app usa uma): a área impressa
+// fica escondida da tela normal e só aparece no `@media print` (ver
+// styles.css) — o próprio diálogo de impressão do navegador já oferece
+// "Salvar como PDF" como destino, cobrindo os dois pedidos (impressora e
+// PDF) sem dependência nova.
+function ensurePrintContainer() {
+  let el = document.getElementById("print-proposta");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "print-proposta";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function imprimirProposta(proposta, itensData) {
+  const contatoNome = proposta.tipo_contato === "cliente" ? (proposta.cliente?.nome || "Cliente") : (proposta.lead_nome || "Lead");
+  const contatoTelefone = proposta.contato_telefone || proposta.cliente?.telefone || "";
+  const contatoEmail = proposta.contato_email || proposta.cliente?.email || "";
+  const empresaNome = proposta.empresa?.nome_aplicacao || proposta.empresa?.nome_fantasia || "ERPConnect";
+
+  const el = ensurePrintContainer();
+  el.innerHTML = `
+    <h1>${escapeHtml(empresaNome)}</h1>
+    <p>Proposta comercial nº ${proposta.numero}</p>
+    <table class="print-info">
+      <tbody>
+        <tr><td>${proposta.tipo_contato === "cliente" ? "Cliente" : "Lead"}</td><td>${escapeHtml(contatoNome)}</td></tr>
+        ${contatoTelefone ? `<tr><td>Telefone</td><td>${escapeHtml(contatoTelefone)}</td></tr>` : ""}
+        ${contatoEmail ? `<tr><td>E-mail</td><td>${escapeHtml(contatoEmail)}</td></tr>` : ""}
+        <tr><td>Vendedor</td><td>${escapeHtml(proposta.vendedor?.nome || "—")}</td></tr>
+        <tr><td>Data</td><td>${formatDate(proposta.data_proposta)}</td></tr>
+        ${proposta.validade_ate ? `<tr><td>Válida até</td><td>${formatDate(proposta.validade_ate)}</td></tr>` : ""}
+        ${proposta.condicoes_pagamento ? `<tr><td>Pagamento</td><td>${escapeHtml(proposta.condicoes_pagamento)}</td></tr>` : ""}
+        ${proposta.prazo_entrega ? `<tr><td>Entrega</td><td>${escapeHtml(proposta.prazo_entrega)}</td></tr>` : ""}
+      </tbody>
+    </table>
+    <table class="print-itens">
+      <thead><tr><th>Produto</th><th>Qtd.</th><th>Preço</th><th>Subtotal</th></tr></thead>
+      <tbody>
+        ${(itensData || []).map((i) => `<tr><td>${escapeHtml(i.produto?.nome || "Produto")}</td><td>${i.quantidade}</td><td>${formatCurrency(i.preco_unitario)}</td><td>${formatCurrency(i.subtotal)}</td></tr>`).join("")}
+      </tbody>
+    </table>
+    <table class="print-totais">
+      <tbody>
+        <tr><td>Subtotal</td><td>${formatCurrency(proposta.subtotal)}</td></tr>
+        <tr><td>Desconto</td><td>${formatCurrency(proposta.desconto)}</td></tr>
+        <tr class="print-total-row"><td>Total</td><td>${formatCurrency(proposta.total)}</td></tr>
+      </tbody>
+    </table>
+    ${proposta.observacoes ? `<p><strong>Observações:</strong><br>${escapeHtml(proposta.observacoes).replace(/\n/g, "<br>")}</p>` : ""}
+  `;
+
+  document.body.classList.add("is-printing");
+  window.addEventListener("afterprint", () => document.body.classList.remove("is-printing"), { once: true });
+  window.print();
+}
+
+// ── Detalhe (modal): visão completa + troca de status + imprimir/enviar ─
+async function showDetail(propostaId) {
+  const body = openModal("Detalhes da proposta");
+  body.innerHTML = `<div class="empty-state">Carregando…</div>`;
+
+  const [{ data: proposta, error: propostaError }, { data: itensData }] = await Promise.all([
+    supabase.from("propostas").select("*, cliente:clientes(nome, telefone, email), vendedor:usuarios(nome), empresa:empresas(nome_fantasia, nome_aplicacao)").eq("id", propostaId).single(),
+    supabase.from("proposta_itens").select("*, produto:produtos(nome)").eq("proposta_id", propostaId).order("created_at", { ascending: true }),
+  ]);
+
+  if (!proposta) {
+    body.innerHTML = propostaError
+      ? `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar a proposta</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(propostaError))}</p></div>`
+      : `<div class="empty-state">Proposta não encontrada.</div>`;
+    return;
+  }
+
+  const contatoNome = proposta.tipo_contato === "cliente" ? (proposta.cliente?.nome || "—") : (proposta.lead_nome || "—");
+  const contatoTelefone = proposta.contato_telefone || proposta.cliente?.telefone || "—";
+  const contatoEmail = proposta.contato_email || proposta.cliente?.email || "";
+  const podeEnviarEmail = Boolean(contatoEmail);
+
+  body.innerHTML = `
+    <div class="receipt receipt--plain" style="padding: 0;">
+      <div class="receipt__row"><span>Nº da proposta</span><span>#${proposta.numero}</span></div>
+      <div class="receipt__row"><span>${proposta.tipo_contato === "cliente" ? "Cliente" : "Lead"}</span><span>${escapeHtml(contatoNome)}</span></div>
+      <div class="receipt__row"><span>Telefone</span><span>${escapeHtml(contatoTelefone)}</span></div>
+      <div class="receipt__row"><span>E-mail</span><span>${escapeHtml(contatoEmail || "—")}</span></div>
+      <div class="receipt__row"><span>Vendedor</span><span>${escapeHtml(proposta.vendedor?.nome || "—")}</span></div>
+      <div class="receipt__row"><span>Data</span><span>${formatDate(proposta.data_proposta)}</span></div>
+      ${proposta.validade_ate ? `<div class="receipt__row"><span>Válida até</span><span>${formatDate(proposta.validade_ate)}</span></div>` : ""}
+      ${proposta.condicoes_pagamento ? `<div class="receipt__row"><span>Pagamento</span><span>${escapeHtml(proposta.condicoes_pagamento)}</span></div>` : ""}
+      ${proposta.prazo_entrega ? `<div class="receipt__row"><span>Entrega</span><span>${escapeHtml(proposta.prazo_entrega)}</span></div>` : ""}
+      <div class="receipt__row"><span>Status</span><span class="status status--${proposta.status}">${statusLabel(proposta.status)}</span></div>
+      ${proposta.status === "reprovada" && proposta.motivo ? `<div class="receipt__row"><span>Motivo</span><span>${escapeHtml(proposta.motivo)}</span></div>` : ""}
+      ${proposta.observacoes ? `<div class="receipt__row"><span>Obs.</span><span>${escapeHtml(proposta.observacoes)}</span></div>` : ""}
+      <div class="receipt__tear"></div>
+      ${(itensData || []).map((i) => `
+        <div class="receipt__row"><span>${i.quantidade}x ${escapeHtml(i.produto?.nome || "Produto")}</span><span>${formatCurrency(i.subtotal)}</span></div>
+      `).join("")}
+      <div class="receipt__tear"></div>
+      <div class="receipt__row"><span>Subtotal</span><span>${formatCurrency(proposta.subtotal)}</span></div>
+      <div class="receipt__row"><span>Desconto</span><span>${formatCurrency(proposta.desconto)}</span></div>
+      <div class="receipt__total"><span>Total</span><span>${formatCurrency(proposta.total)}</span></div>
+    </div>
+
+    <div id="detail-reprovar-box" hidden style="margin-top: 1.1rem;">
+      <div class="field">
+        <label for="detail-motivo">Motivo da reprovação<span class="field-required">*</span></label>
+        <textarea class="input" id="detail-motivo" rows="2"></textarea>
+      </div>
+    </div>
+    <div id="detail-error"></div>
+
+    <div class="form-actions" style="justify-content: flex-start; flex-wrap: wrap;">
+      <button type="button" class="btn btn--ghost" id="detail-imprimir">Imprimir / PDF</button>
+      <button type="button" class="btn btn--ghost" id="detail-email" ${podeEnviarEmail ? "" : "disabled title=\"Sem e-mail cadastrado para este contato\""}>Enviar por e-mail</button>
+      ${proposta.status === "draft" ? `<button type="button" class="btn btn--ghost" id="detail-editar">Editar</button>` : ""}
+      ${proposta.status !== "aprovada" && proposta.status !== "reprovada" ? `<button type="button" class="btn btn--primary" id="detail-aprovar">Aprovar</button>` : ""}
+      ${proposta.status !== "reprovada" ? `<button type="button" class="btn btn--danger" id="detail-reprovar">Reprovar</button>` : ""}
+    </div>
+  `;
+
+  body.querySelector("#detail-imprimir").addEventListener("click", () => imprimirProposta(proposta, itensData));
+
+  const emailBtn = body.querySelector("#detail-email");
+  if (podeEnviarEmail) {
+    emailBtn.addEventListener("click", (e) => withButtonLock(e.currentTarget, async () => {
+      const errorEl = body.querySelector("#detail-error");
+      errorEl.innerHTML = "";
+      try {
+        const res = await chamarEnviarProposta(proposta.id);
+        showToast(`Proposta enviada para ${res.destinatario}.`);
+        await showDetail(proposta.id);
+      } catch (err) {
+        errorEl.innerHTML = `<div class="form-error">${escapeHtml(err.message)}</div>`;
+      }
+    }));
+  }
+
+  body.querySelector("#detail-editar")?.addEventListener("click", async () => {
+    closeModal();
+    await editarProposta(proposta.id);
+  });
+
+  body.querySelector("#detail-aprovar")?.addEventListener("click", (e) => withButtonLock(e.currentTarget, async () => {
+    const { error } = await supabase.rpc("atualizar_status_proposta", { p_proposta_id: proposta.id, p_status: "aprovada" });
+    if (error) {
+      body.querySelector("#detail-error").innerHTML = `<div class="form-error">${escapeHtml(friendlyPgError(error))}</div>`;
+      return;
+    }
+    showToast("Proposta aprovada.");
+    await showDetail(proposta.id);
+  }));
+
+  const reprovarBtn = body.querySelector("#detail-reprovar");
+  reprovarBtn?.addEventListener("click", () => {
+    const box = body.querySelector("#detail-reprovar-box");
+    if (box.hidden) {
+      box.hidden = false;
+      reprovarBtn.textContent = "Confirmar reprovação";
+      body.querySelector("#detail-motivo").focus();
+      return;
+    }
+    withButtonLock(reprovarBtn, async () => {
+      const errorEl = body.querySelector("#detail-error");
+      errorEl.innerHTML = "";
+      const motivo = body.querySelector("#detail-motivo").value.trim();
+      if (!motivo) {
+        errorEl.innerHTML = `<div class="form-error">Informe o motivo da reprovação.</div>`;
+        return;
+      }
+      const { error } = await supabase.rpc("atualizar_status_proposta", { p_proposta_id: proposta.id, p_status: "reprovada", p_motivo: motivo });
+      if (error) {
+        errorEl.innerHTML = `<div class="form-error">${escapeHtml(friendlyPgError(error))}</div>`;
+        return;
+      }
+      showToast("Proposta reprovada.");
+      await showDetail(proposta.id);
+    });
+  });
+}
