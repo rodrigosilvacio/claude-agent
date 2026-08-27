@@ -2,7 +2,7 @@
 // (toast, modal, confirmação, formatação). Cada módulo de tela expõe
 // `render(view)` e monta seu próprio HTML dentro do container recebido.
 
-import { initAuth, isLoggedIn, isAdmin, isGlobalAdmin, getCurrentUsuario, signOut, onAuthChange } from "./auth.js";
+import { initAuth, isLoggedIn, isAdmin, isGlobalAdmin, getCurrentUsuario, refreshCurrentUsuario, signOut, onAuthChange } from "./auth.js";
 import { supabase } from "./supabaseClient.js";
 
 // Usados como fallback quando a empresa do usuário logado não tem
@@ -25,7 +25,7 @@ const CONFIGURABLE_MENU_KEYS = ["clientes", "produtos", "fornecedores", "crm", "
 // ES modules carregar duas instâncias do módulo (hashchange listener e
 // boot() duplicados). Ver commit e4f8448 (correção original) e 3659424/
 // e75bd3a (reintrodução e reversão do bug).
-export const APP_BUILD = "2026-08-27 19:00 -03";
+export const APP_BUILD = "2026-08-27 19:30 -03";
 
 const ROUTES = {
   home: {
@@ -309,10 +309,23 @@ async function renderRoute() {
 
   const hash = window.location.hash.replace(/^#\//, "").split("?")[0];
   let routeKey = ROUTES[hash] ? hash : DEFAULT_ROUTE;
-  const menus = menusHabilitadosDe(getCurrentUsuario());
-  const blocked = (ROUTES[routeKey].adminOnly && !isAdmin())
+  let menus = menusHabilitadosDe(getCurrentUsuario());
+  let blocked = (ROUTES[routeKey].adminOnly && !isAdmin())
     || (ROUTES[routeKey].globalAdminOnly && !isGlobalAdmin())
     || menus[routeKey] === false;
+  if (blocked) {
+    // Papel/empresa do usuário pode ter mudado (por exemplo, alguém te
+    // promoveu a admin global) enquanto esta aba já estava aberta — a única
+    // releitura periódica (ativoWatch) só confere se a conta segue ativa,
+    // não papel/empresa/menus. Antes de bloquear de vez, revalida contra o
+    // banco uma única vez: sem isso, a rota simplesmente não abria até um F5.
+    await refreshCurrentUsuario();
+    if (myToken !== renderToken) return;
+    menus = menusHabilitadosDe(getCurrentUsuario());
+    blocked = (ROUTES[routeKey].adminOnly && !isAdmin())
+      || (ROUTES[routeKey].globalAdminOnly && !isGlobalAdmin())
+      || menus[routeKey] === false;
+  }
   if (blocked) {
     routeKey = DEFAULT_ROUTE;
     // replaceState em vez de mudar window.location.hash: corrige a URL sem
