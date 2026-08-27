@@ -9,10 +9,13 @@ import { showToast, openModal, closeModal, confirmDialog, escapeHtml, skeletonTa
 async function loadEmpresasOptions() {
   const { data } = await supabase
     .from("empresas")
-    .select("id, nome_fantasia, codigo")
+    .select("id, nome_fantasia, codigo, papel_padrao_novo_usuario")
     .eq("ativo", true)
     .order("nome_fantasia", { ascending: true });
-  return (data || []).map((e) => ({ value: e.id, label: e.nome_fantasia, meta: e.codigo }));
+  // papelPadrao viaja junto com a opção (não aparece no label/meta) só para
+  // o formulário de novo usuário poder pré-selecionar o papel configurado
+  // em Configurações > Usuários para a empresa escolhida.
+  return (data || []).map((e) => ({ value: e.id, label: e.nome_fantasia, meta: e.codigo, papelPadrao: e.papel_padrao_novo_usuario }));
 }
 
 const SEARCH_ICON = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
@@ -208,27 +211,40 @@ async function openForm(existingRow, onSaved) {
     options: empresasOptions,
     value: existingRow?.empresa_id ?? null,
     allowClear: true,
+    // Só em criação: trocar a empresa atualiza o papel pré-selecionado para
+    // o padrão configurado nela (o admin ainda pode sobrepor manualmente).
+    // Editar um usuário existente nunca deve mudar o papel dele sozinho.
+    onChange: isEdit ? undefined : (_empresaId, opt) => setRole(opt?.papelPadrao || "caixa"),
   });
 
   const empresaRequiredMark = body.querySelector("#f-empresa-required");
 
-  let role = existingRow?.role ?? "caixa";
-  function updateEmpresaRequiredMark() {
-    empresaRequiredMark.hidden = role === "admin";
-  }
-  updateEmpresaRequiredMark();
-
+  // Novo usuário parte do papel padrão configurado para a empresa do
+  // próprio admin logado (Configurações > Usuários) — global admin sem
+  // empresa própria cai no "caixa" de sempre até escolher uma empresa no
+  // combo abaixo, que então atualiza para o padrão dela.
+  let role = existingRow?.role ?? (isEdit ? "caixa" : (getCurrentUsuario()?.empresa?.papel_padrao_novo_usuario || "caixa"));
   const roleGroup = body.querySelector("#f-role");
-  roleGroup.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-value]");
-    if (!btn || btn.disabled) return;
-    role = btn.dataset.value;
+
+  function setRole(newRole) {
+    role = newRole;
     roleGroup.querySelectorAll(".segmented__btn").forEach((b) => {
-      const active = b === btn;
+      const active = b.dataset.value === newRole;
       b.classList.toggle("is-active", active);
       b.setAttribute("aria-checked", String(active));
     });
     updateEmpresaRequiredMark();
+  }
+
+  function updateEmpresaRequiredMark() {
+    empresaRequiredMark.hidden = role === "admin";
+  }
+  setRole(role);
+
+  roleGroup.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-value]");
+    if (!btn || btn.disabled) return;
+    setRole(btn.dataset.value);
   });
 
   body.querySelector("#btn-cancel").addEventListener("click", closeModal);
