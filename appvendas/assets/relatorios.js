@@ -5,7 +5,7 @@
 // compartilhado entre todos.
 
 import { supabase } from "./supabaseClient.js";
-import { formatCurrency, formatDate, escapeHtml, registerAutoRefresh, exportCsv, formatCsvNumber, createSearchSelect } from "./app.js";
+import { formatCurrency, formatDate, escapeHtml, registerAutoRefresh, exportCsv, formatCsvNumber, createSearchSelect, showToast } from "./app.js";
 import { isGlobalAdmin } from "./auth.js";
 import { loadEmpresasAtivas, empresaSearchOptions } from "./catalogo.js";
 
@@ -44,16 +44,36 @@ export async function render(view, actionsEl) {
 
   const empresasOptions = isGlobalAdmin() ? await loadEmpresasAtivas() : [];
 
-  actionsEl.innerHTML = `<button type="button" class="btn btn--ghost" id="btn-exportar-csv">Exportar CSV</button>`;
+  // As abas ficam no topbar, junto do botão de ação primária — antes viviam
+  // soltas no topo do conteúdo, numa segunda fileira desconectada da barra
+  // de ações (mesmo ajuste em estoques.js).
+  actionsEl.innerHTML = `
+    <div class="topbar-tabs">
+      ${TABS.map((t) => `<button type="button" class="btn btn--sm ${t.key === state.tab ? "btn--primary" : "btn--ghost"}" data-tab="${t.key}">${escapeHtml(t.label)}</button>`).join("")}
+    </div>
+    <button type="button" class="btn btn--ghost" id="btn-exportar-csv">Exportar CSV</button>
+  `;
+
+  actionsEl.querySelectorAll("[data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.tab === state.tab) return;
+      state.tab = btn.dataset.tab;
+      actionsEl.querySelectorAll("[data-tab]").forEach((b) => {
+        b.className = `btn btn--sm ${b.dataset.tab === state.tab ? "btn--primary" : "btn--ghost"}`;
+      });
+      loadTab(view, state);
+    });
+  });
+
   actionsEl.querySelector("#btn-exportar-csv").addEventListener("click", () => {
-    if (!state.exportavel) return;
+    if (!state.exportavel) {
+      showToast("Aguarde o relatório terminar de carregar antes de exportar.", "error");
+      return;
+    }
     exportCsv(state.exportavel.filename, state.exportavel.headers, state.exportavel.rows);
   });
 
   view.innerHTML = `
-    <div class="toolbar" style="margin-bottom: 0.75rem; gap: 0.5rem;">
-      ${TABS.map((t) => `<button type="button" class="btn ${t.key === state.tab ? "btn--primary" : "btn--ghost"}" data-tab="${t.key}">${escapeHtml(t.label)}</button>`).join("")}
-    </div>
     <div class="toolbar financeiro-filtro">
       <div class="field financeiro-filtro__field--date">
         <label for="rel-inicio">De</label>
@@ -71,17 +91,6 @@ export async function render(view, actionsEl) {
     </div>
     <div id="rel-content"><div class="empty-state">Carregando relatório…</div></div>
   `;
-
-  view.querySelectorAll("[data-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.dataset.tab === state.tab) return;
-      state.tab = btn.dataset.tab;
-      view.querySelectorAll("[data-tab]").forEach((b) => {
-        b.className = `btn ${b.dataset.tab === state.tab ? "btn--primary" : "btn--ghost"}`;
-      });
-      loadTab(view, state);
-    });
-  });
 
   view.querySelector("#rel-filtrar").addEventListener("click", () => {
     state.inicio = view.querySelector("#rel-inicio").value || state.inicio;

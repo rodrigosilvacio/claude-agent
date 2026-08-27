@@ -414,7 +414,31 @@ svg {
 
 .topbar__actions {
   display: flex;
+  align-items: center;
   gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Grupo de abas dentro do topbar (Relatórios, Estoques): fica junto dos
+   botões de ação primária em vez de flutuar solto no topo do conteúdo —
+   uma linha só, em vez de duas fileiras de botão desconectadas. */
+.topbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding-right: 0.7rem;
+  margin-right: 0.1rem;
+  border-right: 1px solid var(--line-strong);
+}
+
+@media (max-width: 560px) {
+  .topbar-tabs {
+    border-right: none;
+    padding-right: 0;
+    width: 100%;
+  }
 }
 
 .view {
