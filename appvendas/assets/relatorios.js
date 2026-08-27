@@ -5,7 +5,9 @@
 // manuais — mesmo racional do Painel Início (home.js).
 
 import { supabase } from "./supabaseClient.js";
-import { formatCurrency, formatDate, escapeHtml, registerAutoRefresh, exportCsv } from "./app.js";
+import { formatCurrency, formatDate, escapeHtml, registerAutoRefresh, exportCsv, createSearchSelect } from "./app.js";
+import { isGlobalAdmin } from "./auth.js";
+import { loadEmpresasAtivas, empresaSearchOptions } from "./catalogo.js";
 
 const RELATORIO_DIAS_PADRAO = 90;
 
@@ -20,9 +22,29 @@ function diasAtrasStr(dias) {
 }
 
 export async function render(view, actionsEl) {
-  const state = { inicio: diasAtrasStr(RELATORIO_DIAS_PADRAO), fim: todayStr(), movimentacoesTodas: [] };
+  const state = { inicio: diasAtrasStr(RELATORIO_DIAS_PADRAO), fim: todayStr(), movimentacoesTodas: [], empresaId: null };
 
   actionsEl.innerHTML = `<button type="button" class="btn btn--ghost" id="btn-exportar-csv">Exportar CSV</button>`;
+
+  // Roadmap Fase 2 — mesmo seletor de empresa do Painel Início: sem ele, um
+  // admin global só via Relatórios somando todas as empresas de uma vez, sem
+  // forma de comparar desempenho entre unidades.
+  if (isGlobalAdmin()) {
+    const empresas = await loadEmpresasAtivas();
+    actionsEl.insertAdjacentHTML("afterbegin", `<div style="min-width:240px;" data-mount="rel-empresa"></div>`);
+    createSearchSelect({
+      container: actionsEl.querySelector('[data-mount="rel-empresa"]'),
+      placeholder: "Todas as empresas",
+      options: empresaSearchOptions(empresas),
+      allowClear: true,
+      emptyText: "Nenhuma empresa encontrada",
+      onChange: (empresaId) => {
+        state.empresaId = empresaId;
+        load(view, state);
+      },
+    });
+  }
+
   actionsEl.querySelector("#btn-exportar-csv").addEventListener("click", () => {
     exportCsv(
       `relatorio_${state.inicio}_a_${state.fim}.csv`,
@@ -65,24 +87,26 @@ async function load(view, state, opts = {}) {
   const content = view.querySelector("#rel-content");
   if (!silent) content.innerHTML = `<div class="empty-state">Carregando relatórios…</div>`;
 
+  const aplicaEmpresa = (query) => (state.empresaId ? query.eq("empresa_id", state.empresaId) : query);
+
   const [vendasRes, parcelasRes, recebimentosRes, produtosRes] = await Promise.all([
-    supabase
+    aplicaEmpresa(supabase
       .from("vendas")
       .select("id, numero, total, status, data_venda, cliente_id, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome, custo))")
       .gte("data_venda", state.inicio)
-      .lte("data_venda", state.fim),
-    supabase
+      .lte("data_venda", state.fim)),
+    aplicaEmpresa(supabase
       .from("matricula_parcelas")
       .select("id, numero_parcela, valor, data_pagamento, cliente_id, cliente:clientes(nome), matricula:matriculas(numero, produto:produtos(id, nome, custo))")
       .eq("status", "pago")
       .gte("data_pagamento", state.inicio)
-      .lte("data_pagamento", state.fim),
-    supabase
+      .lte("data_pagamento", state.fim)),
+    aplicaEmpresa(supabase
       .from("recebimentos")
       .select("id, quantidade, valor, status, data_recebimento, cliente_id, cliente:clientes(nome), produto:produtos(id, nome, custo)")
       .gte("data_recebimento", state.inicio)
-      .lte("data_recebimento", state.fim),
-    supabase.from("produtos").select("id, nome, estoque, estoque_minimo, tipo").eq("ativo", true),
+      .lte("data_recebimento", state.fim)),
+    aplicaEmpresa(supabase.from("produtos").select("id, nome, estoque, estoque_minimo, tipo").eq("ativo", true)),
   ]);
 
   const firstError = vendasRes.error || parcelasRes.error || recebimentosRes.error || produtosRes.error;

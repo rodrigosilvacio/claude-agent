@@ -7,8 +7,9 @@
 // Matrículas, Financeiro).
 
 import { supabase } from "./supabaseClient.js";
-import { formatCurrency, formatDate, escapeHtml, registerAutoRefresh } from "./app.js";
-import { getCurrentEmpresaId } from "./auth.js";
+import { formatCurrency, formatDate, escapeHtml, registerAutoRefresh, createSearchSelect } from "./app.js";
+import { getCurrentEmpresaId, isGlobalAdmin } from "./auth.js";
+import { loadEmpresasAtivas, empresaSearchOptions } from "./catalogo.js";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -16,6 +17,33 @@ function todayStr() {
 
 function firstDayOfMonthStr() {
   return `${todayStr().slice(0, 7)}-01`;
+}
+
+function addDaysStr(dias) {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+// Saldo projetado = a receber − a pagar dentro do horizonte (dias a partir
+// de hoje). Pendências já vencidas entram em todos os horizontes — o
+// vencimento delas é menor que hoje, logo sempre "<=" o limite de qualquer
+// um dos 3 prazos.
+function projecaoCaixa(contasFuturas, parcelasFuturas, dias) {
+  const limite = addDaysStr(dias);
+  const aReceber = parcelasFuturas.filter((p) => p.data_vencimento <= limite).reduce((s, p) => s + Number(p.valor || 0), 0);
+  const aPagar = contasFuturas.filter((c) => c.data_vencimento <= limite).reduce((s, c) => s + Number(c.valor || 0), 0);
+  return { aReceber, aPagar, saldo: aReceber - aPagar };
+}
+
+function projecaoCard(label, proj) {
+  return `
+    <div class="card stat-card" style="--tag-color:${proj.saldo >= 0 ? "var(--accent)" : "var(--danger)"}">
+      <p class="stat-card__label">${escapeHtml(label)}</p>
+      <p class="stat-card__value">${formatCurrency(proj.saldo)}</p>
+      <p class="cell-muted" style="margin-top: 0.3rem;">+${formatCurrency(proj.aReceber)} a receber · −${formatCurrency(proj.aPagar)} a pagar</p>
+    </div>
+  `;
 }
 
 function greeting() {
@@ -30,48 +58,86 @@ function sum(rows, key) {
 }
 
 export async function render(view, actionsEl) {
-  actionsEl.innerHTML = "";
-  await load(view);
-  registerAutoRefresh(() => load(view, { silent: true }), 20000);
+  const state = { empresaId: null };
+
+  // Roadmap Fase 2 — "Painel e Relatórios por empresa": um admin global via
+  // Início somando TODAS as empresas sem quebra nem filtro — quem administra
+  // mais de uma unidade não conseguia comparar desempenho entre elas. Quem
+  // não é admin global nem precisa do seletor: já está implicitamente
+  // restrito à própria empresa pela RLS.
+  if (isGlobalAdmin()) {
+    const empresas = await loadEmpresasAtivas();
+    actionsEl.innerHTML = `<div style="min-width:240px;" data-mount="home-empresa"></div>`;
+    createSearchSelect({
+      container: actionsEl.querySelector('[data-mount="home-empresa"]'),
+      placeholder: "Todas as empresas",
+      options: empresaSearchOptions(empresas),
+      allowClear: true,
+      emptyText: "Nenhuma empresa encontrada",
+      onChange: (empresaId) => {
+        state.empresaId = empresaId;
+        load(view, state);
+      },
+    });
+  } else {
+    actionsEl.innerHTML = "";
+  }
+
+  await load(view, state);
+  registerAutoRefresh(() => load(view, state, { silent: true }), 20000);
 }
 
-async function load(view, opts = {}) {
+async function load(view, state, opts = {}) {
   const { silent = false } = opts;
   if (!silent) view.innerHTML = `<div class="empty-state">Carregando painel…</div>`;
 
   const hoje = todayStr();
   const mesInicio = firstDayOfMonthStr();
-  const empresaId = getCurrentEmpresaId();
+  // Sem seleção no filtro (admin global) cai no comportamento de sempre —
+  // soma tudo que a RLS liberar. Com uma empresa escolhida, cada consulta
+  // recebe o mesmo .eq("empresa_id", …) que as telas de lançamento já usam.
+  const empresaId = state.empresaId || getCurrentEmpresaId();
+  const aplicaEmpresa = (query) => (empresaId ? query.eq("empresa_id", empresaId) : query);
 
   const [vendasRes, parcelasRes, recebimentosRes, contasPagarRes, produtosRes, empresaRes] = await Promise.all([
-    supabase
+    aplicaEmpresa(supabase
       .from("vendas")
       .select("id, numero, total, status, data_venda, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome))")
-      .gte("data_venda", mesInicio),
+      .gte("data_venda", mesInicio)),
     // Entrada de matrícula é o pagamento de cada parcela, não a data da
     // matrícula em si — uma parcela paga este mês pode ser de uma matrícula
     // feita há vários meses (ver financeiro.js, mesmo racional).
-    supabase
+    aplicaEmpresa(supabase
       .from("matricula_parcelas")
       .select("id, numero_parcela, valor, data_pagamento, cliente:clientes(nome), matricula:matriculas(numero, produto:produtos(id, nome))")
       .eq("status", "pago")
-      .gte("data_pagamento", mesInicio),
-    supabase
+      .gte("data_pagamento", mesInicio)),
+    aplicaEmpresa(supabase
       .from("recebimentos")
       .select("id, quantidade, valor, status, data_recebimento, cliente:clientes(nome), produto:produtos(id, nome)")
-      .gte("data_recebimento", mesInicio),
-    supabase
+      .gte("data_recebimento", mesInicio)),
+    aplicaEmpresa(supabase
       .from("contas_pagar")
       .select("id, descricao, valor, data_pagamento, fornecedor:fornecedores(nome)")
       .eq("status", "pago")
-      .gte("data_pagamento", mesInicio),
-    supabase.from("produtos").select("id, nome, estoque, estoque_minimo, tipo").eq("ativo", true),
+      .gte("data_pagamento", mesInicio)),
+    aplicaEmpresa(supabase.from("produtos").select("id, nome, estoque, estoque_minimo, tipo").eq("ativo", true)),
     empresaId
       ? supabase.from("empresas").select("nome_fantasia").eq("id", empresaId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
 
-  const firstError = vendasRes.error || parcelasRes.error || recebimentosRes.error || contasPagarRes.error || produtosRes.error;
+  // Roadmap Fase 2 — "Fluxo de caixa projetado": contas a pagar e parcelas a
+  // receber futuras já existem como dado pendente — só nunca tinham sido
+  // somadas numa projeção de saldo. Traz só o pendente com vencimento dentro
+  // dos próximos 90 dias (inclui o que já está atrasado, cujo vencimento é
+  // menor que hoje e por isso sempre <= qualquer um dos 3 horizontes).
+  const [contasFuturasRes, parcelasFuturasRes] = await Promise.all([
+    aplicaEmpresa(supabase.from("contas_pagar").select("valor, data_vencimento").eq("status", "pendente").lte("data_vencimento", addDaysStr(90))),
+    aplicaEmpresa(supabase.from("matricula_parcelas").select("valor, data_vencimento").eq("status", "pendente").lte("data_vencimento", addDaysStr(90))),
+  ]);
+
+  const firstError = vendasRes.error || parcelasRes.error || recebimentosRes.error || contasPagarRes.error || produtosRes.error || contasFuturasRes.error || parcelasFuturasRes.error;
   if (firstError) {
     view.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar o painel</p><p class="empty-state__hint">${escapeHtml(firstError.message)}</p></div>`;
     return;
@@ -109,6 +175,12 @@ async function load(view, opts = {}) {
 
   const linhasMovimentacoes = movimentacoes(vendasConfirmadas, parcelasPagas, recebimentosOk, contasPagas);
 
+  const contasFuturas = contasFuturasRes.data || [];
+  const parcelasFuturas = parcelasFuturasRes.data || [];
+  const projecao30 = projecaoCaixa(contasFuturas, parcelasFuturas, 30);
+  const projecao60 = projecaoCaixa(contasFuturas, parcelasFuturas, 60);
+  const projecao90 = projecaoCaixa(contasFuturas, parcelasFuturas, 90);
+
   view.innerHTML = `
     <div class="home-hero">
       <p class="home-hero__eyebrow">${greeting()}, equipe comercial</p>
@@ -141,6 +213,16 @@ async function load(view, opts = {}) {
       ${statCard("Saídas do mês", formatCurrency(saidasMes), "var(--danger)")}
       ${statCard("Saldo do mês", formatCurrency(saldoMes), saldoMes >= 0 ? "var(--accent)" : "var(--danger)")}
       ${statCard("Produtos com estoque baixo", estoqueBaixo.length, estoqueBaixo.length > 0 ? "var(--amber)" : "var(--text-muted)")}
+    </div>
+
+    <div class="card card-section">
+      <p class="section-title">Fluxo de caixa projetado</p>
+      <p class="cell-muted" style="margin: 0 0 0.8rem;">Contas a pagar e parcelas de matrícula pendentes (incluindo as já atrasadas) com vencimento dentro de cada horizonte. Não inclui vendas avulsas nem recebimentos manuais, que não têm vencimento agendado.</p>
+      <div class="stat-grid">
+        ${projecaoCard("Em 30 dias", projecao30)}
+        ${projecaoCard("Em 60 dias", projecao60)}
+        ${projecaoCard("Em 90 dias", projecao90)}
+      </div>
     </div>
 
     <div class="report-grid">
