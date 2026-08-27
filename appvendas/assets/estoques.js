@@ -9,7 +9,7 @@
 import { supabase } from "./supabaseClient.js";
 import { showToast, openModal, closeModal, confirmDialog, formatDate, escapeHtml, createSearchSelect, registerAutoRefresh, withButtonLock, friendlyPgError } from "./app.js";
 import { isAdmin, getCurrentEmpresaId } from "./auth.js";
-import { loadProdutosVendaveis, loadEmpresasAtivas, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
+import { loadProdutosVendaveis, loadEmpresasAtivas, loadFornecedoresPorEmpresa, produtoSearchOptions, empresaSearchOptions, fornecedorSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
 
 const PAGE_SIZE = 50;
 
@@ -30,16 +30,59 @@ function lastDayOfMonthStr() {
 }
 
 export async function render(view, actionsEl) {
-  const state = { inicio: firstDayOfMonthStr(), fim: lastDayOfMonthStr(), page: 0 };
+  const state = { inicio: firstDayOfMonthStr(), fim: lastDayOfMonthStr(), page: 0, tab: "entradas", kardexProdutoId: null };
 
   [empresasOptions, produtosOptions] = await Promise.all([loadEmpresasAtivas(), loadProdutosVendaveis()]);
 
-  actionsEl.innerHTML = `<button type="button" class="btn btn--primary" id="btn-nova-entrada">+ Nova entrada de estoque</button>`;
+  actionsEl.innerHTML = `
+    <button type="button" class="btn btn--ghost" id="btn-ajuste-estoque">+ Ajuste de estoque</button>
+    <button type="button" class="btn btn--primary" id="btn-nova-entrada">+ Nova entrada de estoque</button>
+  `;
   actionsEl.querySelector("#btn-nova-entrada").addEventListener("click", () => {
-    openEntradaForm(() => load(view, state, { silent: true }));
+    openEntradaForm(() => reloadTabAtual(view, state));
+  });
+  actionsEl.querySelector("#btn-ajuste-estoque").addEventListener("click", () => {
+    openAjusteForm(() => reloadTabAtual(view, state));
   });
 
+  // Roadmap Fase 2 — "Kardex de estoque": Entradas continua sendo o
+  // lançamento auditável de compra; Kardex é o extrato por produto
+  // (entradas + saídas por venda + ajustes manuais) com saldo corrente.
   view.innerHTML = `
+    <div class="toolbar" style="gap:0.5rem; margin-bottom:1rem;">
+      <button type="button" class="btn btn--primary" id="es-tab-entradas">Entradas</button>
+      <button type="button" class="btn btn--ghost" id="es-tab-kardex">Kardex por produto</button>
+    </div>
+    <div id="es-tab-content"></div>
+  `;
+
+  const tabEntradas = view.querySelector("#es-tab-entradas");
+  const tabKardex = view.querySelector("#es-tab-kardex");
+
+  function activateTab(tab) {
+    state.tab = tab;
+    tabEntradas.className = tab === "entradas" ? "btn btn--primary" : "btn btn--ghost";
+    tabKardex.className = tab === "kardex" ? "btn btn--primary" : "btn btn--ghost";
+    if (tab === "entradas") renderEntradasTab(view, state);
+    else renderKardexTab(view, state);
+  }
+
+  tabEntradas.addEventListener("click", () => activateTab("entradas"));
+  tabKardex.addEventListener("click", () => activateTab("kardex"));
+
+  activateTab("entradas");
+
+  registerAutoRefresh(() => reloadTabAtual(view, state, { silent: true }), 20000);
+}
+
+function reloadTabAtual(view, state, opts) {
+  if (state.tab === "entradas") load(view, state, opts);
+  else if (state.kardexProdutoId) loadKardex(view, state, opts);
+}
+
+function renderEntradasTab(view, state) {
+  const content = view.querySelector("#es-tab-content");
+  content.innerHTML = `
     <div class="toolbar financeiro-filtro">
       <div class="field financeiro-filtro__field--date">
         <label for="es-inicio">Entrada de</label>
@@ -57,19 +100,130 @@ export async function render(view, actionsEl) {
     <div id="es-content"><div class="empty-state">Carregando…</div></div>
   `;
 
-  const inicioInput = view.querySelector("#es-inicio");
-  const fimInput = view.querySelector("#es-fim");
+  const inicioInput = content.querySelector("#es-inicio");
+  const fimInput = content.querySelector("#es-fim");
 
-  view.querySelector("#es-filtrar").addEventListener("click", () => {
+  content.querySelector("#es-filtrar").addEventListener("click", () => {
     state.inicio = inicioInput.value || state.inicio;
     state.fim = fimInput.value || state.fim;
     state.page = 0;
     load(view, state);
   });
 
-  await load(view, state);
+  load(view, state);
+}
 
-  registerAutoRefresh(() => load(view, state, { silent: true }), 20000);
+function renderKardexTab(view, state) {
+  const content = view.querySelector("#es-tab-content");
+  content.innerHTML = `
+    <div class="toolbar financeiro-filtro">
+      <div class="field field--full" style="max-width:420px;">
+        <label>Produto</label>
+        <div data-mount="es-kardex-produto"></div>
+      </div>
+    </div>
+    <div id="es-kardex-content"></div>
+  `;
+
+  createSearchSelect({
+    container: content.querySelector('[data-mount="es-kardex-produto"]'),
+    placeholder: "Buscar produto por nome ou SKU…",
+    options: produtoSearchOptions(produtosOptions, { meta: produtoMetaPrecoEstoque }),
+    value: state.kardexProdutoId,
+    allowClear: false,
+    onChange: (produtoId) => {
+      state.kardexProdutoId = produtoId;
+      loadKardex(view, state);
+    },
+  });
+
+  if (state.kardexProdutoId) {
+    loadKardex(view, state);
+  } else {
+    content.querySelector("#es-kardex-content").innerHTML = `<div class="empty-state" style="padding: 1.5rem;">Escolha um produto para ver o extrato de entradas, saídas e ajustes, com saldo corrente.</div>`;
+  }
+}
+
+// Saldo corrente (produtos.estoque) é o único ponto de partida confiável —
+// o app nunca guardou um saldo inicial histórico. Por isso o extrato é
+// percorrido do mais recente para o mais antigo, subtraindo cada delta para
+// chegar ao "saldo após" da linha anterior, em vez de tentar somar para
+// frente a partir de um saldo inicial que não existe.
+async function loadKardex(view, state, opts = {}) {
+  const { silent = false } = opts;
+  const content = view.querySelector("#es-kardex-content");
+  if (!content) return;
+  const produtoId = state.kardexProdutoId;
+  if (!silent) content.innerHTML = `<div class="empty-state">Carregando…</div>`;
+
+  const [produtoRes, entradasRes, ajustesRes, vendaItensRes] = await Promise.all([
+    supabase.from("produtos").select("nome, sku, estoque, estoque_minimo").eq("id", produtoId).maybeSingle(),
+    supabase.from("entradas_estoque").select("id, quantidade, data_entrada, observacoes").eq("produto_id", produtoId).order("data_entrada", { ascending: false }).limit(300),
+    supabase.from("ajustes_estoque").select("id, quantidade, motivo, created_at").eq("produto_id", produtoId).order("created_at", { ascending: false }).limit(300),
+    supabase.from("venda_itens").select("id, quantidade, venda:vendas(numero, data_venda, status)").eq("produto_id", produtoId).order("created_at", { ascending: false }).limit(300),
+  ]);
+
+  const erro = produtoRes.error || entradasRes.error || ajustesRes.error || vendaItensRes.error;
+  if (erro) {
+    content.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar o kardex</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(erro))}</p></div>`;
+    return;
+  }
+
+  const produto = produtoRes.data;
+
+  // Venda cancelada já devolveu a quantidade ao estoque no momento do
+  // cancelamento (ver cancelar_venda) — incluí-la aqui duplicaria a
+  // devolução sem uma data de cancelamento própria para posicioná-la no
+  // extrato, então só a baixa de venda confirmada entra como saída.
+  const eventos = [
+    ...(entradasRes.data || []).map((e) => ({ data: e.data_entrada, tipo: "Entrada", detalhe: e.observacoes || "—", delta: Number(e.quantidade) })),
+    ...(ajustesRes.data || []).map((a) => ({
+      data: a.created_at.slice(0, 10),
+      tipo: Number(a.quantidade) > 0 ? "Ajuste (sobra)" : "Ajuste (perda/quebra)",
+      detalhe: a.motivo,
+      delta: Number(a.quantidade),
+    })),
+    ...(vendaItensRes.data || [])
+      .filter((it) => it.venda?.status === "confirmada")
+      .map((it) => ({ data: it.venda.data_venda, tipo: "Venda", detalhe: `Venda #${it.venda.numero}`, delta: -Number(it.quantidade) })),
+  ].sort((a, b) => new Date(b.data) - new Date(a.data));
+
+  let saldoRodando = Number(produto?.estoque || 0);
+  const linhas = eventos.map((ev) => {
+    const saldoApos = saldoRodando;
+    saldoRodando -= ev.delta;
+    return { ...ev, saldoApos };
+  });
+
+  content.innerHTML = `
+    <div class="stat-grid">
+      ${statCard("Estoque atual", produto ? produto.estoque : "—", "var(--accent)")}
+      ${statCard("Estoque mínimo", produto ? produto.estoque_minimo : "—", "var(--text-muted)")}
+      ${statCard("Lançamentos no extrato", linhas.length, "var(--text-muted)")}
+    </div>
+    <div class="card card-section">
+      <p class="section-title">${escapeHtml(produto?.nome || "Produto")}${produto?.sku ? ` · ${escapeHtml(produto.sku)}` : ""}</p>
+      ${linhas.length === 0
+        ? '<div class="empty-state" style="padding: 1.5rem;">Nenhuma movimentação registrada para este produto ainda.</div>'
+        : `<div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Data</th><th>Tipo</th><th>Detalhe</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Saldo após</th></tr></thead>
+              <tbody>
+                ${linhas.map((l) => `
+                  <tr>
+                    <td>${formatDate(l.data)}</td>
+                    <td>${escapeHtml(l.tipo)}</td>
+                    <td class="cell-muted">${escapeHtml(l.detalhe)}</td>
+                    <td class="cell-num" style="color: ${l.delta >= 0 ? "var(--success)" : "var(--danger)"}; font-weight:600;">${l.delta >= 0 ? "+" : ""}${l.delta}</td>
+                    <td class="cell-num">${l.saldoApos}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>`
+      }
+    </div>
+  `;
 }
 
 async function load(view, state, opts = {}) {
@@ -80,7 +234,7 @@ async function load(view, state, opts = {}) {
   const from = state.page * PAGE_SIZE;
   const { data, error, count } = await supabase
     .from("entradas_estoque")
-    .select("id, quantidade, data_entrada, observacoes, produto:produtos(nome, sku, estoque, estoque_minimo)", { count: "exact" })
+    .select("id, quantidade, data_entrada, observacoes, conta_pagar_id, conta_pagar:contas_pagar(descricao), produto:produtos(nome, sku, estoque, estoque_minimo)", { count: "exact" })
     .gte("data_entrada", state.inicio)
     .lte("data_entrada", state.fim)
     .order("data_entrada", { ascending: false })
@@ -184,7 +338,10 @@ function renderTabela(linhas) {
                 ${l.produto?.sku ? `<span class="cell-muted"> · ${escapeHtml(l.produto.sku)}</span>` : ""}
               </td>
               <td class="cell-num">+${Number(l.quantidade)}</td>
-              <td class="cell-muted">${escapeHtml(l.observacoes || "—")}</td>
+              <td class="cell-muted">
+                ${escapeHtml(l.observacoes || "—")}
+                ${l.conta_pagar_id ? `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">Conta a pagar gerada</div>` : ""}
+              </td>
               <td class="cell-actions">
                 <button type="button" class="btn btn--danger btn--sm" data-excluir="${l.id}">Excluir</button>
               </td>
@@ -229,6 +386,25 @@ function openEntradaForm(onSaved) {
           <textarea class="input" id="es-obs" rows="2" placeholder="Ex.: nota fiscal, fornecedor, lote…"></textarea>
         </div>
       </div>
+
+      <label class="cell-muted" style="display:flex; align-items:center; gap:0.5rem; margin-top:0.4rem; font-weight:600;">
+        <input type="checkbox" id="es-gerar-conta" /> Gerar conta a pagar para esta entrada
+      </label>
+      <div class="form-grid" id="es-conta-fields" hidden style="margin-top:0.8rem;">
+        <div class="field field--full">
+          <label>Fornecedor<span class="field-required">*</span></label>
+          <div data-mount="es-fornecedor"></div>
+        </div>
+        <div class="field">
+          <label for="es-conta-valor">Valor da conta<span class="field-required">*</span></label>
+          <input class="input" type="number" id="es-conta-valor" min="0.01" step="0.01" />
+        </div>
+        <div class="field">
+          <label for="es-conta-vencimento">Vencimento<span class="field-required">*</span></label>
+          <input class="input" type="date" id="es-conta-vencimento" value="${todayStr()}" />
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="button" class="btn btn--ghost" id="es-cancel">Cancelar</button>
         <button type="submit" class="btn btn--primary">Registrar entrada</button>
@@ -243,15 +419,38 @@ function openEntradaForm(onSaved) {
     allowClear: false,
   });
 
+  const empresaInicial = getCurrentEmpresaId();
+
+  const fornecedorSelect = createSearchSelect({
+    container: body.querySelector('[data-mount="es-fornecedor"]'),
+    placeholder: "Buscar fornecedor…",
+    options: [],
+    allowClear: false,
+    emptyText: admin ? "Escolha a empresa primeiro" : "Nenhum fornecedor cadastrado",
+  });
+
+  async function recarregarFornecedores(empresaId) {
+    const fornecedores = await loadFornecedoresPorEmpresa(empresaId);
+    fornecedorSelect.setOptions(fornecedorSearchOptions(fornecedores));
+  }
+  recarregarFornecedores(empresaInicial);
+
   const empresaSelect = admin
     ? createSearchSelect({
         container: body.querySelector('[data-mount="es-empresa"]'),
         placeholder: "Buscar empresa…",
         options: empresaSearchOptions(empresasOptions),
-        value: getCurrentEmpresaId(),
+        value: empresaInicial,
         allowClear: false,
+        onChange: (empresaId) => recarregarFornecedores(empresaId),
       })
     : null;
+
+  const gerarContaCheckbox = body.querySelector("#es-gerar-conta");
+  const contaFields = body.querySelector("#es-conta-fields");
+  gerarContaCheckbox.addEventListener("change", () => {
+    contaFields.hidden = !gerarContaCheckbox.checked;
+  });
 
   body.querySelector("#es-cancel").addEventListener("click", closeModal);
 
@@ -272,11 +471,26 @@ function openEntradaForm(onSaved) {
         return;
       }
 
+      const gerarConta = gerarContaCheckbox.checked;
+      if (gerarConta && !fornecedorSelect.getValue()) {
+        errorEl.innerHTML = `<div class="form-error">Selecione o fornecedor da conta a pagar.</div>`;
+        return;
+      }
+      const valorConta = Number(body.querySelector("#es-conta-valor").value || 0);
+      if (gerarConta && valorConta <= 0) {
+        errorEl.innerHTML = `<div class="form-error">Informe o valor da conta a pagar.</div>`;
+        return;
+      }
+
       const payload = {
         p_produto_id: produtoId,
         p_quantidade: Number(body.querySelector("#es-quantidade").value || 0),
         p_data_entrada: body.querySelector("#es-data").value,
         p_observacoes: body.querySelector("#es-obs").value || null,
+        p_gerar_conta_pagar: gerarConta,
+        p_fornecedor_id: gerarConta ? fornecedorSelect.getValue() : null,
+        p_valor_conta: gerarConta ? valorConta : null,
+        p_vencimento_conta: gerarConta ? (body.querySelector("#es-conta-vencimento").value || null) : null,
       };
       if (admin) payload.p_empresa_id = empresaSelect.getValue();
 
@@ -287,7 +501,126 @@ function openEntradaForm(onSaved) {
         return;
       }
 
-      showToast("Entrada de estoque registrada.");
+      showToast(gerarConta ? "Entrada de estoque registrada e conta a pagar gerada." : "Entrada de estoque registrada.");
+      closeModal();
+      produtosOptions = await loadProdutosVendaveis();
+      if (onSaved) onSaved();
+    });
+  });
+}
+
+// ── Modal de ajuste manual de estoque (Roadmap Fase 2 — Kardex) ─────────
+// Corrige uma contagem física divergente (perda, quebra, extravio, achado)
+// sem editar o número de "Estoque atual" direto no cadastro do produto —
+// mesmo racional de registrar_entrada_estoque, com o lançamento indo para
+// ajustes_estoque em vez de entradas_estoque.
+function openAjusteForm(onSaved) {
+  const admin = isAdmin();
+  const body = openModal("Ajuste de estoque");
+
+  body.innerHTML = `
+    <form id="aj-form">
+      <div id="aj-form-error"></div>
+      <div class="form-grid">
+        ${admin ? `
+        <div class="field field--full">
+          <label>Empresa<span class="field-required">*</span></label>
+          <div data-mount="aj-empresa"></div>
+        </div>
+        ` : ""}
+        <div class="field field--full">
+          <label>Produto<span class="field-required">*</span></label>
+          <div data-mount="aj-produto"></div>
+        </div>
+        <div class="field">
+          <label for="aj-tipo">Tipo de ajuste<span class="field-required">*</span></label>
+          <select class="input" id="aj-tipo" required>
+            <option value="perda">Perda/quebra (retira do estoque)</option>
+            <option value="sobra">Sobra/achado (adiciona ao estoque)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="aj-quantidade">Quantidade<span class="field-required">*</span></label>
+          <input class="input" type="number" id="aj-quantidade" min="1" step="1" required autofocus />
+        </div>
+        <div class="field field--full">
+          <label for="aj-motivo">Motivo<span class="field-required">*</span></label>
+          <textarea class="input" id="aj-motivo" rows="2" placeholder="Ex.: contagem física, produto danificado, extravio…" required></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" id="aj-cancel">Cancelar</button>
+        <button type="submit" class="btn btn--primary">Registrar ajuste</button>
+      </div>
+    </form>
+  `;
+
+  const produtoSelect = createSearchSelect({
+    container: body.querySelector('[data-mount="aj-produto"]'),
+    placeholder: "Buscar produto por nome ou SKU…",
+    options: produtoSearchOptions(produtosOptions, { meta: produtoMetaPrecoEstoque }),
+    allowClear: false,
+  });
+
+  const empresaInicial = getCurrentEmpresaId();
+
+  const empresaSelect = admin
+    ? createSearchSelect({
+        container: body.querySelector('[data-mount="aj-empresa"]'),
+        placeholder: "Buscar empresa…",
+        options: empresaSearchOptions(empresasOptions),
+        value: empresaInicial,
+        allowClear: false,
+      })
+    : null;
+
+  body.querySelector("#aj-cancel").addEventListener("click", closeModal);
+
+  body.querySelector("#aj-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    withButtonLock(body.querySelector('#aj-form button[type="submit"]'), async () => {
+      const errorEl = body.querySelector("#aj-form-error");
+      errorEl.innerHTML = "";
+
+      const produtoId = produtoSelect.getValue();
+      if (!produtoId) {
+        errorEl.innerHTML = `<div class="form-error">Selecione um produto.</div>`;
+        return;
+      }
+
+      if (admin && !empresaSelect.getValue()) {
+        errorEl.innerHTML = `<div class="form-error">Selecione uma empresa.</div>`;
+        return;
+      }
+
+      const quantidadeAbs = Number(body.querySelector("#aj-quantidade").value || 0);
+      if (quantidadeAbs <= 0) {
+        errorEl.innerHTML = `<div class="form-error">Informe uma quantidade maior que zero.</div>`;
+        return;
+      }
+
+      const motivo = body.querySelector("#aj-motivo").value.trim();
+      if (!motivo) {
+        errorEl.innerHTML = `<div class="form-error">Informe o motivo do ajuste.</div>`;
+        return;
+      }
+
+      const tipo = body.querySelector("#aj-tipo").value;
+      const payload = {
+        p_produto_id: produtoId,
+        p_quantidade: tipo === "perda" ? -quantidadeAbs : quantidadeAbs,
+        p_motivo: motivo,
+      };
+      if (admin) payload.p_empresa_id = empresaSelect.getValue();
+
+      const { error } = await supabase.rpc("registrar_ajuste_estoque", payload);
+
+      if (error) {
+        errorEl.innerHTML = `<div class="form-error">${escapeHtml(friendlyPgError(error))}</div>`;
+        return;
+      }
+
+      showToast("Ajuste de estoque registrado.");
       closeModal();
       produtosOptions = await loadProdutosVendaveis();
       if (onSaved) onSaved();

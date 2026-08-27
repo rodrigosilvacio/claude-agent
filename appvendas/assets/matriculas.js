@@ -644,9 +644,10 @@ async function showDetail(matriculaId, onChange) {
   const body = openModal("Detalhes da matrícula");
   body.innerHTML = `<div class="empty-state">Carregando…</div>`;
 
-  const [{ data: matricula, error: matriculaError }, { data: parcelasData }] = await Promise.all([
+  const [{ data: matricula, error: matriculaError }, { data: parcelasData }, { data: propostaOrigem }] = await Promise.all([
     supabase.from("matriculas").select("*, cliente:clientes(nome), produto:produtos(nome)").eq("id", matriculaId).single(),
     supabase.from("matricula_parcelas").select("*").eq("matricula_id", matriculaId).order("numero_parcela", { ascending: true }),
+    supabase.from("propostas").select("numero").eq("matricula_id", matriculaId).maybeSingle(),
   ]);
 
   if (!matricula) {
@@ -662,6 +663,7 @@ async function showDetail(matriculaId, onChange) {
     body.innerHTML = `
       <div class="receipt" style="padding: 0;">
         <div class="receipt__row"><span>Nº da matrícula</span><span>#${matricula.numero}</span></div>
+        ${propostaOrigem ? `<div class="receipt__row"><span>Origem</span><span>Proposta #${propostaOrigem.numero} (CRM)</span></div>` : ""}
         <div class="receipt__row"><span>Data</span><span>${formatDate(matricula.data_matricula)}</span></div>
         <div class="receipt__row"><span>Cliente</span><span>${escapeHtml(matricula.cliente?.nome || "—")}</span></div>
         <div class="receipt__row"><span>Curso</span><span>${escapeHtml(matricula.produto?.nome || "—")}</span></div>

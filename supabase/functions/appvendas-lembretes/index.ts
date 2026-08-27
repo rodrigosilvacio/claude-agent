@@ -74,6 +74,16 @@ function formatDateBR(isoDate: string): string {
   return d.toLocaleDateString("pt-BR");
 }
 
+function escapeHtml(str: unknown): string {
+  return String(str ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c] as string));
+}
+
 async function enviarMensagemZapi(phone: string, message: string): Promise<boolean> {
   try {
     const res = await fetch(
@@ -264,6 +274,80 @@ async function processarCobrancasDeParcela(
   return { processados: rows.length, enviados };
 }
 
+// Roadmap Fase 1 — item 4: mesmo racional de processarLembretesDeAula (dia
+// anterior, marca como processado mesmo sem canal de envio), mas o
+// destinatário aqui é a própria empresa (empresas.email), não um cliente —
+// não faz sentido avisar o fornecedor que a empresa vai pagar ele. Várias
+// contas vencendo amanhã na mesma empresa viram um e-mail só, agrupado.
+type ContaPagarLembrete = {
+  id: string;
+  descricao: string;
+  valor: number;
+  data_vencimento: string;
+  fornecedor: { nome: string } | null;
+  empresa: { id: string; email: string | null; nome_fantasia: string; nome_aplicacao: string | null } | null;
+};
+
+async function processarLembretesContasPagar(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+): Promise<{ processados: number; enviados: number }> {
+  const amanha = new Date();
+  amanha.setDate(amanha.getDate() + 1);
+  const amanhaKey = amanha.toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("contas_pagar")
+    .select(
+      "id, descricao, valor, data_vencimento, fornecedor:fornecedores(nome), empresa:empresas(id, email, nome_fantasia, nome_aplicacao)",
+    )
+    .eq("status", "pendente")
+    .eq("data_vencimento", amanhaKey)
+    .is("lembrete_enviado_em", null);
+
+  if (error) {
+    console.error("Erro ao buscar contas a pagar para lembrete:", error);
+    return { processados: 0, enviados: 0 };
+  }
+
+  const rows = (data ?? []) as ContaPagarLembrete[];
+  if (rows.length === 0) return { processados: 0, enviados: 0 };
+
+  const porEmpresa = new Map<string, { empresa: ContaPagarLembrete["empresa"]; contas: ContaPagarLembrete[] }>();
+  for (const row of rows) {
+    const empresaId = row.empresa?.id;
+    if (!empresaId) continue;
+    if (!porEmpresa.has(empresaId)) porEmpresa.set(empresaId, { empresa: row.empresa, contas: [] });
+    porEmpresa.get(empresaId)!.contas.push(row);
+  }
+
+  let enviados = 0;
+
+  for (const { empresa, contas } of porEmpresa.values()) {
+    const nomeEmpresa = empresa?.nome_aplicacao || empresa?.nome_fantasia || "ERPConnect";
+
+    if (empresa?.email) {
+      const total = contas.reduce((soma, c) => soma + Number(c.valor || 0), 0);
+      const linhas = contas
+        .map((c) => `<li>${escapeHtml(c.descricao)} — ${escapeHtml(c.fornecedor?.nome || "Fornecedor")} — ${formatCurrencyBRL(Number(c.valor || 0))}</li>`)
+        .join("");
+      const html = `<p>Olá!</p><p>${contas.length === 1 ? "1 conta vence" : `${contas.length} contas vencem`} amanhã (${
+        formatDateBR(contas[0].data_vencimento)
+      }), totalizando <strong>${formatCurrencyBRL(total)}</strong>:</p><ul>${linhas}</ul><p>Confira em Financeiro → Contas a Pagar.</p>`;
+
+      const ok = await enviarEmail(empresa.email, `Contas a pagar vencendo amanhã — ${nomeEmpresa}`, html);
+      if (ok) enviados += contas.length;
+    }
+
+    // Marca como processado mesmo sem e-mail cadastrado na empresa — sem
+    // isso, entraria de novo em toda execução até a data passar (mesmo
+    // racional das outras duas rotinas acima).
+    await supabase.from("contas_pagar").update({ lembrete_enviado_em: new Date().toISOString() }).in("id", contas.map((c) => c.id));
+  }
+
+  return { processados: rows.length, enviados };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "GET" && req.method !== "POST") return json({ error: "Método não permitido." }, 405);
@@ -277,14 +361,16 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const [lembretes, cobrancas] = await Promise.all([
+  const [lembretes, cobrancas, contasPagar] = await Promise.all([
     processarLembretesDeAula(supabase),
     processarCobrancasDeParcela(supabase),
+    processarLembretesContasPagar(supabase),
   ]);
 
   return json({
     ok: true,
     lembretes_de_aula: lembretes,
     cobrancas_de_parcela: cobrancas,
+    lembretes_de_contas_a_pagar: contasPagar,
   });
 });

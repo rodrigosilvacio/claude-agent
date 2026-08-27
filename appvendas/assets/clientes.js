@@ -1,9 +1,18 @@
 import { renderCadastro } from "./cadastro.js";
 import { supabase } from "./supabaseClient.js";
-import { showToast, friendlyPgError } from "./app.js";
+import { showToast, friendlyPgError, openModal, formatCurrency, formatDate, escapeHtml } from "./app.js";
 import { getCurrentEmpresaId } from "./auth.js";
 
 const SITUACAO_LABEL = { pendente: "Pendente", aprovado: "Aprovado", reprovado: "Reprovado" };
+
+// Roadmap Fase 2 — "página única do cliente": em vez de abrir Vendas, CRM,
+// Matrículas e Agenda separadamente para saber tudo sobre um cliente, o
+// histórico junta as quatro origens por cliente_id numa única linha do
+// tempo, só lendo dados que a RLS já restringe à empresa de quem está logado.
+const VENDA_STATUS_LABEL = { orcamento: "Orçamento", confirmada: "Confirmada", cancelada: "Cancelada" };
+const MATRICULA_STATUS_LABEL = { ativa: "Ativa", aguardando_pagamento: "Aguardando pagamento", cancelada: "Cancelada" };
+const PROPOSTA_STATUS_LABEL = { draft: "Rascunho", enviada: "Enviada", aprovada: "Aprovada", reprovada: "Reprovada" };
+const AGENDAMENTO_STATUS_LABEL = { agendado: "Agendado", atendido: "Atendido" };
 
 export async function render(view, actionsEl) {
   await renderCadastro(view, actionsEl, {
@@ -41,14 +50,19 @@ export async function render(view, actionsEl) {
       { key: "ativo", label: "Cliente ativo", type: "checkbox", default: true, full: true },
     ],
     rowActions: (row) => {
-      if (row.status_cadastro === "aprovado") return "";
+      const historico = `<button type="button" class="btn btn--ghost btn--sm" data-row-action="historico" data-row-action-id="${row.id}">Histórico</button>`;
+      if (row.status_cadastro === "aprovado") return historico;
       const aprovar = `<button type="button" class="btn btn--primary btn--sm" data-row-action="aprovar" data-row-action-id="${row.id}">Aprovar</button>`;
       const reprovar = row.status_cadastro === "pendente"
         ? `<button type="button" class="btn btn--danger btn--sm" data-row-action="reprovar" data-row-action-id="${row.id}">Reprovar</button>`
         : "";
-      return aprovar + reprovar;
+      return historico + aprovar + reprovar;
     },
     onRowAction: async (action, row, reload) => {
+      if (action === "historico") {
+        abrirHistorico(row);
+        return;
+      }
       const patch = action === "aprovar"
         ? { status_cadastro: "aprovado", ativo: true }
         : { status_cadastro: "reprovado", ativo: false };
@@ -80,4 +94,83 @@ export async function render(view, actionsEl) {
       showToast(`Link: ${url}`);
     }
   });
+}
+
+// ── Histórico do cliente (Roadmap Fase 2) ───────────────────────────────
+async function abrirHistorico(row) {
+  const body = openModal(`Histórico — ${row.nome}`);
+  body.innerHTML = `<div class="empty-state">Carregando histórico…</div>`;
+
+  const [vendasRes, matriculasRes, propostasRes, agendamentosRes] = await Promise.all([
+    supabase.from("vendas").select("id, numero, data_venda, status, total").eq("cliente_id", row.id).order("data_venda", { ascending: false }).limit(100),
+    supabase.from("matriculas").select("id, numero, data_matricula, status, valor_total, produto:produtos(nome)").eq("cliente_id", row.id).order("data_matricula", { ascending: false }).limit(100),
+    supabase.from("propostas").select("id, numero, data_proposta, status, total").eq("cliente_id", row.id).order("data_proposta", { ascending: false }).limit(100),
+    supabase.from("agendamentos").select("id, data_agendamento, horario, status, produto:produtos(nome)").eq("cliente_id", row.id).order("data_agendamento", { ascending: false }).limit(100),
+  ]);
+
+  const erro = vendasRes.error || matriculasRes.error || propostasRes.error || agendamentosRes.error;
+  if (erro) {
+    body.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar o histórico</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(erro))}</p></div>`;
+    return;
+  }
+
+  const linhas = [
+    ...(vendasRes.data || []).map((v) => ({
+      data: v.data_venda,
+      tipo: "Venda",
+      origem: `Venda #${v.numero}`,
+      status: VENDA_STATUS_LABEL[v.status] || v.status,
+      statusCls: v.status === "cancelada" ? "cancelada" : v.status === "confirmada" ? "confirmada" : "pendente",
+      valor: Number(v.total || 0),
+    })),
+    ...(matriculasRes.data || []).map((m) => ({
+      data: m.data_matricula,
+      tipo: "Matrícula",
+      origem: `Matrícula #${m.numero} · ${m.produto?.nome || "—"}`,
+      status: MATRICULA_STATUS_LABEL[m.status] || m.status,
+      statusCls: m.status === "cancelada" ? "cancelada" : m.status === "ativa" ? "confirmada" : "pendente",
+      valor: Number(m.valor_total || 0),
+    })),
+    ...(propostasRes.data || []).map((p) => ({
+      data: p.data_proposta,
+      tipo: "Proposta (CRM)",
+      origem: `Proposta #${p.numero}`,
+      status: PROPOSTA_STATUS_LABEL[p.status] || p.status,
+      statusCls: p.status === "aprovada" ? "confirmada" : p.status === "reprovada" ? "cancelada" : "pendente",
+      valor: Number(p.total || 0),
+    })),
+    ...(agendamentosRes.data || []).map((a) => ({
+      data: a.data_agendamento,
+      tipo: "Agenda",
+      origem: `${a.produto?.nome || "Atendimento"} · ${(a.horario || "").slice(0, 5)}`,
+      status: AGENDAMENTO_STATUS_LABEL[a.status] || a.status,
+      statusCls: a.status === "atendido" ? "confirmada" : "pendente",
+      valor: null,
+    })),
+  ].sort((a, b) => new Date(b.data) - new Date(a.data));
+
+  const totalMovimentado = (vendasRes.data || []).filter((v) => v.status === "confirmada").reduce((s, v) => s + Number(v.total || 0), 0)
+    + (matriculasRes.data || []).filter((m) => m.status !== "cancelada").reduce((s, m) => s + Number(m.valor_total || 0), 0);
+
+  body.innerHTML = linhas.length === 0
+    ? `<div class="empty-state">Nenhuma venda, matrícula, proposta ou agendamento para este cliente ainda.</div>`
+    : `
+    <p class="record-count" style="margin: 0 0 1rem;">${linhas.length} registro${linhas.length === 1 ? "" : "s"} · total em vendas e matrículas não canceladas: ${formatCurrency(totalMovimentado)}</p>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Data</th><th>Tipo</th><th>Origem</th><th>Status</th><th style="text-align:right">Valor</th></tr></thead>
+        <tbody>
+          ${linhas.map((l) => `
+            <tr>
+              <td>${formatDate(l.data)}</td>
+              <td>${escapeHtml(l.tipo)}</td>
+              <td>${escapeHtml(l.origem)}</td>
+              <td><span class="status status--${l.statusCls}">${escapeHtml(l.status)}</span></td>
+              <td class="cell-num">${l.valor != null ? formatCurrency(l.valor) : "—"}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }

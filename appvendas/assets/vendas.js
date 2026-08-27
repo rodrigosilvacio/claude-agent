@@ -593,9 +593,10 @@ async function showDetail(vendaId) {
   const body = openModal("Detalhes da venda");
   body.innerHTML = `<div class="empty-state">Carregando…</div>`;
 
-  const [{ data: venda, error: vendaError }, { data: itens }] = await Promise.all([
+  const [{ data: venda, error: vendaError }, { data: itens }, { data: propostaOrigem }] = await Promise.all([
     supabase.from("vendas").select("*, cliente:clientes(nome)").eq("id", vendaId).single(),
     supabase.from("venda_itens").select("*, produto:produtos(nome)").eq("venda_id", vendaId),
+    supabase.from("propostas").select("numero").eq("venda_id", vendaId).maybeSingle(),
   ]);
 
   if (!venda) {
@@ -608,6 +609,7 @@ async function showDetail(vendaId) {
   body.innerHTML = `
     <div class="receipt" style="padding: 0;">
       <div class="receipt__row"><span>Nº da venda</span><span>#${venda.numero}</span></div>
+      ${propostaOrigem ? `<div class="receipt__row"><span>Origem</span><span>Proposta #${propostaOrigem.numero} (CRM)</span></div>` : ""}
       <div class="receipt__row"><span>Data</span><span>${formatDate(venda.data_venda)}</span></div>
       <div class="receipt__row"><span>Cliente</span><span>${escapeHtml(venda.cliente?.nome || "Sem cliente")}</span></div>
       <div class="receipt__row"><span>Pagamento</span><span>${escapeHtml(venda.forma_pagamento || "—")}</span></div>
