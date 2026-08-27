@@ -145,6 +145,21 @@ export function getCurrentUsuario() {
   return currentUsuario;
 }
 
+// Bug corrigido: papel/empresa/menus do usuário só eram recarregados no
+// login — se um admin promovesse alguém a admin global (ou mudasse
+// menus_habilitados) enquanto essa pessoa já estava com o app aberto,
+// isAdmin()/isGlobalAdmin() continuavam respondendo com o valor antigo até
+// um F5 (o único recarregamento periódico, ativoWatch, só confere
+// `ativo`). Usado por app.js como uma segunda checagem, só no momento em
+// que uma navegação seria bloqueada — não é chamado a cada rota, então não
+// arrisca interromper um formulário em andamento em outra tela.
+export async function refreshCurrentUsuario() {
+  if (!currentSession) return null;
+  const atualizado = await loadUsuario(currentSession.user.id);
+  if (atualizado) currentUsuario = atualizado;
+  return currentUsuario;
+}
+
 export function isLoggedIn() {
   return Boolean(currentSession && currentUsuario && currentUsuario.ativo);
 }
