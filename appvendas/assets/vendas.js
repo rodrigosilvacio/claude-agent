@@ -2,7 +2,7 @@ import { supabase } from "./supabaseClient.js";
 import { showToast, openModal, confirmDialog, formatCurrency, formatDate, formatDateTime, escapeHtml, createSearchSelect, registerAutoRefresh, consumeVendaPrefill, setMatriculaPrefill, withButtonLock, friendlyPgError, exportCsv } from "./app.js";
 import { isAdmin } from "./auth.js";
 import { loadClientesAtivos, loadProdutosVendaveis, loadEmpresasAtivas, clienteSearchOptions, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
-import { paytilesHtml, mountPaytiles, chamarCriarCheckoutStripe, mostrarModalStripe } from "./pagamento.js";
+import { paytilesHtml, mountPaytiles, chamarCriarCheckoutStripe, mostrarModalStripe, dispararConfirmacaoNegocio } from "./pagamento.js";
 
 let clientesOptions = [];
 let produtosOptions = [];
@@ -352,6 +352,8 @@ function renderNovaVenda(content) {
   // `propostaOrigemId` e `cart` seguem em memória durante todo o processo, por
   // isso finalizarComSucesso lê essas variáveis do escopo de renderNovaVenda.
   async function finalizarComSucesso(vendaId, mensagemBase = "Venda registrada com sucesso.") {
+    dispararConfirmacaoNegocio("venda", vendaId);
+
     if (agendamentoOrigemId) {
       const { error: agError } = await supabase.from("agendamentos").update({ status: "atendido" }).eq("id", agendamentoOrigemId);
       showToast(agError ? "Venda registrada, mas não foi possível confirmar o atendimento na agenda." : "Venda registrada e atendimento confirmado.", agError ? "error" : "success");
