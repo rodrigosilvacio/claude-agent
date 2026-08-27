@@ -18,10 +18,17 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 
-// Sandbox do Resend (mesma ressalva do appvendas-lembretes/oraculo-webhook):
-// só entrega de fato para o e-mail cadastrado na conta Resend usada, a menos
-// que um domínio próprio esteja verificado — nesse caso, troque esta constante.
-const RESEND_FROM = "ERPConnect <onboarding@resend.dev>";
+// Domínio verificado no Resend desta conta (vigiambiental.app) — o endereço
+// sandbox onboarding@resend.dev só entrega de fato para o e-mail dono da
+// conta Resend, então enviar propostas a clientes reais com ele sempre
+// falhava com 403 (validation_error). Nome de exibição segue dinâmico por
+// empresa, igual ao appvendas-lembretes.
+const RESEND_ADDRESS = "notificacoes@vigiambiental.app";
+const RESEND_FROM_PADRAO = "ERPConnect";
+function nomeRemetente(nome: string | null | undefined): string {
+  const limpo = (nome || RESEND_FROM_PADRAO).replace(/[<>"]/g, "").trim();
+  return limpo || RESEND_FROM_PADRAO;
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -55,12 +62,12 @@ function formatDateBR(isoDate: string | null): string {
   return new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR");
 }
 
-async function enviarEmail(to: string, subject: string, html: string): Promise<boolean> {
+async function enviarEmail(to: string, subject: string, html: string, fromName = RESEND_FROM_PADRAO): Promise<boolean> {
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", "Authorization": `Bearer ${RESEND_API_KEY}` },
-      body: JSON.stringify({ from: RESEND_FROM, to: [to], subject, html }),
+      body: JSON.stringify({ from: `${nomeRemetente(fromName)} <${RESEND_ADDRESS}>`, to: [to], subject, html }),
     });
     if (!res.ok) {
       console.error("Resend error:", res.status, await res.text());
@@ -175,7 +182,7 @@ Deno.serve(async (req: Request) => {
     </div>
   `;
 
-  const enviado = await enviarEmail(destinatario, `Proposta #${p.numero} — ${empresaNome}`, html);
+  const enviado = await enviarEmail(destinatario, `Proposta #${p.numero} — ${empresaNome}`, html, empresaNome);
   if (!enviado) {
     return json({ error: "Não foi possível enviar o e-mail agora. Tente novamente em instantes." }, 502);
   }
