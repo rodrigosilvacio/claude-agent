@@ -182,6 +182,30 @@ async function handleCreate(
     }
   }
 
+  // Configurações > Usuários > "Limite de usuários" (empresas.limite_usuarios,
+  // roadmap Fase — reestruturação do painel de configurações): checado ANTES
+  // de criar a conta no auth, para não deixar um usuário órfão no GoTrue se o
+  // limite estiver atingido. Só se aplica quando o usuário fica vinculado a
+  // uma empresa — admin global (empresaId nulo) nunca é contado num limite.
+  if (empresaId) {
+    const { data: empresaCfg } = await admin
+      .from("empresas")
+      .select("limite_usuarios")
+      .eq("id", empresaId)
+      .maybeSingle();
+    const limite = empresaCfg?.limite_usuarios;
+    if (typeof limite === "number" && limite > 0) {
+      const { count: usuariosAtivos } = await admin
+        .from("usuarios")
+        .select("id", { count: "exact", head: true })
+        .eq("empresa_id", empresaId)
+        .eq("ativo", true);
+      if ((usuariosAtivos || 0) >= limite) {
+        return json({ error: `Esta empresa atingiu o limite de ${limite} usuário${limite === 1 ? "" : "s"} ativos. Desative outro usuário ou aumente o limite em Administração → Configurações.` }, 400);
+      }
+    }
+  }
+
   const email = `${login}@appvendas.local`;
 
   const { data: created, error: createError } = await admin.auth.admin.createUser({

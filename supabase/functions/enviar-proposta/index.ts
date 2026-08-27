@@ -97,7 +97,7 @@ Deno.serve(async (req: Request) => {
     .from("propostas")
     .select(
       "id, numero, tipo_contato, lead_nome, contato_email, contato_telefone, data_proposta, validade_ate, condicoes_pagamento, prazo_entrega, observacoes, subtotal, desconto, total, status, " +
-        "cliente:clientes(nome, email), empresa:empresas(nome_fantasia, nome_aplicacao), vendedor:usuarios(nome)",
+        "cliente:clientes(nome, email), empresa:empresas(nome_fantasia, nome_aplicacao, rodape_documentos), vendedor:usuarios(nome)",
     )
     .eq("id", propostaId)
     .maybeSingle();
@@ -171,6 +171,7 @@ Deno.serve(async (req: Request) => {
       ${p.observacoes ? `<p style="margin-top:16px;"><strong>Observações:</strong><br>${escapeHtml(p.observacoes).replace(/\n/g, "<br>")}</p>` : ""}
 
       <p style="margin-top:24px; color:#666; font-size:13px;">Qualquer dúvida, é só responder este e-mail.</p>
+      ${p.empresa?.rodape_documentos ? `<p style="margin-top:12px; padding-top:12px; border-top:1px solid #e5e5e5; color:#888; font-size:12px;">${escapeHtml(p.empresa.rodape_documentos).replace(/\n/g, "<br>")}</p>` : ""}
     </div>
   `;
 

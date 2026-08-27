@@ -25,7 +25,7 @@ const CONFIGURABLE_MENU_KEYS = ["clientes", "produtos", "fornecedores", "crm", "
 // ES modules carregar duas instâncias do módulo (hashchange listener e
 // boot() duplicados). Ver commit e4f8448 (correção original) e 3659424/
 // e75bd3a (reintrodução e reversão do bug).
-export const APP_BUILD = "2026-08-27 12:20 -03";
+export const APP_BUILD = "2026-08-27 13:45 -03";
 
 const ROUTES = {
   home: {
@@ -232,6 +232,29 @@ function updateAuthUI() {
 // uma empresa com `nome_aplicacao` preenchido — admins globais (sem empresa)
 // e a tela de login sempre usam o padrão, já que antes de autenticar não dá
 // pra saber de qual empresa é o usuário.
+// Cor de destaque por empresa (Configurações > Identidade): sobrescreve a
+// paleta padrão via custom property, nas mesmas variáveis que styles.css já
+// usa para os elementos de destaque (sidebar ativa, botões primários…).
+// Nula/ausente = remove o override e volta ao valor definido em styles.css.
+const CORES_APLICADAS = ["--accent", "--accent-deep", "--accent-soft"];
+
+function misturarHex(hex, alvoRgb, fator) {
+  const n = parseInt(hex.slice(1), 16);
+  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  return `#${rgb.map((c, i) => Math.round(c + (alvoRgb[i] - c) * fator).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function applyCorPrimaria(cor) {
+  const valida = cor && /^#[0-9a-fA-F]{6}$/.test(cor);
+  if (!valida) {
+    CORES_APLICADAS.forEach((v) => document.documentElement.style.removeProperty(v));
+    return;
+  }
+  document.documentElement.style.setProperty("--accent", cor);
+  document.documentElement.style.setProperty("--accent-deep", misturarHex(cor, [0, 0, 0], 0.22));
+  document.documentElement.style.setProperty("--accent-soft", misturarHex(cor, [255, 255, 255], 0.86));
+}
+
 function applyBranding(usuario) {
   const custom = usuario?.empresa?.nome_aplicacao?.trim();
   const nome = custom || DEFAULT_APP_NAME;
@@ -240,6 +263,7 @@ function applyBranding(usuario) {
   sidebarBrandMark.textContent = custom
     ? custom.replace(/\s+/g, "").slice(0, 2).toUpperCase() || DEFAULT_APP_MARK
     : DEFAULT_APP_MARK;
+  applyCorPrimaria(usuario?.empresa?.cor_primaria);
 }
 
 function menusHabilitadosDe(usuario) {

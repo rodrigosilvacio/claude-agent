@@ -1,28 +1,55 @@
-// ERPConnect — Administração > Configurações: por empresa, permite trocar o
-// nome exibido do app (branding) e esconder itens de menu operacionais que
-// aquela empresa não usa. Só admins globais (sem empresa vinculada) acessam
-// esta tela — a rota já é bloqueada em app.js (globalAdminOnly), e a RPC
-// `atualizar_config_empresa` revalida a mesma regra no banco.
+// ERPConnect — Administração > Configurações: painel único de variáveis
+// para operar o mesmo app com várias empresas/clientes diferentes
+// (white-label), reestruturado em seções. Só admins globais (sem empresa
+// vinculada) acessam esta tela — a rota já é bloqueada em app.js
+// (globalAdminOnly), e a RPC `atualizar_config_empresa` revalida a mesma
+// regra no banco.
 
 import { supabase } from "./supabaseClient.js";
 import { showToast, escapeHtml, friendlyPgError, createSearchSelect, DEFAULT_APP_NAME } from "./app.js";
 import { HORARIOS_PADRAO } from "./agenda.js";
 
 const HORARIO_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const COR_RE = /^#[0-9a-fA-F]{6}$/;
+const COR_PADRAO = "#2a8a5a";
 
-const MENU_ITEMS = [
-  { key: "clientes", label: "Clientes" },
-  { key: "produtos", label: "Produtos" },
-  { key: "fornecedores", label: "Fornecedores" },
-  { key: "crm", label: "CRM (Propostas)" },
-  { key: "vendas", label: "Loja" },
-  { key: "agenda", label: "Agenda" },
-  { key: "estoques", label: "Estoques" },
-  { key: "matriculas", label: "Matrículas" },
-  { key: "contas-receber", label: "Contas a Receber" },
-  { key: "contas-pagar", label: "Contas a Pagar" },
-  { key: "relatorios", label: "Visão geral (Relatórios)" },
+// Agrupado pelas mesmas áreas da barra lateral (breadcrumb em app.js) —
+// facilita achar "todo o Financeiro" ou "toda a Loja" em vez de uma lista
+// solta de 11 itens sem relação visual entre eles.
+const MENU_GRUPOS = [
+  {
+    label: "Cadastros",
+    items: [
+      { key: "clientes", label: "Clientes" },
+      { key: "produtos", label: "Produtos" },
+      { key: "fornecedores", label: "Fornecedores" },
+    ],
+  },
+  {
+    label: "Movimentações",
+    items: [
+      { key: "crm", label: "CRM (Propostas)" },
+      { key: "vendas", label: "Loja" },
+      { key: "agenda", label: "Agenda" },
+      { key: "estoques", label: "Estoques" },
+      { key: "matriculas", label: "Matrículas" },
+    ],
+  },
+  {
+    label: "Financeiro",
+    items: [
+      { key: "contas-receber", label: "Contas a Receber" },
+      { key: "contas-pagar", label: "Contas a Pagar" },
+    ],
+  },
+  {
+    label: "Relatórios",
+    items: [
+      { key: "relatorios", label: "Visão geral (Relatórios)" },
+    ],
+  },
 ];
+const MENU_ITEMS = MENU_GRUPOS.flatMap((g) => g.items);
 
 async function loadEmpresasOptions() {
   const { data } = await supabase
@@ -37,7 +64,7 @@ export async function render(view, actionsEl) {
   view.innerHTML = `
     <div class="card card-section">
       <p class="section-title">Selecione a empresa</p>
-      <p class="field-hint" style="margin: -0.4rem 0 1rem;">Escolha para qual empresa você quer customizar o nome do app e os menus disponíveis.</p>
+      <p class="field-hint" style="margin: -0.4rem 0 1rem;">Escolha para qual empresa/cliente você quer configurar identidade, módulos, regras e usuários — cada empresa tem seu próprio conjunto de variáveis.</p>
       <div class="field field--full" style="max-width: 28rem;">
         <div data-mount="f-empresa"></div>
       </div>
@@ -67,7 +94,7 @@ async function renderConfigForm(formMount, empresaId) {
 
   const { data: empresa, error } = await supabase
     .from("empresas")
-    .select("id, nome_fantasia, nome_aplicacao, menus_habilitados, horarios_agenda")
+    .select("id, nome_fantasia, nome_aplicacao, menus_habilitados, horarios_agenda, cor_primaria, rodape_documentos, limite_usuarios, dias_lembrete_vencimento, papel_padrao_novo_usuario")
     .eq("id", empresaId)
     .single();
 
@@ -78,38 +105,89 @@ async function renderConfigForm(formMount, empresaId) {
 
   const menus = empresa.menus_habilitados || {};
   const horariosAtuais = (empresa.horarios_agenda || []).join(", ");
+  const corAtual = COR_RE.test(empresa.cor_primaria || "") ? empresa.cor_primaria : COR_PADRAO;
+  const papelPadrao = empresa.papel_padrao_novo_usuario === "admin" ? "admin" : "caixa";
 
   formMount.innerHTML = `
     <form id="config-form">
       <div id="form-error"></div>
 
       <div class="card card-section">
-        <p class="section-title">Nome do aplicativo — ${escapeHtml(empresa.nome_fantasia)}</p>
-        <div class="field field--full">
-          <label for="f-nome-aplicacao">Nome exibido na sidebar e na aba do navegador</label>
-          <input class="input" type="text" id="f-nome-aplicacao" name="nome_aplicacao" value="${escapeHtml(empresa.nome_aplicacao ?? "")}" placeholder="${escapeHtml(DEFAULT_APP_NAME)} (padrão)" maxlength="60" />
-          <p class="field-hint">Deixe em branco para usar o nome padrão (${escapeHtml(DEFAULT_APP_NAME)}). Vale só para os usuários vinculados a esta empresa — a tela de login continua mostrando o nome padrão.</p>
-        </div>
-      </div>
-
-      <div class="card card-section">
-        <p class="section-title">Itens de menu visíveis para esta empresa</p>
-        <p class="field-hint" style="margin: -0.4rem 0 1rem;">Desmarque para esconder o item do menu de todos os usuários desta empresa (Início e Administração ficam sempre visíveis).</p>
+        <p class="section-title">Identidade — ${escapeHtml(empresa.nome_fantasia)}</p>
+        <p class="field-hint" style="margin: -0.4rem 0 1rem;">Campos comuns de marca, aplicados só para os usuários vinculados a esta empresa.</p>
         <div class="form-grid">
-          ${MENU_ITEMS.map((item) => `
-            <div class="field">
-              <label><input type="checkbox" name="menu-${item.key}" ${menus[item.key] === false ? "" : "checked"} /> ${escapeHtml(item.label)}</label>
+          <div class="field field--full">
+            <label for="f-nome-aplicacao">Nome exibido na sidebar e na aba do navegador</label>
+            <input class="input" type="text" id="f-nome-aplicacao" name="nome_aplicacao" value="${escapeHtml(empresa.nome_aplicacao ?? "")}" placeholder="${escapeHtml(DEFAULT_APP_NAME)} (padrão)" maxlength="60" />
+            <p class="field-hint">Deixe em branco para usar o nome padrão (${escapeHtml(DEFAULT_APP_NAME)}). A tela de login continua mostrando o nome padrão.</p>
+          </div>
+          <div class="field">
+            <label for="f-cor-primaria">Cor de destaque</label>
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+              <input type="color" id="f-cor-primaria-picker" value="${escapeHtml(corAtual)}" style="width:2.6rem; height:2.4rem; padding:0; border:1px solid var(--line); border-radius:0.4rem; background:none;" />
+              <input class="input" type="text" id="f-cor-primaria" name="cor_primaria" value="${escapeHtml(empresa.cor_primaria ?? "")}" placeholder="${COR_PADRAO} (padrão)" maxlength="7" style="max-width:9rem;" />
             </div>
-          `).join("")}
+            <p class="field-hint" id="f-cor-primaria-hint">Aplicada na sidebar e nos botões principais para esta empresa. Deixe em branco para usar a cor padrão do sistema.</p>
+          </div>
         </div>
       </div>
 
       <div class="card card-section">
-        <p class="section-title">Horários da Agenda</p>
+        <p class="section-title">Módulos habilitados</p>
+        <p class="field-hint" style="margin: -0.4rem 0 1rem;">Desmarque para esconder o item do menu de todos os usuários desta empresa (Início e Administração ficam sempre visíveis).</p>
+        ${MENU_GRUPOS.map((grupo) => `
+          <p class="cell-muted" style="font-weight:600; margin: 0.8rem 0 0.4rem; text-transform:uppercase; font-size:0.72rem; letter-spacing:0.04em;">${escapeHtml(grupo.label)}</p>
+          <div class="form-grid">
+            ${grupo.items.map((item) => `
+              <div class="field">
+                <label><input type="checkbox" name="menu-${item.key}" ${menus[item.key] === false ? "" : "checked"} /> ${escapeHtml(item.label)}</label>
+              </div>
+            `).join("")}
+          </div>
+        `).join("")}
+      </div>
+
+      <div class="card card-section">
+        <p class="section-title">Agenda</p>
         <div class="field field--full">
           <label for="f-horarios-agenda">Horários de atendimento, separados por vírgula</label>
           <input class="input" type="text" id="f-horarios-agenda" name="horarios_agenda" value="${escapeHtml(horariosAtuais)}" placeholder="${escapeHtml(HORARIOS_PADRAO.join(", "))} (padrão)" />
           <p class="field-hint" id="f-horarios-agenda-hint">Formato 24h, "HH:MM" (ex.: 08:00, 08:30, 09:00…). Deixe em branco para usar a grade padrão do sistema.</p>
+        </div>
+      </div>
+
+      <div class="card card-section">
+        <p class="section-title">Regras &amp; lembretes</p>
+        <div class="form-grid">
+          <div class="field">
+            <label for="f-dias-lembrete">Avisar conta a pagar vencendo com quantos dias de antecedência</label>
+            <input class="input" type="number" id="f-dias-lembrete" name="dias_lembrete_vencimento" min="0" step="1" value="${Number(empresa.dias_lembrete_vencimento ?? 1)}" />
+            <p class="field-hint">0 = só no próprio dia do vencimento. O lembrete é enviado por e-mail para o endereço cadastrado da empresa.</p>
+          </div>
+          <div class="field field--full">
+            <label for="f-rodape-documentos">Rodapé customizado dos documentos</label>
+            <textarea class="input" id="f-rodape-documentos" name="rodape_documentos" rows="2" placeholder="Ex.: CNPJ, endereço, política de trocas…">${escapeHtml(empresa.rodape_documentos ?? "")}</textarea>
+            <p class="field-hint">Anexado ao final do e-mail de proposta (CRM) enviado por esta empresa. Deixe em branco para nenhum rodapé extra.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-section">
+        <p class="section-title">Usuários</p>
+        <div class="form-grid">
+          <div class="field">
+            <label>Papel padrão para novo usuário</label>
+            <div class="segmented" id="f-papel-padrao" role="radiogroup" aria-label="Papel padrão">
+              <button type="button" class="segmented__btn ${papelPadrao === "caixa" ? "is-active" : ""}" data-value="caixa" role="radio" aria-checked="${papelPadrao === "caixa"}">Caixa</button>
+              <button type="button" class="segmented__btn ${papelPadrao === "admin" ? "is-active" : ""}" data-value="admin" role="radio" aria-checked="${papelPadrao === "admin"}">Administrador</button>
+            </div>
+            <p class="field-hint">Pré-seleciona o papel ao abrir "+ Novo usuário" em Administração → Usuários para esta empresa.</p>
+          </div>
+          <div class="field">
+            <label for="f-limite-usuarios">Limite de usuários ativos</label>
+            <input class="input" type="number" id="f-limite-usuarios" name="limite_usuarios" min="1" step="1" value="${empresa.limite_usuarios ?? ""}" placeholder="Sem limite" />
+            <p class="field-hint">Deixe em branco para não limitar. Ao atingir o limite, novos usuários só podem ser criados depois de desativar outro.</p>
+          </div>
         </div>
       </div>
 
@@ -118,6 +196,21 @@ async function renderConfigForm(formMount, empresaId) {
       </div>
     </form>
   `;
+
+  wireCorPrimaria(formMount);
+
+  let papelPadraoSelecionado = papelPadrao;
+  const papelGroup = formMount.querySelector("#f-papel-padrao");
+  papelGroup.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-value]");
+    if (!btn) return;
+    papelPadraoSelecionado = btn.dataset.value;
+    papelGroup.querySelectorAll(".segmented__btn").forEach((b) => {
+      const active = b === btn;
+      b.classList.toggle("is-active", active);
+      b.setAttribute("aria-checked", String(active));
+    });
+  });
 
   formMount.querySelector("#config-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -142,11 +235,39 @@ async function renderConfigForm(formMount, empresaId) {
       horariosAgenda = [...new Set(horariosAgenda)].sort();
     }
 
+    const corRaw = form.elements.cor_primaria.value.trim();
+    if (corRaw && !COR_RE.test(corRaw)) {
+      errorEl.innerHTML = `<div class="form-error">Cor inválida: "${escapeHtml(corRaw)}". Use o formato hexadecimal, ex.: #2a8a5a.</div>`;
+      return;
+    }
+
+    const diasLembreteRaw = form.elements.dias_lembrete_vencimento.value;
+    const diasLembrete = diasLembreteRaw === "" ? 1 : Number(diasLembreteRaw);
+    if (!Number.isInteger(diasLembrete) || diasLembrete < 0) {
+      errorEl.innerHTML = `<div class="form-error">Dias de antecedência do lembrete deve ser um número inteiro, zero ou mais.</div>`;
+      return;
+    }
+
+    const limiteRaw = form.elements.limite_usuarios.value.trim();
+    let limiteUsuarios = null;
+    if (limiteRaw) {
+      limiteUsuarios = Number(limiteRaw);
+      if (!Number.isInteger(limiteUsuarios) || limiteUsuarios <= 0) {
+        errorEl.innerHTML = `<div class="form-error">O limite de usuários deve ser um número inteiro maior que zero (ou em branco para sem limite).</div>`;
+        return;
+      }
+    }
+
     const { error: saveError } = await supabase.rpc("atualizar_config_empresa", {
       p_empresa_id: empresaId,
       p_nome_aplicacao: form.elements.nome_aplicacao.value,
       p_menus_habilitados: menusHabilitados,
       p_horarios_agenda: horariosAgenda,
+      p_cor_primaria: corRaw || null,
+      p_rodape_documentos: form.elements.rodape_documentos.value,
+      p_limite_usuarios: limiteUsuarios,
+      p_dias_lembrete_vencimento: diasLembrete,
+      p_papel_padrao_novo_usuario: papelPadraoSelecionado,
     });
 
     if (saveError) {
@@ -155,5 +276,22 @@ async function renderConfigForm(formMount, empresaId) {
     }
 
     showToast("Configurações salvas.");
+  });
+}
+
+// Color picker nativo e o campo de texto hex ficam sincronizados nos dois
+// sentidos — o texto é o que de fato viaja no submit (permite deixar em
+// branco para "usar o padrão", coisa que um <input type="color"> sozinho
+// não permite representar).
+function wireCorPrimaria(formMount) {
+  const picker = formMount.querySelector("#f-cor-primaria-picker");
+  const texto = formMount.querySelector("#f-cor-primaria");
+
+  picker.addEventListener("input", () => {
+    texto.value = picker.value;
+  });
+
+  texto.addEventListener("input", () => {
+    if (COR_RE.test(texto.value.trim())) picker.value = texto.value.trim();
   });
 }

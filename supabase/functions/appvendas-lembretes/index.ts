@@ -285,24 +285,34 @@ type ContaPagarLembrete = {
   valor: number;
   data_vencimento: string;
   fornecedor: { nome: string } | null;
-  empresa: { id: string; email: string | null; nome_fantasia: string; nome_aplicacao: string | null } | null;
+  empresa: { id: string; email: string | null; nome_fantasia: string; nome_aplicacao: string | null; dias_lembrete_vencimento: number | null } | null;
 };
+
+// "Dias de antecedência" (empresas.dias_lembrete_vencimento, configurável em
+// Administração > Configurações) varia por empresa — não dá mais pra
+// resolver com um único ".eq(data_vencimento, amanhã)". Em vez disso, busca
+// uma janela ampla o bastante pra cobrir qualquer valor configurado
+// razoável e filtra linha a linha pelo prazo de cada empresa.
+const JANELA_MAX_DIAS_LEMBRETE = 30;
 
 async function processarLembretesContasPagar(
   // deno-lint-ignore no-explicit-any
   supabase: any,
 ): Promise<{ processados: number; enviados: number }> {
-  const amanha = new Date();
-  amanha.setDate(amanha.getDate() + 1);
-  const amanhaKey = amanha.toISOString().slice(0, 10);
+  const hoje = new Date();
+  const hojeKey = hoje.toISOString().slice(0, 10);
+  const limiteJanela = new Date(hoje);
+  limiteJanela.setDate(limiteJanela.getDate() + JANELA_MAX_DIAS_LEMBRETE);
+  const limiteJanelaKey = limiteJanela.toISOString().slice(0, 10);
 
   const { data, error } = await supabase
     .from("contas_pagar")
     .select(
-      "id, descricao, valor, data_vencimento, fornecedor:fornecedores(nome), empresa:empresas(id, email, nome_fantasia, nome_aplicacao)",
+      "id, descricao, valor, data_vencimento, fornecedor:fornecedores(nome), empresa:empresas(id, email, nome_fantasia, nome_aplicacao, dias_lembrete_vencimento)",
     )
     .eq("status", "pendente")
-    .eq("data_vencimento", amanhaKey)
+    .gt("data_vencimento", hojeKey)
+    .lte("data_vencimento", limiteJanelaKey)
     .is("lembrete_enviado_em", null);
 
   if (error) {
@@ -310,7 +320,12 @@ async function processarLembretesContasPagar(
     return { processados: 0, enviados: 0 };
   }
 
-  const rows = (data ?? []) as ContaPagarLembrete[];
+  const diasAte = (dataIso: string) =>
+    Math.round((new Date(`${dataIso}T00:00:00`).getTime() - new Date(`${hojeKey}T00:00:00`).getTime()) / 86_400_000);
+
+  const rows = ((data ?? []) as ContaPagarLembrete[])
+    .filter((row) => diasAte(row.data_vencimento) === (row.empresa?.dias_lembrete_vencimento ?? 1));
+
   if (rows.length === 0) return { processados: 0, enviados: 0 };
 
   const porEmpresa = new Map<string, { empresa: ContaPagarLembrete["empresa"]; contas: ContaPagarLembrete[] }>();
@@ -327,15 +342,17 @@ async function processarLembretesContasPagar(
     const nomeEmpresa = empresa?.nome_aplicacao || empresa?.nome_fantasia || "ERPConnect";
 
     if (empresa?.email) {
+      const dias = empresa.dias_lembrete_vencimento ?? 1;
+      const prazo = dias === 1 ? "amanhã" : `em ${dias} dias`;
       const total = contas.reduce((soma, c) => soma + Number(c.valor || 0), 0);
       const linhas = contas
         .map((c) => `<li>${escapeHtml(c.descricao)} — ${escapeHtml(c.fornecedor?.nome || "Fornecedor")} — ${formatCurrencyBRL(Number(c.valor || 0))}</li>`)
         .join("");
-      const html = `<p>Olá!</p><p>${contas.length === 1 ? "1 conta vence" : `${contas.length} contas vencem`} amanhã (${
+      const html = `<p>Olá!</p><p>${contas.length === 1 ? "1 conta vence" : `${contas.length} contas vencem`} ${prazo} (${
         formatDateBR(contas[0].data_vencimento)
       }), totalizando <strong>${formatCurrencyBRL(total)}</strong>:</p><ul>${linhas}</ul><p>Confira em Financeiro → Contas a Pagar.</p>`;
 
-      const ok = await enviarEmail(empresa.email, `Contas a pagar vencendo amanhã — ${nomeEmpresa}`, html);
+      const ok = await enviarEmail(empresa.email, `Contas a pagar vencendo ${prazo} — ${nomeEmpresa}`, html);
       if (ok) enviados += contas.length;
     }
 
