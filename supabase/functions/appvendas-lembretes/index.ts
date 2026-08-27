@@ -35,8 +35,19 @@ const APPVENDAS_LEMBRETES_SECRET = Deno.env.get("APPVENDAS_LEMBRETES_SECRET")!;
 
 // Sandbox do Resend (mesma ressalva do oraculo-webhook): só entrega de fato
 // para o e-mail cadastrado na conta Resend usada, a menos que um domínio
-// próprio esteja verificado — nesse caso, troque esta constante.
-const RESEND_FROM = "BjjConnect <onboarding@resend.dev>";
+// próprio esteja verificado — nesse caso, troque este endereço.
+const RESEND_SANDBOX_ADDRESS = "onboarding@resend.dev";
+const RESEND_FROM_PADRAO = "ERPConnect";
+
+// Bug corrigido: o nome de exibição do remetente era fixo ("BjjConnect",
+// resquício de quando este app era mono-tenant) — todo e-mail automático
+// chegava com esse nome, não importa a empresa. Agora cada rotina resolve o
+// nome_aplicacao/nome_fantasia da empresa (mesma lógica já usada no
+// assunto/corpo dos e-mails) e passa como remetente aqui.
+function nomeRemetente(nome: string | null | undefined): string {
+  const limpo = (nome || RESEND_FROM_PADRAO).replace(/[<>"]/g, "").trim();
+  return limpo || RESEND_FROM_PADRAO;
+}
 
 // Uma parcela vencida só é cobrada de novo depois desse intervalo — evita
 // mandar a mesma cobrança toda vez que o scheduler rodar (ex.: se agendado
@@ -105,12 +116,12 @@ async function enviarMensagemZapi(phone: string, message: string): Promise<boole
   }
 }
 
-async function enviarEmail(to: string, subject: string, html: string): Promise<boolean> {
+async function enviarEmail(to: string, subject: string, html: string, fromName = RESEND_FROM_PADRAO): Promise<boolean> {
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", "Authorization": `Bearer ${RESEND_API_KEY}` },
-      body: JSON.stringify({ from: RESEND_FROM, to: [to], subject, html }),
+      body: JSON.stringify({ from: `${nomeRemetente(fromName)} <${RESEND_SANDBOX_ADDRESS}>`, to: [to], subject, html }),
     });
     if (!res.ok) {
       console.error("Resend error:", res.status, await res.text());
@@ -133,6 +144,7 @@ async function notificar(
   mensagemWhatsapp: string,
   assuntoEmail: string,
   htmlEmail: string,
+  fromName?: string,
 ): Promise<"whatsapp" | "email" | null> {
   const tel = normalizarTelefone(telefone);
   if (tel.length >= TELEFONE_MIN_DIGITOS) {
@@ -140,7 +152,7 @@ async function notificar(
     if (ok) return "whatsapp";
   }
   if (email) {
-    const ok = await enviarEmail(email, assuntoEmail, htmlEmail);
+    const ok = await enviarEmail(email, assuntoEmail, htmlEmail, fromName);
     if (ok) return "email";
   }
   return null;
@@ -183,7 +195,7 @@ async function processarLembretesDeAula(
 
   for (const ag of rows) {
     const nome = ag.cliente?.nome ?? "aluno(a)";
-    const academia = ag.empresa?.nome_aplicacao || ag.empresa?.nome_fantasia || "BjjConnect";
+    const academia = ag.empresa?.nome_aplicacao || ag.empresa?.nome_fantasia || RESEND_FROM_PADRAO;
     const produto = ag.produto?.nome ?? "sua aula";
     const hora = ag.horario.slice(0, 5);
 
@@ -200,6 +212,7 @@ async function processarLembretesDeAula(
       mensagem,
       `Lembrete: aula amanhã às ${hora}`,
       htmlEmail,
+      academia,
     );
     if (canal) enviados++;
 
@@ -248,7 +261,7 @@ async function processarCobrancasDeParcela(
 
   for (const p of rows) {
     const nome = p.cliente?.nome ?? "aluno(a)";
-    const academia = p.empresa?.nome_aplicacao || p.empresa?.nome_fantasia || "BjjConnect";
+    const academia = p.empresa?.nome_aplicacao || p.empresa?.nome_fantasia || RESEND_FROM_PADRAO;
     const produto = p.matricula?.produto?.nome ?? "sua matrícula";
     const totalParcelas = p.matricula?.numero_parcelas ?? "?";
     const valor = formatCurrencyBRL(Number(p.valor || 0));
@@ -265,6 +278,7 @@ async function processarCobrancasDeParcela(
       mensagem,
       `Parcela em aberto — vencimento ${vencimento}`,
       htmlEmail,
+      academia,
     );
     if (canal) enviados++;
 
@@ -339,7 +353,7 @@ async function processarLembretesContasPagar(
   let enviados = 0;
 
   for (const { empresa, contas } of porEmpresa.values()) {
-    const nomeEmpresa = empresa?.nome_aplicacao || empresa?.nome_fantasia || "ERPConnect";
+    const nomeEmpresa = empresa?.nome_aplicacao || empresa?.nome_fantasia || RESEND_FROM_PADRAO;
 
     if (empresa?.email) {
       const dias = empresa.dias_lembrete_vencimento ?? 1;
@@ -352,7 +366,7 @@ async function processarLembretesContasPagar(
         formatDateBR(contas[0].data_vencimento)
       }), totalizando <strong>${formatCurrencyBRL(total)}</strong>:</p><ul>${linhas}</ul><p>Confira em Financeiro → Contas a Pagar.</p>`;
 
-      const ok = await enviarEmail(empresa.email, `Contas a pagar vencendo ${prazo} — ${nomeEmpresa}`, html);
+      const ok = await enviarEmail(empresa.email, `Contas a pagar vencendo ${prazo} — ${nomeEmpresa}`, html, nomeEmpresa);
       if (ok) enviados += contas.length;
     }
 
@@ -438,7 +452,7 @@ async function processarAlertaPropostas(
   let enviados = 0;
 
   for (const { empresa, itens } of porEmpresa.values()) {
-    const nomeEmpresa = empresa?.nome_aplicacao || empresa?.nome_fantasia || "ERPConnect";
+    const nomeEmpresa = empresa?.nome_aplicacao || empresa?.nome_fantasia || RESEND_FROM_PADRAO;
 
     if (empresa?.email) {
       const linhas = itens
@@ -452,7 +466,7 @@ async function processarAlertaPropostas(
         .join("");
       const html = `<p>Olá!</p><p>${itens.length === 1 ? "1 proposta precisa" : `${itens.length} propostas precisam`} de atenção:</p><ul>${linhas}</ul><p>Confira em Movimentações → CRM.</p>`;
 
-      const ok = await enviarEmail(empresa.email, `Propostas paradas/vencidas — ${nomeEmpresa}`, html);
+      const ok = await enviarEmail(empresa.email, `Propostas paradas/vencidas — ${nomeEmpresa}`, html, nomeEmpresa);
       if (ok) enviados += itens.length;
     }
 

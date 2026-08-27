@@ -34,7 +34,14 @@ export async function render(view, actionsEl) {
 
   [empresasOptions, produtosOptions] = await Promise.all([loadEmpresasAtivas(), loadProdutosVendaveis()]);
 
+  // As abas ficam no topbar, junto dos botões de ação primária — antes
+  // viviam soltas no topo do conteúdo, numa segunda fileira desconectada da
+  // barra de ações (mesmo ajuste em relatorios.js).
   actionsEl.innerHTML = `
+    <div class="topbar-tabs">
+      <button type="button" class="btn btn--sm btn--primary" id="es-tab-entradas">Entradas</button>
+      <button type="button" class="btn btn--sm btn--ghost" id="es-tab-kardex">Kardex por produto</button>
+    </div>
     <button type="button" class="btn btn--ghost" id="btn-ajuste-estoque">+ Ajuste de estoque</button>
     <button type="button" class="btn btn--primary" id="btn-nova-entrada">+ Nova entrada de estoque</button>
   `;
@@ -48,21 +55,15 @@ export async function render(view, actionsEl) {
   // Roadmap Fase 2 — "Kardex de estoque": Entradas continua sendo o
   // lançamento auditável de compra; Kardex é o extrato por produto
   // (entradas + saídas por venda + ajustes manuais) com saldo corrente.
-  view.innerHTML = `
-    <div class="toolbar" style="gap:0.5rem; margin-bottom:1rem;">
-      <button type="button" class="btn btn--primary" id="es-tab-entradas">Entradas</button>
-      <button type="button" class="btn btn--ghost" id="es-tab-kardex">Kardex por produto</button>
-    </div>
-    <div id="es-tab-content"></div>
-  `;
+  view.innerHTML = `<div id="es-tab-content"></div>`;
 
-  const tabEntradas = view.querySelector("#es-tab-entradas");
-  const tabKardex = view.querySelector("#es-tab-kardex");
+  const tabEntradas = actionsEl.querySelector("#es-tab-entradas");
+  const tabKardex = actionsEl.querySelector("#es-tab-kardex");
 
   function activateTab(tab) {
     state.tab = tab;
-    tabEntradas.className = tab === "entradas" ? "btn btn--primary" : "btn btn--ghost";
-    tabKardex.className = tab === "kardex" ? "btn btn--primary" : "btn btn--ghost";
+    tabEntradas.className = tab === "entradas" ? "btn btn--sm btn--primary" : "btn btn--sm btn--ghost";
+    tabKardex.className = tab === "kardex" ? "btn btn--sm btn--primary" : "btn btn--sm btn--ghost";
     if (tab === "entradas") renderEntradasTab(view, state);
     else renderKardexTab(view, state);
   }

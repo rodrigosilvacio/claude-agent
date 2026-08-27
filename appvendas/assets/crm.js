@@ -213,7 +213,16 @@ function renderBoardFromCache(view) {
   }).join("");
 
   boardEl.querySelectorAll("[data-detail]").forEach((cardEl) => {
-    cardEl.addEventListener("click", () => showDetail(cardEl.dataset.detail, () => loadBoard(boardView, { silent: true })));
+    const abrir = () => showDetail(cardEl.dataset.detail, () => loadBoard(boardView, { silent: true }));
+    cardEl.addEventListener("click", abrir);
+    // role="button" sozinho não torna o card operável por teclado — sem
+    // isto, Tab foca o card mas Enter/Espaço não fazem nada.
+    cardEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        abrir();
+      }
+    });
   });
 }
 
@@ -865,29 +874,40 @@ async function showDetail(propostaId, onClose) {
   const labelConverter = temItemProduto && temItemServico ? "Converter (venda + matrícula)" : temItemServico ? "Converter em matrícula" : "Converter em venda";
 
   body.innerHTML = `
-    <div class="receipt receipt--plain" style="padding: 0;">
-      <div class="receipt__row"><span>Nº da proposta</span><span>#${proposta.numero}</span></div>
-      <div class="receipt__row"><span>${proposta.tipo_contato === "cliente" ? "Cliente" : "Lead"}</span><span>${escapeHtml(contatoNome)}</span></div>
-      <div class="receipt__row"><span>Telefone</span><span>${escapeHtml(contatoTelefone)}</span></div>
-      <div class="receipt__row"><span>E-mail</span><span>${escapeHtml(contatoEmail || "—")}</span></div>
-      <div class="receipt__row"><span>Vendedor</span><span>${escapeHtml(proposta.vendedor?.nome || "—")}</span></div>
-      <div class="receipt__row"><span>Data</span><span>${formatDate(proposta.data_proposta)}</span></div>
-      ${proposta.validade_ate ? `<div class="receipt__row"><span>Válida até</span><span>${formatDate(proposta.validade_ate)}</span></div>` : ""}
-      ${proposta.condicoes_pagamento ? `<div class="receipt__row"><span>Pagamento</span><span>${escapeHtml(proposta.condicoes_pagamento)}</span></div>` : ""}
-      ${proposta.prazo_entrega ? `<div class="receipt__row"><span>Entrega</span><span>${escapeHtml(proposta.prazo_entrega)}</span></div>` : ""}
-      <div class="receipt__row"><span>Status</span><span class="status status--${proposta.status}">${statusLabel(proposta.status)}</span></div>
-      ${proposta.status === "aprovada" && temItemProduto ? `<div class="receipt__row"><span>Venda</span><span>${proposta.venda_id ? `Convertida — venda #${proposta.venda?.numero ?? "?"}` : "Ainda não convertida em venda"}</span></div>` : ""}
-      ${proposta.status === "aprovada" && temItemServico ? `<div class="receipt__row"><span>Matrícula</span><span>${proposta.matricula_id ? `Convertida — matrícula #${proposta.matricula?.numero ?? "?"}` : "Ainda não convertida em matrícula"}</span></div>` : ""}
-      ${proposta.status === "reprovada" && proposta.motivo ? `<div class="receipt__row"><span>Motivo</span><span>${escapeHtml(proposta.motivo)}</span></div>` : ""}
-      ${proposta.observacoes ? `<div class="receipt__row"><span>Obs.</span><span>${escapeHtml(proposta.observacoes)}</span></div>` : ""}
-      <div class="receipt__tear"></div>
-      ${(itensData || []).map((i) => `
-        <div class="receipt__row"><span>${i.quantidade}x ${escapeHtml(i.produto?.nome || "Produto")}</span><span>${formatCurrency(i.subtotal)}</span></div>
-      `).join("")}
-      <div class="receipt__tear"></div>
-      <div class="receipt__row"><span>Subtotal</span><span>${formatCurrency(proposta.subtotal)}</span></div>
-      <div class="receipt__row"><span>Desconto</span><span>${formatCurrency(proposta.desconto)}</span></div>
-      <div class="receipt__total"><span>Total</span><span>${formatCurrency(proposta.total)}</span></div>
+    <div class="crm-detail">
+      <div class="crm-detail__head">
+        <div>
+          <p class="crm-detail__label">Proposta #${proposta.numero} · ${proposta.tipo_contato === "cliente" ? "Cliente" : "Lead"}</p>
+          <p class="crm-detail__nome">${escapeHtml(contatoNome)}</p>
+        </div>
+        <span class="status status--${proposta.status}">${statusLabel(proposta.status)}</span>
+      </div>
+
+      <div class="crm-detail__grid">
+        <div><span class="crm-detail__k">Telefone</span><span class="crm-detail__v">${escapeHtml(contatoTelefone)}</span></div>
+        <div><span class="crm-detail__k">E-mail</span><span class="crm-detail__v">${escapeHtml(contatoEmail || "—")}</span></div>
+        <div><span class="crm-detail__k">Vendedor</span><span class="crm-detail__v">${escapeHtml(proposta.vendedor?.nome || "—")}</span></div>
+        <div><span class="crm-detail__k">Data</span><span class="crm-detail__v">${formatDate(proposta.data_proposta)}</span></div>
+        ${proposta.validade_ate ? `<div><span class="crm-detail__k">Válida até</span><span class="crm-detail__v">${formatDate(proposta.validade_ate)}</span></div>` : ""}
+        ${proposta.condicoes_pagamento ? `<div><span class="crm-detail__k">Pagamento</span><span class="crm-detail__v">${escapeHtml(proposta.condicoes_pagamento)}</span></div>` : ""}
+        ${proposta.prazo_entrega ? `<div><span class="crm-detail__k">Entrega</span><span class="crm-detail__v">${escapeHtml(proposta.prazo_entrega)}</span></div>` : ""}
+        ${proposta.status === "aprovada" && temItemProduto ? `<div><span class="crm-detail__k">Venda</span><span class="crm-detail__v">${proposta.venda_id ? `Convertida — venda #${proposta.venda?.numero ?? "?"}` : "Ainda não convertida em venda"}</span></div>` : ""}
+        ${proposta.status === "aprovada" && temItemServico ? `<div><span class="crm-detail__k">Matrícula</span><span class="crm-detail__v">${proposta.matricula_id ? `Convertida — matrícula #${proposta.matricula?.numero ?? "?"}` : "Ainda não convertida em matrícula"}</span></div>` : ""}
+        ${proposta.status === "reprovada" && proposta.motivo ? `<div class="crm-detail__grid--full"><span class="crm-detail__k">Motivo</span><span class="crm-detail__v">${escapeHtml(proposta.motivo)}</span></div>` : ""}
+        ${proposta.observacoes ? `<div class="crm-detail__grid--full"><span class="crm-detail__k">Observações</span><span class="crm-detail__v">${escapeHtml(proposta.observacoes)}</span></div>` : ""}
+      </div>
+
+      <div class="crm-detail__itens">
+        ${(itensData || []).map((i) => `
+          <div class="crm-detail__item"><span>${i.quantidade}x ${escapeHtml(i.produto?.nome || "Produto")}</span><span>${formatCurrency(i.subtotal)}</span></div>
+        `).join("")}
+      </div>
+
+      <div class="crm-totais">
+        <div class="crm-totais__row"><span>Subtotal</span><span>${formatCurrency(proposta.subtotal)}</span></div>
+        <div class="crm-totais__row"><span>Desconto</span><span>${formatCurrency(proposta.desconto)}</span></div>
+        <div class="crm-totais__row crm-totais__row--total"><span>Total</span><span>${formatCurrency(proposta.total)}</span></div>
+      </div>
     </div>
 
     <div id="detail-reprovar-box" hidden style="margin-top: 1.1rem;">
