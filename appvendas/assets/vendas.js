@@ -156,6 +156,16 @@ function renderNovaVenda(content) {
         </div>
         <div class="receipt__tear"></div>
         <div class="receipt__total"><span>Total</span><span id="r-total">${formatCurrency(0)}</span></div>
+
+        <div class="field" style="margin-top: 0.9rem;">
+          <label><input type="checkbox" id="v-parcelar" /> Parcelar (venda a prazo)</label>
+          <div id="v-parcelar-field" hidden style="margin-top: 0.5rem;">
+            <label for="v-num-parcelas" class="field-hint">Número de parcelas</label>
+            <input class="input" type="number" id="v-num-parcelas" min="2" step="1" value="2" style="width: 100px;" />
+            <p class="field-hint">Requer cliente identificado. 1ª parcela vence em 30 dias — nenhum valor é dado como pago na hora.</p>
+          </div>
+        </div>
+
         <button type="button" class="btn btn--primary" id="v-finalizar" style="width:100%; justify-content:center; margin-top: 1.25rem;">Finalizar venda</button>
         <div id="v-error"></div>
       </div>
@@ -165,6 +175,12 @@ function renderNovaVenda(content) {
   const cartBody = content.querySelector("#cart-table tbody");
   const descontoInput = content.querySelector("#v-desconto");
   const paytiles = mountPaytiles(content.querySelector("#v-forma"));
+
+  const parcelarCheckbox = content.querySelector("#v-parcelar");
+  const parcelarField = content.querySelector("#v-parcelar-field");
+  parcelarCheckbox.addEventListener("change", () => {
+    parcelarField.hidden = !parcelarCheckbox.checked;
+  });
 
   const obsToggle = content.querySelector("#v-obs-toggle");
   const obsField = content.querySelector("#v-obs-field");
@@ -321,8 +337,21 @@ function renderNovaVenda(content) {
       return;
     }
 
+    const clienteId = clienteSelect.getValue() || null;
+    const numeroParcelas = parcelarCheckbox.checked ? Number(content.querySelector("#v-num-parcelas").value || 0) : null;
+    if (parcelarCheckbox.checked) {
+      if (!clienteId) {
+        errorEl.innerHTML = `<div class="form-error">Venda parcelada precisa de um cliente identificado.</div>`;
+        return;
+      }
+      if (!numeroParcelas || numeroParcelas < 2) {
+        errorEl.innerHTML = `<div class="form-error">Informe um número de parcelas válido (mínimo 2).</div>`;
+        return;
+      }
+    }
+
     const payload = {
-      p_cliente_id: clienteSelect.getValue() || null,
+      p_cliente_id: clienteId,
       p_data_venda: content.querySelector("#v-data").value || null,
       p_observacoes: content.querySelector("#v-obs").value || null,
       p_desconto: Number(descontoInput.value || 0),
@@ -336,6 +365,8 @@ function renderNovaVenda(content) {
       await iniciarPagamentoStripe(payload, errorEl);
       return;
     }
+
+    if (numeroParcelas) payload.p_numero_parcelas = numeroParcelas;
 
     const { data: novaVendaId, error } = await supabase.rpc("criar_venda", { ...payload, p_forma_pagamento: formaPagamento });
 
@@ -595,10 +626,11 @@ async function showDetail(vendaId) {
   const body = openModal("Detalhes da venda");
   body.innerHTML = `<div class="empty-state">Carregando…</div>`;
 
-  const [{ data: venda, error: vendaError }, { data: itens }, { data: propostaOrigem }] = await Promise.all([
-    supabase.from("vendas").select("*, cliente:clientes(nome)").eq("id", vendaId).single(),
+  const [{ data: venda, error: vendaError }, { data: itens }, { data: propostaOrigem }, { data: parcelas }] = await Promise.all([
+    supabase.from("vendas").select("*, cliente:clientes(nome), usuario:usuarios(nome)").eq("id", vendaId).single(),
     supabase.from("venda_itens").select("*, produto:produtos(nome)").eq("venda_id", vendaId),
     supabase.from("propostas").select("numero").eq("venda_id", vendaId).maybeSingle(),
+    supabase.from("venda_parcelas").select("*").eq("venda_id", vendaId).order("numero_parcela", { ascending: true }),
   ]);
 
   if (!venda) {
@@ -615,6 +647,7 @@ async function showDetail(vendaId) {
       <div class="receipt__row"><span>Data</span><span>${formatDate(venda.data_venda)}</span></div>
       <div class="receipt__row"><span>Cliente</span><span>${escapeHtml(venda.cliente?.nome || "Sem cliente")}</span></div>
       <div class="receipt__row"><span>Pagamento</span><span>${escapeHtml(venda.forma_pagamento || "—")}</span></div>
+      <div class="receipt__row"><span>Vendedor</span><span>${escapeHtml(venda.usuario?.nome || "—")}</span></div>
       <div class="receipt__row"><span>Status</span><span class="status status--${venda.status}">${statusLabel(venda.status)}</span></div>
       ${venda.observacoes ? `<div class="receipt__row"><span>Obs.</span><span>${escapeHtml(venda.observacoes)}</span></div>` : ""}
       <div class="receipt__tear"></div>
@@ -630,5 +663,32 @@ async function showDetail(vendaId) {
       <div class="receipt__total"><span>Total</span><span>${formatCurrency(venda.total)}</span></div>
       <p class="cell-muted" style="font-size: 0.75rem; margin-top: 1rem;">Registrada em ${formatDateTime(venda.created_at)}</p>
     </div>
+    ${(parcelas || []).length > 0 ? `
+      <div class="receipt" style="padding: 0; margin-top: 1.2rem;">
+        <p class="section-title" style="margin-bottom: 0.6rem;">Parcelas</p>
+        ${parcelas.map((p) => `
+          <div class="receipt__row">
+            <span>${p.numero_parcela}ª · vence ${formatDate(p.data_vencimento)}${p.status === "pago" ? ` · pago ${formatDate(p.data_pagamento)}` : ""}</span>
+            <span style="display:flex; align-items:center; gap:0.5rem;">
+              ${formatCurrency(p.valor)}
+              <span class="status status--${p.status === "pago" ? "ativo" : p.status === "cancelado" ? "inativo" : "pendente"}">${p.status === "pago" ? "Pago" : p.status === "cancelado" ? "Cancelada" : "Pendente"}</span>
+              ${p.status === "pendente" ? `<button type="button" class="btn btn--ghost btn--sm" data-baixar-parcela="${p.id}">Baixar</button>` : ""}
+            </span>
+          </div>
+        `).join("")}
+      </div>
+    ` : ""}
   `;
+
+  body.querySelectorAll("[data-baixar-parcela]").forEach((btn) => {
+    btn.addEventListener("click", (e) => withButtonLock(e.currentTarget, async () => {
+      const { error } = await supabase.rpc("registrar_pagamento_parcela_venda", { p_parcela_id: btn.dataset.baixarParcela });
+      if (error) {
+        showToast(friendlyPgError(error), "error");
+        return;
+      }
+      showToast("Parcela baixada.");
+      await showDetail(vendaId);
+    }));
+  });
 }

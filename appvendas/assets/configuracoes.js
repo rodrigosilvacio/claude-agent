@@ -195,9 +195,16 @@ async function renderConfigForm(formMount, empresaId) {
         <button type="submit" class="btn btn--primary">Salvar configurações</button>
       </div>
     </form>
+
+    <div class="card card-section" id="auditoria-card">
+      <p class="section-title">Auditoria</p>
+      <p class="field-hint" style="margin: -0.4rem 0 1rem;">Últimas alterações em produtos, clientes, fornecedores, vendas, matrículas e contas a pagar desta empresa — quem mexeu, quando e o quê.</p>
+      <div id="auditoria-mount"></div>
+    </div>
   `;
 
   wireCorPrimaria(formMount);
+  await renderAuditoria(formMount, empresaId);
 
   let papelPadraoSelecionado = papelPadrao;
   const papelGroup = formMount.querySelector("#f-papel-padrao");
@@ -276,6 +283,71 @@ async function renderConfigForm(formMount, empresaId) {
     }
 
     showToast("Configurações salvas.");
+  });
+}
+
+const AUDIT_TABELA_LABEL = {
+  produtos: "Produto", clientes: "Cliente", fornecedores: "Fornecedor",
+  vendas: "Venda", matriculas: "Matrícula", contas_pagar: "Conta a pagar",
+};
+const AUDIT_ACAO_LABEL = { insert: "Criado", update: "Alterado", delete: "Excluído" };
+const AUDIT_ACAO_CLASS = { insert: "ativo", update: "pendente", delete: "inativo" };
+
+// Log de auditoria do próprio ERPConnect (tabela erp_audit_log, migration
+// 0041) — antes disso, nenhuma alteração de preço/cadastro/exclusão ficava
+// registrada em lugar nenhum. Só lista aqui (RLS já restringe a admin);
+// "ver detalhes" expande o snapshot antes/depois gravado pela trigger.
+async function renderAuditoria(formMount, empresaId) {
+  const mount = formMount.querySelector("#auditoria-mount");
+  mount.innerHTML = `<div class="empty-state">Carregando…</div>`;
+
+  const { data, error } = await supabase
+    .from("erp_audit_log")
+    .select("id, tabela, acao, registro_id, created_at, dados_antes, dados_depois, usuario:usuarios(nome)")
+    .eq("empresa_id", empresaId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    mount.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar a auditoria</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(error))}</p></div>`;
+    return;
+  }
+
+  const linhas = data || [];
+  if (linhas.length === 0) {
+    mount.innerHTML = `<div class="empty-state" style="padding: 1.5rem;">Nenhuma alteração registrada ainda para esta empresa.</div>`;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Data/hora</th><th>Tabela</th><th>Ação</th><th>Usuário</th><th></th></tr></thead>
+        <tbody>
+          ${linhas.map((l) => `
+            <tr>
+              <td>${new Date(l.created_at).toLocaleString("pt-BR")}</td>
+              <td>${escapeHtml(AUDIT_TABELA_LABEL[l.tabela] || l.tabela)}</td>
+              <td><span class="status status--${AUDIT_ACAO_CLASS[l.acao] || "pendente"}">${escapeHtml(AUDIT_ACAO_LABEL[l.acao] || l.acao)}</span></td>
+              <td class="cell-muted">${escapeHtml(l.usuario?.nome || "—")}</td>
+              <td class="cell-actions"><button type="button" class="btn btn--ghost btn--sm" data-ver-detalhe="${l.id}">Ver detalhes</button></td>
+            </tr>
+            <tr id="audit-detalhe-${l.id}" hidden>
+              <td colspan="5">
+                <pre class="cell-muted" style="white-space: pre-wrap; font-size: 0.78rem; margin: 0;">${escapeHtml(JSON.stringify({ antes: l.dados_antes, depois: l.dados_depois }, null, 2))}</pre>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  mount.querySelectorAll("[data-ver-detalhe]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = mount.querySelector(`#audit-detalhe-${btn.dataset.verDetalhe}`);
+      if (row) row.hidden = !row.hidden;
+    });
   });
 }
 

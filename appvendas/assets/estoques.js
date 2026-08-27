@@ -159,9 +159,9 @@ async function loadKardex(view, state, opts = {}) {
 
   const [produtoRes, entradasRes, ajustesRes, vendaItensRes] = await Promise.all([
     supabase.from("produtos").select("nome, sku, estoque, estoque_minimo").eq("id", produtoId).maybeSingle(),
-    supabase.from("entradas_estoque").select("id, quantidade, data_entrada, observacoes").eq("produto_id", produtoId).order("data_entrada", { ascending: false }).limit(300),
-    supabase.from("ajustes_estoque").select("id, quantidade, motivo, created_at").eq("produto_id", produtoId).order("created_at", { ascending: false }).limit(300),
-    supabase.from("venda_itens").select("id, quantidade, venda:vendas(numero, data_venda, status)").eq("produto_id", produtoId).order("created_at", { ascending: false }).limit(300),
+    supabase.from("entradas_estoque").select("id, quantidade, data_entrada, observacoes, usuario:usuarios(nome)").eq("produto_id", produtoId).order("data_entrada", { ascending: false }).limit(300),
+    supabase.from("ajustes_estoque").select("id, quantidade, motivo, created_at, usuario:usuarios(nome)").eq("produto_id", produtoId).order("created_at", { ascending: false }).limit(300),
+    supabase.from("venda_itens").select("id, quantidade, venda:vendas(numero, data_venda, status, usuario:usuarios(nome))").eq("produto_id", produtoId).order("created_at", { ascending: false }).limit(300),
   ]);
 
   const erro = produtoRes.error || entradasRes.error || ajustesRes.error || vendaItensRes.error;
@@ -177,16 +177,17 @@ async function loadKardex(view, state, opts = {}) {
   // devolução sem uma data de cancelamento própria para posicioná-la no
   // extrato, então só a baixa de venda confirmada entra como saída.
   const eventos = [
-    ...(entradasRes.data || []).map((e) => ({ data: e.data_entrada, tipo: "Entrada", detalhe: e.observacoes || "—", delta: Number(e.quantidade) })),
+    ...(entradasRes.data || []).map((e) => ({ data: e.data_entrada, tipo: "Entrada", detalhe: e.observacoes || "—", delta: Number(e.quantidade), responsavel: e.usuario?.nome || "—" })),
     ...(ajustesRes.data || []).map((a) => ({
       data: a.created_at.slice(0, 10),
       tipo: Number(a.quantidade) > 0 ? "Ajuste (sobra)" : "Ajuste (perda/quebra)",
       detalhe: a.motivo,
       delta: Number(a.quantidade),
+      responsavel: a.usuario?.nome || "—",
     })),
     ...(vendaItensRes.data || [])
       .filter((it) => it.venda?.status === "confirmada")
-      .map((it) => ({ data: it.venda.data_venda, tipo: "Venda", detalhe: `Venda #${it.venda.numero}`, delta: -Number(it.quantidade) })),
+      .map((it) => ({ data: it.venda.data_venda, tipo: "Venda", detalhe: `Venda #${it.venda.numero}`, delta: -Number(it.quantidade), responsavel: it.venda.usuario?.nome || "—" })),
   ].sort((a, b) => new Date(b.data) - new Date(a.data));
 
   let saldoRodando = Number(produto?.estoque || 0);
@@ -208,13 +209,14 @@ async function loadKardex(view, state, opts = {}) {
         ? '<div class="empty-state" style="padding: 1.5rem;">Nenhuma movimentação registrada para este produto ainda.</div>'
         : `<div class="table-wrap">
             <table class="data-table">
-              <thead><tr><th>Data</th><th>Tipo</th><th>Detalhe</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Saldo após</th></tr></thead>
+              <thead><tr><th>Data</th><th>Tipo</th><th>Detalhe</th><th>Responsável</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Saldo após</th></tr></thead>
               <tbody>
                 ${linhas.map((l) => `
                   <tr>
                     <td>${formatDate(l.data)}</td>
                     <td>${escapeHtml(l.tipo)}</td>
                     <td class="cell-muted">${escapeHtml(l.detalhe)}</td>
+                    <td class="cell-muted">${escapeHtml(l.responsavel || "—")}</td>
                     <td class="cell-num" style="color: ${l.delta >= 0 ? "var(--success)" : "var(--danger)"}; font-weight:600;">${l.delta >= 0 ? "+" : ""}${l.delta}</td>
                     <td class="cell-num">${l.saldoApos}</td>
                   </tr>

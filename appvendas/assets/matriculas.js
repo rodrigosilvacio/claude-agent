@@ -646,10 +646,11 @@ async function showDetail(matriculaId, onChange) {
   const body = openModal("Detalhes da matrícula");
   body.innerHTML = `<div class="empty-state">Carregando…</div>`;
 
-  const [{ data: matricula, error: matriculaError }, { data: parcelasData }, { data: propostaOrigem }] = await Promise.all([
-    supabase.from("matriculas").select("*, cliente:clientes(nome), produto:produtos(nome)").eq("id", matriculaId).single(),
+  const [{ data: matricula, error: matriculaError }, { data: parcelasData }, { data: propostaOrigem }, { data: agendamentosData }] = await Promise.all([
+    supabase.from("matriculas").select("*, cliente:clientes(nome), produto:produtos(nome), usuario:usuarios(nome)").eq("id", matriculaId).single(),
     supabase.from("matricula_parcelas").select("*").eq("matricula_id", matriculaId).order("numero_parcela", { ascending: true }),
     supabase.from("propostas").select("numero").eq("matricula_id", matriculaId).maybeSingle(),
+    supabase.from("agendamentos").select("id, data_agendamento, horario, status").eq("matricula_id", matriculaId).order("data_agendamento", { ascending: false }).limit(10),
   ]);
 
   if (!matricula) {
@@ -660,6 +661,7 @@ async function showDetail(matriculaId, onChange) {
   }
 
   const parcelas = parcelasData || [];
+  const agendamentos = agendamentosData || [];
 
   function renderBody() {
     body.innerHTML = `
@@ -669,6 +671,7 @@ async function showDetail(matriculaId, onChange) {
         <div class="receipt__row"><span>Data</span><span>${formatDate(matricula.data_matricula)}</span></div>
         <div class="receipt__row"><span>Cliente</span><span>${escapeHtml(matricula.cliente?.nome || "—")}</span></div>
         <div class="receipt__row"><span>Curso</span><span>${escapeHtml(matricula.produto?.nome || "—")}</span></div>
+        <div class="receipt__row"><span>Vendedor</span><span>${escapeHtml(matricula.usuario?.nome || "—")}</span></div>
         <div class="receipt__row"><span>Duração <span class="cell-muted">(informativo)</span></span><span>${matricula.meses} ${matricula.meses === 1 ? "mês" : "meses"}</span></div>
         <div class="receipt__row"><span>Status</span><span class="status status--${matriculaStatusClass(matricula.status)}">${matriculaStatusLabel(matricula.status)}</span></div>
         ${matricula.observacoes ? `<div class="receipt__row"><span>Obs.</span><span>${escapeHtml(matricula.observacoes)}</span></div>` : ""}
@@ -700,6 +703,24 @@ async function showDetail(matriculaId, onChange) {
           </tbody>
         </table>
       </div>
+
+      ${agendamentos.length > 0 ? `
+        <p class="section-title" style="margin-top: 1.25rem;">Aulas/atendimentos agendados</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Data</th><th>Horário</th><th>Status</th></tr></thead>
+            <tbody>
+              ${agendamentos.map((a) => `
+                <tr>
+                  <td>${formatDate(a.data_agendamento)}</td>
+                  <td>${escapeHtml((a.horario || "").slice(0, 5))}</td>
+                  <td><span class="status status--${a.status === "atendido" ? "ativo" : "pendente"}">${a.status === "atendido" ? "Atendido" : "Agendado"}</span></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : ""}
 
       ${matricula.status !== "aguardando_pagamento" ? `
         <div class="form-actions">

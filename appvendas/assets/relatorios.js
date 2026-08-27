@@ -206,11 +206,11 @@ function renderHbarList(rows, formatter = formatCurrency) {
 async function loadGeral(content, state) {
   const [vendasRes, parcelasRes, recebimentosRes] = await Promise.all([
     aplicaFiltros(
-      supabase.from("vendas").select("id, numero, total, status, data_venda, cliente_id, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome, custo))"),
+      supabase.from("vendas").select("id, numero, total, status, data_venda, cliente_id, cliente:clientes(nome), usuario:usuarios(id, nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome, custo))"),
       state, "data_venda",
     ),
     aplicaFiltros(
-      supabase.from("matricula_parcelas").select("id, numero_parcela, valor, data_pagamento, cliente_id, cliente:clientes(nome), matricula:matriculas(numero, produto:produtos(id, nome, custo))").eq("status", "pago"),
+      supabase.from("matricula_parcelas").select("id, numero_parcela, valor, data_pagamento, cliente_id, cliente:clientes(nome), matricula:matriculas(numero, usuario:usuarios(id, nome), produto:produtos(id, nome, custo))").eq("status", "pago"),
       state, "data_pagamento",
     ),
     aplicaFiltros(
@@ -246,6 +246,15 @@ async function loadGeral(content, state) {
     ...recebimentosOk.map((r) => ({ clienteId: r.cliente_id || "sem-cliente", clienteNome: r.cliente?.nome || "Sem cliente identificado", valor: Number(r.valor || 0) })),
   ]);
 
+  // Roadmap conectividade — vendas/matriculas.usuario_id (quem registrou)
+  // não existia até aqui, então "ranking de vendedores" era literalmente
+  // impossível de calcular. aggregateClientes é genérico o bastante (só
+  // agrupa por id/nome/valor) pra reaproveitar sem duplicar lógica.
+  const topVendedores = aggregateClientes([
+    ...vendasConfirmadas.filter((v) => v.usuario).map((v) => ({ clienteId: v.usuario.id, clienteNome: v.usuario.nome, valor: Number(v.total || 0) })),
+    ...parcelasPagas.filter((p) => p.matricula?.usuario).map((p) => ({ clienteId: p.matricula.usuario.id, clienteNome: p.matricula.usuario.nome, valor: Number(p.valor || 0) })),
+  ]);
+
   const movimentacoesTodas = [
     ...vendasConfirmadas.map((v) => ({ data: v.data_venda, origem: `Venda #${v.numero}`, cliente: v.cliente?.nome || "Sem cliente", valor: Number(v.total || 0) })),
     ...parcelasPagas.map((p) => ({ data: p.data_pagamento, origem: `Matrícula #${p.matricula?.numero ?? "?"} · parcela ${p.numero_parcela}`, cliente: p.cliente?.nome || "Sem cliente", valor: Number(p.valor || 0) })),
@@ -278,6 +287,11 @@ async function loadGeral(content, state) {
         <p class="section-title">Melhores clientes</p>
         ${renderRankTable(topClientes, "Cliente", "Transações")}
       </div>
+    </div>
+
+    <div class="card card-section">
+      <p class="section-title">Ranking de vendedores</p>
+      ${topVendedores.length === 0 ? emptyBox("Sem vendas/matrículas atribuídas a um vendedor neste período.") : renderRankTable(topVendedores, "Vendedor", "Transações")}
     </div>
 
     <div class="card card-section">
@@ -656,7 +670,7 @@ const CRM_STAGE_DEFS = [
 async function loadCrm(content, state) {
   let query = supabase
     .from("propostas")
-    .select("id, numero, status, total, data_proposta, motivo, tipo_contato, lead_nome, cliente:clientes(nome)")
+    .select("id, numero, status, total, data_proposta, motivo, origem, enviada_em, respondida_em, tipo_contato, lead_nome, cliente:clientes(nome)")
     .gte("data_proposta", state.inicio)
     .lte("data_proposta", state.fim);
   if (state.empresaId) query = query.eq("empresa_id", state.empresaId);
@@ -679,6 +693,22 @@ async function loadCrm(content, state) {
   });
   const motivosRows = Array.from(motivos, ([label, qtd]) => ({ label, total: qtd })).sort((a, b) => b.total - a.total).slice(0, 8);
 
+  // Roadmap conectividade — enviada_em/respondida_em já eram gravados por
+  // atualizar_status_proposta, mas nenhuma tela usava: dado pronto pra
+  // medir ciclo de venda (tempo até o cliente responder) que só faltava
+  // aparecer em algum lugar.
+  const respondidas = propostas.filter((p) => p.enviada_em && p.respondida_em);
+  const tempoMedioRespostaHoras = respondidas.length
+    ? respondidas.reduce((soma, p) => soma + (new Date(p.respondida_em) - new Date(p.enviada_em)), 0) / respondidas.length / 3_600_000
+    : null;
+
+  const origens = new Map();
+  propostas.forEach((p) => {
+    const chave = (p.origem || "").trim() || "Não informada";
+    origens.set(chave, (origens.get(chave) || 0) + 1);
+  });
+  const origemRows = Array.from(origens, ([label, qtd]) => ({ label, total: qtd })).sort((a, b) => b.total - a.total).slice(0, 8);
+
   state.exportavel = {
     filename: `crm_propostas_${state.inicio}_a_${state.fim}.csv`,
     headers: ["Nº", "Data", "Contato", "Status", "Total", "Motivo (se reprovada)"],
@@ -698,6 +728,7 @@ async function loadCrm(content, state) {
       ${statCard("Valor total propostas", formatCurrency(valorTotalPropostas), "var(--accent)")}
       ${statCard("Taxa de conversão", `${taxaConversao.toFixed(0)}%`, "var(--success)")}
       ${statCard("Ticket médio aprovado", formatCurrency(ticketMedioAprovado), "var(--amber)")}
+      ${statCard("Tempo médio de resposta", formatDuracaoHoras(tempoMedioRespostaHoras), "var(--info)")}
     </div>
     <div class="card card-section">
       <p class="section-title">Propostas por estágio</p>
@@ -716,11 +747,21 @@ async function loadCrm(content, state) {
         ${motivosRows.length === 0 ? emptyBox("Nenhuma proposta reprovada com motivo registrado neste período.") : renderHbarList(motivosRows, (v) => `${v}×`)}
       </div>
       <div class="card card-section">
-        <p class="section-title">Propostas recentes</p>
-        ${renderPropostasTable(propostas.slice(0, 10))}
+        <p class="section-title">Propostas por origem</p>
+        ${origemRows.length === 0 ? emptyBox("Nenhuma proposta neste período.") : renderHbarList(origemRows, (v) => `${v}×`)}
       </div>
     </div>
+    <div class="card card-section">
+      <p class="section-title">Propostas recentes</p>
+      ${renderPropostasTable(propostas.slice(0, 10))}
+    </div>
   `;
+}
+
+function formatDuracaoHoras(horas) {
+  if (horas == null) return "—";
+  if (horas < 24) return `${horas.toFixed(1)}h`;
+  return `${(horas / 24).toFixed(1)}d`;
 }
 
 function renderPropostasTable(propostas) {
