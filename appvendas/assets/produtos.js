@@ -21,6 +21,18 @@ async function loadFornecedorOptions(existingRow, empresaIdOverride) {
   return (data || []).map((f) => ({ value: f.id, label: f.nome }));
 }
 
+// Categoria era texto livre puro: "Suplemento" e "Suplementos" viravam
+// categorias diferentes sem ninguém perceber. Combo com datalist sugere os
+// valores já usados na empresa sem travar a digitação de uma categoria nova.
+async function loadCategoriaOptions() {
+  const empresaId = getCurrentEmpresaId();
+  let query = supabase.from("produtos").select("categoria").not("categoria", "is", null);
+  if (empresaId) query = query.eq("empresa_id", empresaId);
+  const { data } = await query;
+  const unicas = [...new Set((data || []).map((r) => r.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return unicas.map((c) => ({ value: c, label: c }));
+}
+
 const TIPO_OPTIONS = [
   { value: "produto", label: "Produto físico (controla estoque)" },
   { value: "servico", label: "Serviço (curso/mensalidade — vendido em Matrículas)" },
@@ -72,7 +84,7 @@ export async function render(view, actionsEl) {
       { key: "nome", label: "Nome", required: true, full: true },
       { key: "tipo", label: "Tipo", type: "select", required: true, default: "produto", full: true, optionsLoader: loadTipoOptions },
       { key: "sku", label: "SKU" },
-      { key: "categoria", label: "Categoria" },
+      { key: "categoria", label: "Categoria", type: "combo", optionsLoader: loadCategoriaOptions },
       { key: "preco", label: "Preço de venda", type: "number", step: "0.01", required: true, default: 0 },
       { key: "custo", label: "Custo", type: "number", step: "0.01", default: 0 },
       { key: "estoque_minimo", label: "Estoque mínimo", type: "number", step: "1", default: 0 },

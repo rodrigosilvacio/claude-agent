@@ -257,7 +257,7 @@ async function openForm(config, existingRow, onSaved) {
 
   const optionsByField = {};
   for (const field of config.fields) {
-    if ((field.type === "select" || field.type === "search-select") && field.optionsLoader) {
+    if ((field.type === "select" || field.type === "search-select" || field.type === "combo") && field.optionsLoader) {
       const dependsOnValue = field.dependsOn && existingRow ? existingRow[field.dependsOn] : undefined;
       optionsByField[field.key] = await field.optionsLoader(existingRow, dependsOnValue);
     }
@@ -420,6 +420,23 @@ function renderField(field, existingRow, options) {
           <option value="">—</option>
           ${(options || []).map((opt) => `<option value="${escapeHtml(opt.value)}" ${String(value) === String(opt.value) ? "selected" : ""}>${escapeHtml(opt.label)}</option>`).join("")}
         </select>
+      </div>
+    `;
+  }
+
+  // "combo": input de texto livre com sugestões (datalist nativo) — ao
+  // contrário de "select", não obriga escolher um valor já existente.
+  // Usado em campos como categoria/origem, onde travar numa lista fixa
+  // impediria cadastrar um valor novo, mas texto livre puro deixa a
+  // mesma categoria virar "Suplemento"/"Suplementos" sem ninguém notar.
+  if (field.type === "combo") {
+    return `
+      <div class="${wrapClass}">
+        <label for="f-${field.key}">${escapeHtml(field.label)}${requiredMark}</label>
+        <input class="input" type="text" id="f-${field.key}" name="${field.key}" list="dl-${field.key}" value="${escapeHtml(value ?? "")}" ${required} />
+        <datalist id="dl-${field.key}">
+          ${(options || []).map((opt) => `<option value="${escapeHtml(opt.value)}"></option>`).join("")}
+        </datalist>
       </div>
     `;
   }

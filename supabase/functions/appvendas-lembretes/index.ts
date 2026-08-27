@@ -290,6 +290,72 @@ async function processarCobrancasDeParcela(
   return { processados: rows.length, enviados };
 }
 
+// Roadmap conectividade — item 8: vendas de produto agora podem ser
+// parceladas (venda_parcelas, migration 0042), que até então não tinha
+// nenhuma cobrança automática de vencido — só matriculas tinha. Mesmo
+// racional de processarCobrancasDeParcela, mudando só a tabela/join.
+type ParcelaVendaCobranca = {
+  id: string;
+  numero_parcela: number;
+  valor: number;
+  data_vencimento: string;
+  cliente: { nome: string; telefone: string | null; email: string | null } | null;
+  venda: { numero: number } | null;
+  empresa: { nome_fantasia: string; nome_aplicacao: string | null } | null;
+};
+
+async function processarCobrancasDeParcelaVenda(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+): Promise<{ processados: number; enviados: number }> {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const limiteReenvio = new Date(Date.now() - COBRANCA_INTERVALO_DIAS * 86_400_000).toISOString();
+
+  const { data, error } = await supabase
+    .from("venda_parcelas")
+    .select(
+      "id, numero_parcela, valor, data_vencimento, cliente:clientes(nome, telefone, email), venda:vendas(numero), empresa:empresas(nome_fantasia, nome_aplicacao)",
+    )
+    .eq("status", "pendente")
+    .lt("data_vencimento", hoje)
+    .or(`cobranca_enviada_em.is.null,cobranca_enviada_em.lt.${limiteReenvio}`);
+
+  if (error) {
+    console.error("Erro ao buscar parcelas de venda vencidas para cobrança:", error);
+    return { processados: 0, enviados: 0 };
+  }
+
+  const rows = (data ?? []) as ParcelaVendaCobranca[];
+  let enviados = 0;
+
+  for (const p of rows) {
+    const nome = p.cliente?.nome ?? "cliente";
+    const empresaNome = p.empresa?.nome_aplicacao || p.empresa?.nome_fantasia || RESEND_FROM_PADRAO;
+    const numeroVenda = p.venda?.numero ?? "?";
+    const valor = formatCurrencyBRL(Number(p.valor || 0));
+    const vencimento = formatDateBR(p.data_vencimento);
+
+    const mensagem =
+      `Oi ${nome}! A parcela ${p.numero_parcela} da venda #${numeroVenda} (${empresaNome}), no valor de ${valor}, ` +
+      `venceu em ${vencimento} e ainda está em aberto. Você pode regularizar — qualquer dúvida, é só chamar!`;
+    const htmlEmail = `<p>Oi ${nome}!</p><p>A parcela <strong>${p.numero_parcela}</strong> da venda <strong>#${numeroVenda}</strong> (${empresaNome}), no valor de <strong>${valor}</strong>, venceu em ${vencimento} e ainda está em aberto.</p><p>Você pode regularizar — qualquer dúvida, é só chamar!</p>`;
+
+    const canal = await notificar(
+      p.cliente?.telefone,
+      p.cliente?.email,
+      mensagem,
+      `Parcela em aberto — vencimento ${vencimento}`,
+      htmlEmail,
+      empresaNome,
+    );
+    if (canal) enviados++;
+
+    await supabase.from("venda_parcelas").update({ cobranca_enviada_em: new Date().toISOString() }).eq("id", p.id);
+  }
+
+  return { processados: rows.length, enviados };
+}
+
 // Roadmap Fase 1 — item 4: mesmo racional de processarLembretesDeAula (dia
 // anterior, marca como processado mesmo sem canal de envio), mas o
 // destinatário aqui é a própria empresa (empresas.email), não um cliente —
@@ -494,9 +560,10 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const [lembretes, cobrancas, contasPagar, propostas] = await Promise.all([
+  const [lembretes, cobrancas, cobrancasVenda, contasPagar, propostas] = await Promise.all([
     processarLembretesDeAula(supabase),
     processarCobrancasDeParcela(supabase),
+    processarCobrancasDeParcelaVenda(supabase),
     processarLembretesContasPagar(supabase),
     processarAlertaPropostas(supabase),
   ]);
@@ -505,6 +572,7 @@ Deno.serve(async (req: Request) => {
     ok: true,
     lembretes_de_aula: lembretes,
     cobrancas_de_parcela: cobrancas,
+    cobrancas_de_parcela_venda: cobrancasVenda,
     lembretes_de_contas_a_pagar: contasPagar,
     alertas_de_propostas: propostas,
   });

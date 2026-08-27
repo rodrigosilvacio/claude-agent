@@ -630,14 +630,33 @@ async function openAgendamentoForm({ id = null, clienteId = null, produtoId = nu
         return;
       }
 
+      const clienteIdSelecionado = clienteSelect.getValue() || null;
       const payload = {
-        cliente_id: clienteSelect.getValue() || null,
+        cliente_id: clienteIdSelecionado,
         produto_id: produtoIdSelecionado,
         data_agendamento: dataInput.value,
         horario: horarioSelect.value,
         observacoes: body.querySelector("#ag-obs").value || null,
+        // Fecha a lacuna Agenda ↔ Matrículas: resolve, em background, se o
+        // cliente tem uma matrícula ativa para este produto/serviço — sem
+        // isso não dava pra saber se um agendamento correspondia a uma
+        // matrícula ativa (ou a nenhuma).
+        matricula_id: null,
       };
       if (admin) payload.empresa_id = empresaSelect.getValue();
+
+      if (clienteIdSelecionado) {
+        const { data: matriculaAtiva } = await supabase
+          .from("matriculas")
+          .select("id")
+          .eq("cliente_id", clienteIdSelecionado)
+          .eq("produto_id", produtoIdSelecionado)
+          .eq("status", "ativa")
+          .order("data_matricula", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (matriculaAtiva) payload.matricula_id = matriculaAtiva.id;
+      }
 
       const { error } = editando
         ? await supabase.from("agendamentos").update(payload).eq("id", id)

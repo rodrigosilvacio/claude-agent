@@ -24,6 +24,11 @@ const ICON_LEAD = '<svg aria-hidden="true" focusable="false" width="16" height="
 const ICON_CLIENTE = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>';
 const SEARCH_ICON = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
 
+// Lista sugerida (campo é texto livre com datalist, não trava num valor
+// fixo) — mesma lista usada em Clientes, pra manter os valores consistentes
+// entre as duas telas que perguntam "de onde veio".
+const ORIGEM_OPTIONS = ["Indicação", "Instagram", "Facebook", "Google", "Site", "Evento", "Passando na rua", "Outro"];
+
 const STATUS_LABELS = { draft: "Rascunho", enviada: "Enviada", aprovada: "Aprovada", reprovada: "Reprovada" };
 function statusLabel(status) {
   return STATUS_LABELS[status] || status;
@@ -349,6 +354,13 @@ function openPropostaFormModal() {
           <label for="p-prazo">Prazo de entrega <span class="field-optional">opcional</span></label>
           <input class="input" type="text" id="p-prazo" placeholder="Ex.: 5 dias úteis" value="${escapeHtml(editing?.prazo_entrega || "")}" />
         </div>
+        <div class="field">
+          <label for="p-origem">Origem / canal <span class="field-optional">opcional</span></label>
+          <input class="input" type="text" id="p-origem" list="p-origem-options" placeholder="Ex.: Indicação, Instagram…" value="${escapeHtml(editing?.origem || "")}" />
+          <datalist id="p-origem-options">
+            ${ORIGEM_OPTIONS.map((o) => `<option value="${escapeHtml(o)}"></option>`).join("")}
+          </datalist>
+        </div>
       </div>
 
       <p class="field-hint" style="margin: 0.9rem 0 0;">Vendedor responsável: <strong>${escapeHtml(editing?.vendedor?.nome || usuario?.nome || "—")}</strong></p>
@@ -598,6 +610,7 @@ function openPropostaFormModal() {
       p_validade_ate: body.querySelector("#p-validade").value || null,
       p_condicoes_pagamento: body.querySelector("#p-condicoes").value.trim() || null,
       p_prazo_entrega: body.querySelector("#p-prazo").value.trim() || null,
+      p_origem: body.querySelector("#p-origem").value.trim() || null,
       p_observacoes: body.querySelector("#p-observacoes").value.trim() || null,
       p_desconto: Number(descontoInput.value || 0),
       p_itens: itens.map((item) => ({ produto_id: item.produto_id, quantidade: item.quantidade, preco_unitario: item.preco_unitario })),
@@ -888,6 +901,7 @@ async function showDetail(propostaId, onClose) {
         <div><span class="crm-detail__k">E-mail</span><span class="crm-detail__v">${escapeHtml(contatoEmail || "—")}</span></div>
         <div><span class="crm-detail__k">Vendedor</span><span class="crm-detail__v">${escapeHtml(proposta.vendedor?.nome || "—")}</span></div>
         <div><span class="crm-detail__k">Data</span><span class="crm-detail__v">${formatDate(proposta.data_proposta)}</span></div>
+        ${proposta.origem ? `<div><span class="crm-detail__k">Origem</span><span class="crm-detail__v">${escapeHtml(proposta.origem)}</span></div>` : ""}
         ${proposta.validade_ate ? `<div><span class="crm-detail__k">Válida até</span><span class="crm-detail__v">${formatDate(proposta.validade_ate)}</span></div>` : ""}
         ${proposta.condicoes_pagamento ? `<div><span class="crm-detail__k">Pagamento</span><span class="crm-detail__v">${escapeHtml(proposta.condicoes_pagamento)}</span></div>` : ""}
         ${proposta.prazo_entrega ? `<div><span class="crm-detail__k">Entrega</span><span class="crm-detail__v">${escapeHtml(proposta.prazo_entrega)}</span></div>` : ""}

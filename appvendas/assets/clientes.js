@@ -5,6 +5,23 @@ import { getCurrentEmpresaId } from "./auth.js";
 
 const SITUACAO_LABEL = { pendente: "Pendente", aprovado: "Aprovado", reprovado: "Reprovado" };
 
+// Lista sugerida (não travada — o campo é "combo", aceita texto livre) de
+// canais de origem. Mesma lista usada no formulário de proposta do CRM
+// (crm.js), pra manter os valores consistentes entre as duas telas.
+const ORIGEM_OPTIONS = [
+  { value: "Indicação", label: "Indicação" },
+  { value: "Instagram", label: "Instagram" },
+  { value: "Facebook", label: "Facebook" },
+  { value: "Google", label: "Google" },
+  { value: "Site", label: "Site" },
+  { value: "Evento", label: "Evento" },
+  { value: "Passando na rua", label: "Passando na rua" },
+  { value: "Outro", label: "Outro" },
+];
+function loadOrigemOptions() {
+  return ORIGEM_OPTIONS;
+}
+
 // Roadmap Fase 2 — "página única do cliente": em vez de abrir Vendas, CRM,
 // Matrículas e Agenda separadamente para saber tudo sobre um cliente, o
 // histórico junta as quatro origens por cliente_id numa única linha do
@@ -27,6 +44,7 @@ export async function render(view, actionsEl) {
       { key: "documento", label: "Documento" },
       { key: "telefone", label: "Telefone" },
       { key: "cidade", label: "Cidade" },
+      { key: "origem", label: "Origem", render: (row) => escapeHtml(row.origem || "—") },
       {
         key: "status_cadastro",
         label: "Situação",
@@ -47,6 +65,7 @@ export async function render(view, actionsEl) {
       { key: "uf", label: "UF" },
       { key: "email", label: "E-mail", type: "email" },
       { key: "telefone", label: "Telefone" },
+      { key: "origem", label: "Origem / canal", type: "combo", optionsLoader: loadOrigemOptions },
       { key: "ativo", label: "Cliente ativo", type: "checkbox", default: true, full: true },
     ],
     rowActions: (row) => {

@@ -84,7 +84,7 @@ async function load(view, state, opts = {}) {
   // hoje — e o front separa os dois intervalos depois. Mesmo espírito de
   // "busca ampla, filtra na memória" já usado no kardex de estoque e no
   // board do CRM.
-  const [vendasRes, parcelasRes, recebimentosRes, contasPagarRes, produtosRes, propostasRes, contasFuturasRes, parcelasFuturasRes, empresaRes] = await Promise.all([
+  const [vendasRes, parcelasRes, recebimentosRes, contasPagarRes, produtosRes, propostasRes, contasFuturasRes, parcelasFuturasRes, vendaParcelasFuturasRes, empresaRes] = await Promise.all([
     aplicaEmpresa(supabase
       .from("vendas")
       .select("id, numero, total, status, data_venda, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome))")
@@ -112,12 +112,13 @@ async function load(view, state, opts = {}) {
     aplicaEmpresa(supabase.from("propostas").select("id, numero, status, total, data_proposta, validade_ate").limit(1000)),
     aplicaEmpresa(supabase.from("contas_pagar").select("valor, data_vencimento").eq("status", "pendente").lte("data_vencimento", addDaysStr(90))),
     aplicaEmpresa(supabase.from("matricula_parcelas").select("valor, data_vencimento").eq("status", "pendente").lte("data_vencimento", addDaysStr(90))),
+    aplicaEmpresa(supabase.from("venda_parcelas").select("valor, data_vencimento").eq("status", "pendente").lte("data_vencimento", addDaysStr(90))),
     empresaId
       ? supabase.from("empresas").select("nome_fantasia").eq("id", empresaId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
 
-  const firstError = vendasRes.error || parcelasRes.error || recebimentosRes.error || contasPagarRes.error || produtosRes.error || propostasRes.error || contasFuturasRes.error || parcelasFuturasRes.error;
+  const firstError = vendasRes.error || parcelasRes.error || recebimentosRes.error || contasPagarRes.error || produtosRes.error || propostasRes.error || contasFuturasRes.error || parcelasFuturasRes.error || vendaParcelasFuturasRes.error;
   if (firstError) {
     view.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar o painel</p><p class="empty-state__hint">${escapeHtml(firstError.message)}</p></div>`;
     return;
@@ -173,7 +174,7 @@ async function load(view, state, opts = {}) {
   const linhasMovimentacoes = movimentacoes(vendasMes, parcelasMes, recebimentosMes, contasPagasMes).slice(0, 8);
 
   const contasFuturas = contasFuturasRes.data || [];
-  const parcelasFuturas = parcelasFuturasRes.data || [];
+  const parcelasFuturas = [...(parcelasFuturasRes.data || []), ...(vendaParcelasFuturasRes.data || [])];
   const projecao30 = projecaoCaixa(contasFuturas, parcelasFuturas, 30);
   const projecao60 = projecaoCaixa(contasFuturas, parcelasFuturas, 60);
   const projecao90 = projecaoCaixa(contasFuturas, parcelasFuturas, 90);
