@@ -365,6 +365,106 @@ async function processarLembretesContasPagar(
   return { processados: rows.length, enviados };
 }
 
+// Roadmap Fase 3 — "Alerta de proposta parada ou vencida": validade_ate é
+// cadastrado desde a migration 0031 e nunca foi checado por nada — uma
+// proposta podia passar da validade sem ninguém saber. Mesmo padrão de
+// agrupamento por empresa de processarLembretesContasPagar; destinatário é
+// a própria empresa (empresas.email), não o cliente/lead — é um alerta de
+// gestão comercial, não uma cobrança.
+//
+// Dois motivos disparam o alerta, cada proposta só uma vez
+// (lembrete_enviado_em):
+//  - "vencida": tem validade_ate cadastrada e ela já passou, sem ter sido
+//    aprovada nem reprovada.
+//  - "parada": nunca chegou a ser enviada ao contato (ainda em rascunho)
+//    depois de DIAS_PROPOSTA_PARADA dias — provavelmente esquecida.
+const DIAS_PROPOSTA_PARADA = 15;
+
+type PropostaAlerta = {
+  id: string;
+  numero: number;
+  tipo_contato: string;
+  lead_nome: string | null;
+  data_proposta: string;
+  validade_ate: string | null;
+  status: string;
+  total: number;
+  cliente: { nome: string } | null;
+  empresa: { id: string; email: string | null; nome_fantasia: string; nome_aplicacao: string | null } | null;
+};
+
+async function processarAlertaPropostas(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+): Promise<{ processados: number; enviados: number }> {
+  const hoje = new Date();
+  const hojeKey = hoje.toISOString().slice(0, 10);
+  const limiteParada = new Date(hoje);
+  limiteParada.setDate(limiteParada.getDate() - DIAS_PROPOSTA_PARADA);
+  const limiteParadaKey = limiteParada.toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("propostas")
+    .select(
+      "id, numero, tipo_contato, lead_nome, data_proposta, validade_ate, status, total, cliente:clientes(nome), empresa:empresas(id, email, nome_fantasia, nome_aplicacao)",
+    )
+    .in("status", ["draft", "enviada"])
+    .is("lembrete_enviado_em", null)
+    .limit(1000);
+
+  if (error) {
+    console.error("Erro ao buscar propostas para alerta:", error);
+    return { processados: 0, enviados: 0 };
+  }
+
+  const comMotivo = ((data ?? []) as PropostaAlerta[])
+    .map((p) => {
+      const vencida = Boolean(p.validade_ate) && (p.validade_ate as string) < hojeKey;
+      const parada = p.status === "draft" && p.data_proposta < limiteParadaKey;
+      return { p, motivo: vencida ? "vencida" as const : parada ? "parada" as const : null };
+    })
+    .filter((x): x is { p: PropostaAlerta; motivo: "vencida" | "parada" } => x.motivo !== null);
+
+  if (comMotivo.length === 0) return { processados: 0, enviados: 0 };
+
+  const porEmpresa = new Map<string, { empresa: PropostaAlerta["empresa"]; itens: { p: PropostaAlerta; motivo: "vencida" | "parada" }[] }>();
+  for (const item of comMotivo) {
+    const empresaId = item.p.empresa?.id;
+    if (!empresaId) continue;
+    if (!porEmpresa.has(empresaId)) porEmpresa.set(empresaId, { empresa: item.p.empresa, itens: [] });
+    porEmpresa.get(empresaId)!.itens.push(item);
+  }
+
+  let enviados = 0;
+
+  for (const { empresa, itens } of porEmpresa.values()) {
+    const nomeEmpresa = empresa?.nome_aplicacao || empresa?.nome_fantasia || "ERPConnect";
+
+    if (empresa?.email) {
+      const linhas = itens
+        .map(({ p, motivo }) => {
+          const contato = p.tipo_contato === "cliente" ? (p.cliente?.nome || "Cliente") : (p.lead_nome || "Lead");
+          const detalhe = motivo === "vencida"
+            ? `venceu em ${formatDateBR(p.validade_ate!)}`
+            : `em rascunho desde ${formatDateBR(p.data_proposta)}, nunca enviada`;
+          return `<li>Proposta #${p.numero} — ${escapeHtml(contato)} — ${formatCurrencyBRL(Number(p.total || 0))} — ${detalhe}</li>`;
+        })
+        .join("");
+      const html = `<p>Olá!</p><p>${itens.length === 1 ? "1 proposta precisa" : `${itens.length} propostas precisam`} de atenção:</p><ul>${linhas}</ul><p>Confira em Movimentações → CRM.</p>`;
+
+      const ok = await enviarEmail(empresa.email, `Propostas paradas/vencidas — ${nomeEmpresa}`, html);
+      if (ok) enviados += itens.length;
+    }
+
+    // Marca como processado mesmo sem e-mail cadastrado na empresa — sem
+    // isso, entraria de novo em toda execução até a proposta mudar de
+    // status (mesmo racional das outras rotinas acima).
+    await supabase.from("propostas").update({ lembrete_enviado_em: new Date().toISOString() }).in("id", itens.map(({ p }) => p.id));
+  }
+
+  return { processados: comMotivo.length, enviados };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "GET" && req.method !== "POST") return json({ error: "Método não permitido." }, 405);
@@ -378,10 +478,11 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const [lembretes, cobrancas, contasPagar] = await Promise.all([
+  const [lembretes, cobrancas, contasPagar, propostas] = await Promise.all([
     processarLembretesDeAula(supabase),
     processarCobrancasDeParcela(supabase),
     processarLembretesContasPagar(supabase),
+    processarAlertaPropostas(supabase),
   ]);
 
   return json({
@@ -389,5 +490,6 @@ Deno.serve(async (req: Request) => {
     lembretes_de_aula: lembretes,
     cobrancas_de_parcela: cobrancas,
     lembretes_de_contas_a_pagar: contasPagar,
+    alertas_de_propostas: propostas,
   });
 });

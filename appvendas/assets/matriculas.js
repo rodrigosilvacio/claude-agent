@@ -13,7 +13,7 @@ import { supabase } from "./supabaseClient.js";
 import { showToast, openModal, closeModal, confirmDialog, formatCurrency, formatDate, escapeHtml, createSearchSelect, registerAutoRefresh, consumeMatriculaPrefill, setMatriculaPrefill, withButtonLock, friendlyPgError } from "./app.js";
 import { isAdmin } from "./auth.js";
 import { loadClientesAtivos, loadProdutosServicos, loadEmpresasAtivas, clienteSearchOptions, produtoSearchOptions, empresaSearchOptions, produtoMetaPreco } from "./catalogo.js";
-import { FORMAS_PAGAMENTO, paytilesHtml, mountPaytiles, chamarCriarCheckoutStripe, mostrarModalStripe } from "./pagamento.js";
+import { FORMAS_PAGAMENTO, paytilesHtml, mountPaytiles, chamarCriarCheckoutStripe, mostrarModalStripe, dispararConfirmacaoNegocio } from "./pagamento.js";
 
 let clientesOptions = [];
 let produtosOptions = [];
@@ -433,6 +433,8 @@ function renderNovaMatricula(content) {
   // onde vem a fila de itens de serviço pendentes (pendingServicos) quando a
   // origem é uma proposta do CRM com mais de um serviço.
   async function finalizarComSucesso(matriculaId, mensagemBase = "Matrícula registrada com sucesso.") {
+    dispararConfirmacaoNegocio("matricula", matriculaId);
+
     if (agendamentoOrigemId) {
       const { error: agError } = await supabase.from("agendamentos").update({ status: "atendido" }).eq("id", agendamentoOrigemId);
       showToast(agError ? "Matrícula registrada, mas não foi possível confirmar o atendimento na agenda." : "Matrícula registrada e atendimento confirmado.", agError ? "error" : "success");

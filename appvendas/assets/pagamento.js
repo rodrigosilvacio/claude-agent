@@ -106,6 +106,17 @@ export async function chamarCriarCheckoutStripe(payload) {
   return data;
 }
 
+// Roadmap Fase 3 — confirmação automática pós-venda/matrícula: dispara
+// best-effort (nunca aguardada pelo caminho principal, nunca mostra erro ao
+// operador) o recibo/confirmação por e-mail ao cliente. Chamada uma única
+// vez, no topo de finalizarComSucesso de vendas.js/matriculas.js — cobre
+// tanto o fechamento em dinheiro/cartão quanto a confirmação via webhook do
+// Stripe, já que os dois caminhos convergem para essa mesma função.
+export function dispararConfirmacaoNegocio(tipo, id) {
+  supabase.functions.invoke("enviar-confirmacao-negocio", { body: { tipo, id } })
+    .catch((err) => console.error("Falha ao disparar confirmação por e-mail:", err));
+}
+
 // Mostra o QR/link da Checkout Session e faz polling do status até o
 // webhook do Stripe confirmar (ou o operador fechar o modal — nesse caso o
 // registro segue 'aguardando_pagamento' e expira sozinho em 30min, ver
