@@ -68,18 +68,18 @@ async function load(view, state, opts = {}) {
   const [vendasRes, parcelasRes, recebimentosRes, produtosRes] = await Promise.all([
     supabase
       .from("vendas")
-      .select("id, numero, total, status, data_venda, cliente_id, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome))")
+      .select("id, numero, total, status, data_venda, cliente_id, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome, custo))")
       .gte("data_venda", state.inicio)
       .lte("data_venda", state.fim),
     supabase
       .from("matricula_parcelas")
-      .select("id, numero_parcela, valor, data_pagamento, cliente_id, cliente:clientes(nome), matricula:matriculas(numero, produto:produtos(id, nome))")
+      .select("id, numero_parcela, valor, data_pagamento, cliente_id, cliente:clientes(nome), matricula:matriculas(numero, produto:produtos(id, nome, custo))")
       .eq("status", "pago")
       .gte("data_pagamento", state.inicio)
       .lte("data_pagamento", state.fim),
     supabase
       .from("recebimentos")
-      .select("id, quantidade, valor, status, data_recebimento, cliente_id, cliente:clientes(nome), produto:produtos(id, nome)")
+      .select("id, quantidade, valor, status, data_recebimento, cliente_id, cliente:clientes(nome), produto:produtos(id, nome, custo)")
       .gte("data_recebimento", state.inicio)
       .lte("data_recebimento", state.fim),
     supabase.from("produtos").select("id, nome, estoque, estoque_minimo, tipo").eq("ativo", true),
@@ -102,11 +102,15 @@ async function load(view, state, opts = {}) {
   // migration 0017), então nem entra na checagem de estoque baixo.
   const estoqueBaixo = (produtosRes.data || []).filter((p) => p.tipo === "produto" && p.estoque <= p.estoque_minimo);
 
-  const topProdutos = aggregateProdutos([
+  const linhasProdutos = [
     ...vendaItemLinhas(vendasConfirmadas),
     ...parcelaProdutoLinhas(parcelasPagas),
     ...recebimentoProdutoLinhas(recebimentosOk),
-  ]);
+  ];
+  const topProdutos = aggregateProdutos(linhasProdutos);
+  const custoTotal = linhasProdutos.reduce((sum, l) => sum + l.custo, 0);
+  const margemBruta = faturamento - custoTotal;
+  const margemPct = faturamento > 0 ? (margemBruta / faturamento) * 100 : 0;
 
   const topClientes = aggregateClientes([
     ...vendaClienteLinhas(vendasConfirmadas),
@@ -130,13 +134,16 @@ async function load(view, state, opts = {}) {
       ${statCard("Transações no período", transacoes, "var(--accent)")}
       ${statCard("Faturamento no período", formatCurrency(faturamento), "var(--accent-deep)")}
       ${statCard("Ticket médio", formatCurrency(ticketMedio), "var(--amber)")}
+      ${statCard("Margem bruta no período", formatCurrency(margemBruta), "var(--success)")}
+      ${statCard("Margem", `${margemPct.toFixed(1)}%`, "var(--success)")}
       ${statCard("Produtos com estoque baixo", estoqueBaixo.length, estoqueBaixo.length > 0 ? "var(--danger)" : "var(--text-muted)")}
     </div>
+    <p class="record-count" style="margin: -0.6rem 0 1rem; font-size: 0.78rem;">Margem = receita menos o custo de catálogo (Cadastros → Produtos) do item vendido — produto sem custo cadastrado entra com margem de 100%.</p>
 
     <div class="report-grid">
       <div class="card card-section">
         <p class="section-title">Produtos e serviços mais vendidos</p>
-        ${renderRankTable(topProdutos, "Produto / serviço", "Qtd.")}
+        ${renderProdutosTable(topProdutos)}
       </div>
       <div class="card card-section">
         <p class="section-title">Melhores clientes</p>
@@ -174,7 +181,14 @@ function vendaItemLinhas(vendas) {
   const linhas = [];
   for (const v of vendas) {
     for (const it of v.itens || []) {
-      linhas.push({ produtoId: it.produto_id, produtoNome: it.produto?.nome || "Produto removido", quantidade: Number(it.quantidade || 0), valor: Number(it.subtotal || 0) });
+      const quantidade = Number(it.quantidade || 0);
+      linhas.push({
+        produtoId: it.produto_id,
+        produtoNome: it.produto?.nome || "Produto removido",
+        quantidade,
+        valor: Number(it.subtotal || 0),
+        custo: Number(it.produto?.custo || 0) * quantidade,
+      });
     }
   }
   return linhas;
@@ -186,27 +200,41 @@ function parcelaProdutoLinhas(parcelas) {
     produtoNome: p.matricula?.produto?.nome || "Serviço (matrícula)",
     quantidade: 1,
     valor: Number(p.valor || 0),
+    custo: Number(p.matricula?.produto?.custo || 0),
   }));
 }
 
 function recebimentoProdutoLinhas(recebimentos) {
-  return recebimentos.map((r) => ({
-    produtoId: r.produto?.id || "recebimento-sem-produto",
-    produtoNome: r.produto?.nome || "Produto",
-    quantidade: Number(r.quantidade || 0),
-    valor: Number(r.valor || 0),
-  }));
+  return recebimentos.map((r) => {
+    const quantidade = Number(r.quantidade || 0);
+    return {
+      produtoId: r.produto?.id || "recebimento-sem-produto",
+      produtoNome: r.produto?.nome || "Produto",
+      quantidade,
+      valor: Number(r.valor || 0),
+      custo: Number(r.produto?.custo || 0) * quantidade,
+    };
+  });
 }
 
+// Margem bruta = receita − custo de catálogo do produto na data de hoje (o
+// app não guarda o custo histórico de cada venda, só o preço de venda por
+// item — mesma limitação, ver roadmap). Ainda assim é a primeira vez que
+// `produtos.custo` — cadastrado desde sempre e nunca lido por nenhuma tela —
+// vira informação de verdade.
 function aggregateProdutos(linhas) {
   const map = new Map();
   for (const l of linhas) {
-    if (!map.has(l.produtoId)) map.set(l.produtoId, { label: l.produtoNome, quantidade: 0, total: 0 });
+    if (!map.has(l.produtoId)) map.set(l.produtoId, { label: l.produtoNome, quantidade: 0, total: 0, custo: 0 });
     const entry = map.get(l.produtoId);
     entry.quantidade += l.quantidade;
     entry.total += l.valor;
+    entry.custo += l.custo;
   }
-  return Array.from(map.values()).sort((a, b) => b.total - a.total).slice(0, 6);
+  return Array.from(map.values())
+    .map((entry) => ({ ...entry, margem: entry.total - entry.custo, margemPct: entry.total > 0 ? ((entry.total - entry.custo) / entry.total) * 100 : 0 }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6);
 }
 
 // ── Ranking de clientes — quantidade = nº de transações (venda, parcela
@@ -254,6 +282,32 @@ function renderRankTable(rows, labelHeader, qtyHeader) {
         <thead><tr><th>${escapeHtml(labelHeader)}</th><th style="text-align:right">${escapeHtml(qtyHeader)}</th><th style="text-align:right">Total</th></tr></thead>
         <tbody>
           ${rows.map((r) => `<tr><td>${escapeHtml(r.label)}</td><td class="cell-num">${r.quantidade}</td><td class="cell-num">${formatCurrency(r.total)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProdutosTable(rows) {
+  if (rows.length === 0) {
+    return '<div class="empty-state" style="padding: 1.5rem;">Sem dados suficientes ainda.</div>';
+  }
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>Produto / serviço</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Receita</th><th style="text-align:right">Margem</th><th style="text-align:right">Margem %</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.label)}</td>
+              <td class="cell-num">${r.quantidade}</td>
+              <td class="cell-num">${formatCurrency(r.total)}</td>
+              <td class="cell-num">${formatCurrency(r.margem)}</td>
+              <td class="cell-num" style="color: ${r.margemPct < 0 ? "var(--danger)" : "var(--success)"};">${r.margemPct.toFixed(0)}%</td>
+            </tr>
+          `).join("")}
         </tbody>
       </table>
     </div>

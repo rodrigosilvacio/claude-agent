@@ -9,7 +9,7 @@
 import { supabase } from "./supabaseClient.js";
 import { showToast, openModal, closeModal, confirmDialog, formatDate, escapeHtml, createSearchSelect, registerAutoRefresh, withButtonLock, friendlyPgError } from "./app.js";
 import { isAdmin, getCurrentEmpresaId } from "./auth.js";
-import { loadProdutosVendaveis, loadEmpresasAtivas, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
+import { loadProdutosVendaveis, loadEmpresasAtivas, loadFornecedoresPorEmpresa, produtoSearchOptions, empresaSearchOptions, fornecedorSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
 
 const PAGE_SIZE = 50;
 
@@ -80,7 +80,7 @@ async function load(view, state, opts = {}) {
   const from = state.page * PAGE_SIZE;
   const { data, error, count } = await supabase
     .from("entradas_estoque")
-    .select("id, quantidade, data_entrada, observacoes, produto:produtos(nome, sku, estoque, estoque_minimo)", { count: "exact" })
+    .select("id, quantidade, data_entrada, observacoes, conta_pagar_id, conta_pagar:contas_pagar(descricao), produto:produtos(nome, sku, estoque, estoque_minimo)", { count: "exact" })
     .gte("data_entrada", state.inicio)
     .lte("data_entrada", state.fim)
     .order("data_entrada", { ascending: false })
@@ -184,7 +184,10 @@ function renderTabela(linhas) {
                 ${l.produto?.sku ? `<span class="cell-muted"> · ${escapeHtml(l.produto.sku)}</span>` : ""}
               </td>
               <td class="cell-num">+${Number(l.quantidade)}</td>
-              <td class="cell-muted">${escapeHtml(l.observacoes || "—")}</td>
+              <td class="cell-muted">
+                ${escapeHtml(l.observacoes || "—")}
+                ${l.conta_pagar_id ? `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">Conta a pagar gerada</div>` : ""}
+              </td>
               <td class="cell-actions">
                 <button type="button" class="btn btn--danger btn--sm" data-excluir="${l.id}">Excluir</button>
               </td>
@@ -229,6 +232,25 @@ function openEntradaForm(onSaved) {
           <textarea class="input" id="es-obs" rows="2" placeholder="Ex.: nota fiscal, fornecedor, lote…"></textarea>
         </div>
       </div>
+
+      <label class="cell-muted" style="display:flex; align-items:center; gap:0.5rem; margin-top:0.4rem; font-weight:600;">
+        <input type="checkbox" id="es-gerar-conta" /> Gerar conta a pagar para esta entrada
+      </label>
+      <div class="form-grid" id="es-conta-fields" hidden style="margin-top:0.8rem;">
+        <div class="field field--full">
+          <label>Fornecedor<span class="field-required">*</span></label>
+          <div data-mount="es-fornecedor"></div>
+        </div>
+        <div class="field">
+          <label for="es-conta-valor">Valor da conta<span class="field-required">*</span></label>
+          <input class="input" type="number" id="es-conta-valor" min="0.01" step="0.01" />
+        </div>
+        <div class="field">
+          <label for="es-conta-vencimento">Vencimento<span class="field-required">*</span></label>
+          <input class="input" type="date" id="es-conta-vencimento" value="${todayStr()}" />
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="button" class="btn btn--ghost" id="es-cancel">Cancelar</button>
         <button type="submit" class="btn btn--primary">Registrar entrada</button>
@@ -243,15 +265,38 @@ function openEntradaForm(onSaved) {
     allowClear: false,
   });
 
+  const empresaInicial = getCurrentEmpresaId();
+
+  const fornecedorSelect = createSearchSelect({
+    container: body.querySelector('[data-mount="es-fornecedor"]'),
+    placeholder: "Buscar fornecedor…",
+    options: [],
+    allowClear: false,
+    emptyText: admin ? "Escolha a empresa primeiro" : "Nenhum fornecedor cadastrado",
+  });
+
+  async function recarregarFornecedores(empresaId) {
+    const fornecedores = await loadFornecedoresPorEmpresa(empresaId);
+    fornecedorSelect.setOptions(fornecedorSearchOptions(fornecedores));
+  }
+  recarregarFornecedores(empresaInicial);
+
   const empresaSelect = admin
     ? createSearchSelect({
         container: body.querySelector('[data-mount="es-empresa"]'),
         placeholder: "Buscar empresa…",
         options: empresaSearchOptions(empresasOptions),
-        value: getCurrentEmpresaId(),
+        value: empresaInicial,
         allowClear: false,
+        onChange: (empresaId) => recarregarFornecedores(empresaId),
       })
     : null;
+
+  const gerarContaCheckbox = body.querySelector("#es-gerar-conta");
+  const contaFields = body.querySelector("#es-conta-fields");
+  gerarContaCheckbox.addEventListener("change", () => {
+    contaFields.hidden = !gerarContaCheckbox.checked;
+  });
 
   body.querySelector("#es-cancel").addEventListener("click", closeModal);
 
@@ -272,11 +317,26 @@ function openEntradaForm(onSaved) {
         return;
       }
 
+      const gerarConta = gerarContaCheckbox.checked;
+      if (gerarConta && !fornecedorSelect.getValue()) {
+        errorEl.innerHTML = `<div class="form-error">Selecione o fornecedor da conta a pagar.</div>`;
+        return;
+      }
+      const valorConta = Number(body.querySelector("#es-conta-valor").value || 0);
+      if (gerarConta && valorConta <= 0) {
+        errorEl.innerHTML = `<div class="form-error">Informe o valor da conta a pagar.</div>`;
+        return;
+      }
+
       const payload = {
         p_produto_id: produtoId,
         p_quantidade: Number(body.querySelector("#es-quantidade").value || 0),
         p_data_entrada: body.querySelector("#es-data").value,
         p_observacoes: body.querySelector("#es-obs").value || null,
+        p_gerar_conta_pagar: gerarConta,
+        p_fornecedor_id: gerarConta ? fornecedorSelect.getValue() : null,
+        p_valor_conta: gerarConta ? valorConta : null,
+        p_vencimento_conta: gerarConta ? (body.querySelector("#es-conta-vencimento").value || null) : null,
       };
       if (admin) payload.p_empresa_id = empresaSelect.getValue();
 
@@ -287,7 +347,7 @@ function openEntradaForm(onSaved) {
         return;
       }
 
-      showToast("Entrada de estoque registrada.");
+      showToast(gerarConta ? "Entrada de estoque registrada e conta a pagar gerada." : "Entrada de estoque registrada.");
       closeModal();
       produtosOptions = await loadProdutosVendaveis();
       if (onSaved) onSaved();
