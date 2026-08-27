@@ -1,14 +1,15 @@
-// ERPConnect — CRM: cadastro de Propostas (grupo Movimentações). Uma
+// ERPConnect — CRM: pipeline de Propostas (grupo Movimentações). Uma
 // proposta é um orçamento para um lead (campo livre) ou um cliente já
-// cadastrado, com múltiplos produtos e valor total — bem diferente de uma
-// venda: criar/editar uma proposta NUNCA mexe em estoque, só quando (e se)
-// ela virar uma venda de verdade pela tela de Vendas já existente.
+// cadastrado, com múltiplos produtos e valor total — criar/editar uma
+// proposta NUNCA mexe em estoque, só quando (e se) ela virar uma venda de
+// verdade pela tela de Vendas já existente.
 //
-// Estrutura das abas (Nova proposta / Propostas) e o carrinho de itens são
-// deliberadamente parecidos com vendas.js — mesmo padrão de tela já
-// validado neste app — mas com preço por item editável (é um orçamento, não
-// uma venda a preço de tabela) e um ciclo de status próprio (rascunho →
-// enviada → aprovada/reprovada).
+// Tela redesenhada como um quadro kanban por estágio (Rascunho → Enviada →
+// Aprovada/Reprovada), não uma tabela de lançamentos nem o checkout de
+// Vendas: um CRM se organiza por onde cada negociação está no funil, não
+// por ordem cronológica de registro. "+ Nova proposta" e "Editar" abrem um
+// formulário em modal — o carrinho de itens continua com preço por item
+// editável (é um orçamento, não uma venda a preço de tabela).
 
 import { supabase } from "./supabaseClient.js";
 import {
@@ -19,84 +20,287 @@ import {
 import { isAdmin, getCurrentUsuario } from "./auth.js";
 import { loadClientesAtivos, loadProdutosAtivos, loadEmpresasAtivas, clienteSearchOptions, produtoSearchOptions, empresaSearchOptions, produtoMetaPrecoEstoque } from "./catalogo.js";
 
-const ICON_LEAD = '<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6" stroke-dasharray="2 2"/></svg>';
-const ICON_CLIENTE = '<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>';
+const ICON_LEAD = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6" stroke-dasharray="2 2"/></svg>';
+const ICON_CLIENTE = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>';
+const SEARCH_ICON = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
 
 const STATUS_LABELS = { draft: "Rascunho", enviada: "Enviada", aprovada: "Aprovada", reprovada: "Reprovada" };
 function statusLabel(status) {
   return STATUS_LABELS[status] || status;
 }
 
+// Colunas do quadro, na ordem do funil. COLUNA_CAP limita quantos cards uma
+// coluna desenha de uma vez — o board mostra tudo de uma vez (sem
+// paginação, ao contrário das listas do resto do app), então precisa de um
+// teto para não desenhar centenas de cards de uma empresa com anos de
+// histórico.
+const COLUNAS = [
+  { key: "draft", label: "Rascunho" },
+  { key: "enviada", label: "Enviada" },
+  { key: "aprovada", label: "Aprovada" },
+  { key: "reprovada", label: "Reprovada" },
+];
+const COLUNA_CAP = 60;
+const BOARD_FETCH_LIMIT = 400;
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeForSearch(str) {
+  return String(str ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
 let clientesOptions = [];
 let produtosOptions = [];
 let empresasOptions = [];
-// Carrinho de produtos da proposta em edição e a proposta sendo editada (null
-// = nova proposta do zero). Módulo-scope, mesmo padrão de `cart` em
-// vendas.js: sobrevive à troca entre as abas "Nova proposta"/"Propostas"
-// dentro da mesma visita à tela, só é limpo no load da rota ou depois de
-// salvar/cancelar.
+// Carrinho de produtos e a proposta em edição no MODAL aberto no momento
+// (null = novo formulário do zero). Módulo-scope, mesmo padrão de `cart` em
+// vendas.js — só é limpo ao abrir um novo formulário ou fechar o modal.
 let itens = [];
 let editingProposta = null;
-let activateTab = () => {};
+
+// Cache da última busca ao banco + referência da view atual, para o filtro
+// de texto reaplicar sem nova consulta e para os modais (detalhe, edição)
+// saberem em cima de qual tela recarregar o quadro depois de fechar.
+let boardCache = [];
+let boardView = null;
+let boardState = { search: "" };
 
 export async function render(view, actionsEl) {
-  actionsEl.innerHTML = "";
+  boardView = view;
+  boardState = { search: "" };
   itens = [];
   editingProposta = null;
 
-  view.innerHTML = `
-    <div class="toolbar" style="margin-bottom: 1.25rem;">
-      <div style="display:flex; gap:0.5rem;">
-        <button type="button" class="btn btn--primary" id="tab-nova">Nova proposta</button>
-        <button type="button" class="btn btn--ghost" id="tab-propostas">Propostas</button>
-      </div>
-    </div>
-    <div id="tab-content"></div>
+  actionsEl.innerHTML = `
+    <button type="button" class="btn btn--ghost" id="btn-exportar-csv">Exportar CSV</button>
+    <button type="button" class="btn btn--primary" id="btn-nova-proposta">+ Nova proposta</button>
   `;
+  actionsEl.querySelector("#btn-exportar-csv").addEventListener("click", exportarPropostasCsv);
+  actionsEl.querySelector("#btn-nova-proposta").addEventListener("click", () => {
+    editingProposta = null;
+    itens = [];
+    openPropostaFormModal();
+  });
 
-  const tabNova = view.querySelector("#tab-nova");
-  const tabPropostas = view.querySelector("#tab-propostas");
-  const content = view.querySelector("#tab-content");
-
-  function activate(tab) {
-    tabNova.className = tab === "nova" ? "btn btn--primary" : "btn btn--ghost";
-    tabPropostas.className = tab === "propostas" ? "btn btn--primary" : "btn btn--ghost";
-    if (tab === "nova") {
-      actionsEl.innerHTML = "";
-      renderNovaProposta(content);
-    } else {
-      actionsEl.innerHTML = `<button type="button" class="btn btn--ghost" id="btn-exportar-csv">Exportar CSV</button>`;
-      actionsEl.querySelector("#btn-exportar-csv").addEventListener("click", exportarPropostasCsv);
-      renderHistorico(content);
-    }
-  }
-  activateTab = activate;
-
-  tabNova.addEventListener("click", () => activate("nova"));
-  tabPropostas.addEventListener("click", () => activate("propostas"));
+  view.innerHTML = `
+    <div class="stat-grid" id="crm-stats"></div>
+    <div class="toolbar" style="margin: 1.1rem 0;">
+      <div class="search-input-wrap">
+        ${SEARCH_ICON}
+        <input type="search" class="input" id="crm-search" placeholder="Buscar por nome do lead ou cliente…" />
+      </div>
+      <p class="record-count" id="crm-record-count"></p>
+    </div>
+    <div class="crm-board" id="crm-board"><div class="empty-state">Carregando…</div></div>
+  `;
 
   [clientesOptions, produtosOptions, empresasOptions] = await Promise.all([loadClientesAtivos(), loadProdutosAtivos(), loadEmpresasAtivas()]);
 
-  activate("nova");
+  const searchInput = view.querySelector("#crm-search");
+  let searchTimer = null;
+  searchInput.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      boardState.search = searchInput.value.trim();
+      renderBoardFromCache(view);
+    }, 200);
+  });
+
+  await loadBoard(view);
+
+  registerAutoRefresh(() => loadBoard(view, { silent: true }), 15000);
 }
 
-function renderNovaProposta(content) {
+const BOARD_SELECT = "id, numero, tipo_contato, lead_nome, data_proposta, validade_ate, total, status, venda_id, matricula_id, cliente:clientes(nome), vendedor:usuarios(nome)";
+
+async function loadBoard(view, opts = {}) {
+  const { silent = false } = opts;
+  const boardEl = view.querySelector("#crm-board");
+  if (!boardEl) return;
+  if (!silent) boardEl.innerHTML = `<div class="empty-state">Carregando…</div>`;
+
+  const { data, error } = await supabase
+    .from("propostas")
+    .select(BOARD_SELECT)
+    .order("numero", { ascending: false })
+    .limit(BOARD_FETCH_LIMIT);
+
+  if (error) {
+    boardEl.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar as propostas</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(error))}</p></div>`;
+    return;
+  }
+
+  boardCache = data || [];
+  renderStats(view, boardCache);
+  renderBoardFromCache(view);
+}
+
+function renderStats(view, rows) {
+  const emAberto = rows.filter((r) => r.status === "draft" || r.status === "enviada");
+  const aprovadas = rows.filter((r) => r.status === "aprovada");
+  const reprovadas = rows.filter((r) => r.status === "reprovada");
+  const fechadas = aprovadas.length + reprovadas.length;
+  const taxaConversao = fechadas > 0 ? (aprovadas.length / fechadas) * 100 : 0;
+  const valorEmAberto = emAberto.reduce((soma, r) => soma + Number(r.total || 0), 0);
+  const ticketMedio = aprovadas.length > 0 ? aprovadas.reduce((soma, r) => soma + Number(r.total || 0), 0) / aprovadas.length : 0;
+
+  view.querySelector("#crm-stats").innerHTML = `
+    ${statCard("Propostas em aberto", emAberto.length, "var(--info)")}
+    ${statCard("Valor em aberto", formatCurrency(valorEmAberto), "var(--accent)")}
+    ${statCard("Taxa de conversão", `${taxaConversao.toFixed(0)}%`, "var(--success)")}
+    ${statCard("Ticket médio aprovado", formatCurrency(ticketMedio), "var(--amber)")}
+  `;
+}
+
+function statCard(label, value, tagColor) {
+  return `
+    <div class="card stat-card" style="--tag-color:${tagColor}">
+      <p class="stat-card__label">${escapeHtml(label)}</p>
+      <p class="stat-card__value">${value}</p>
+    </div>
+  `;
+}
+
+function renderBoardFromCache(view) {
+  const boardEl = view.querySelector("#crm-board");
+  const countEl = view.querySelector("#crm-record-count");
+  if (!boardEl) return;
+
+  if (boardCache.length === 0) {
+    boardEl.innerHTML = `<div class="empty-state"><p class="empty-state__title">Nenhuma proposta ainda</p><p class="empty-state__hint">Use "+ Nova proposta" para criar a primeira.</p></div>`;
+    if (countEl) countEl.textContent = "";
+    return;
+  }
+
+  const termo = normalizeForSearch(boardState.search);
+  const filtradas = termo
+    ? boardCache.filter((p) => {
+        const nome = p.tipo_contato === "cliente" ? (p.cliente?.nome || "") : (p.lead_nome || "");
+        return normalizeForSearch(nome).includes(termo);
+      })
+    : boardCache;
+
+  if (countEl) {
+    countEl.textContent = termo
+      ? `${filtradas.length} de ${boardCache.length} proposta${boardCache.length === 1 ? "" : "s"}`
+      : `${boardCache.length} proposta${boardCache.length === 1 ? "" : "s"}${boardCache.length >= BOARD_FETCH_LIMIT ? " (mais recentes)" : ""}`;
+  }
+
+  boardEl.innerHTML = COLUNAS.map((col) => {
+    const linhas = filtradas
+      .filter((p) => p.status === col.key)
+      .sort((a, b) => new Date(b.data_proposta) - new Date(a.data_proposta));
+    const soma = linhas.reduce((s, r) => s + Number(r.total || 0), 0);
+    const visiveis = linhas.slice(0, COLUNA_CAP);
+
+    return `
+      <div class="crm-column crm-column--${col.key}">
+        <div class="crm-column__head">
+          <span class="crm-column__title">${escapeHtml(col.label)}</span>
+          <span class="crm-column__count">${linhas.length}</span>
+        </div>
+        <div class="crm-column__sum">${formatCurrency(soma)}</div>
+        <div class="crm-column__cards">
+          ${visiveis.length === 0
+            ? `<div class="empty-state" style="padding: 1rem; font-size: 0.8rem;">Nada por aqui.</div>`
+            : visiveis.map((p) => renderCard(p, col.key)).join("")}
+          ${linhas.length > COLUNA_CAP ? `<p class="cell-muted" style="text-align:center; font-size:0.72rem; padding: 0.3rem 0;">+${linhas.length - COLUNA_CAP} mais — refine a busca</p>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  boardEl.querySelectorAll("[data-detail]").forEach((cardEl) => {
+    cardEl.addEventListener("click", () => showDetail(cardEl.dataset.detail, () => loadBoard(boardView, { silent: true })));
+  });
+}
+
+function renderCard(p, colKey) {
+  const nome = p.tipo_contato === "cliente" ? (p.cliente?.nome || "Cliente") : (p.lead_nome || "Lead");
+  const badgeIcon = p.tipo_contato === "cliente" ? ICON_CLIENTE : ICON_LEAD;
+  const badgeClass = p.tipo_contato === "cliente" ? "crm-card__badge--cliente" : "crm-card__badge--lead";
+  const vencida = (colKey === "draft" || colKey === "enviada") && Boolean(p.validade_ate) && p.validade_ate < todayStr();
+  const convertida = p.status === "aprovada" && Boolean(p.venda_id || p.matricula_id);
+
+  return `
+    <div class="crm-card" data-detail="${p.id}" role="button" tabindex="0">
+      <div class="crm-card__row">
+        <span class="crm-card__badge ${badgeClass}" title="${p.tipo_contato === "cliente" ? "Cliente" : "Lead"}">${badgeIcon}</span>
+        <span class="crm-card__num">#${p.numero}</span>
+      </div>
+      <p class="crm-card__nome">${escapeHtml(nome)}</p>
+      <p class="crm-card__valor">${formatCurrency(p.total)}</p>
+      <div class="crm-card__foot">
+        <span>${escapeHtml(p.vendedor?.nome || "—")}</span>
+        <span>${formatDate(p.data_proposta)}</span>
+      </div>
+      ${vencida ? `<span class="crm-card__flag">Validade vencida</span>` : ""}
+      ${convertida ? `<span class="crm-card__flag crm-card__flag--ok">Convertida</span>` : ""}
+    </div>
+  `;
+}
+
+const EXPORT_CAP = 5000;
+
+async function exportarPropostasCsv() {
+  const { data, error } = await supabase
+    .from("propostas")
+    .select("numero, data_proposta, tipo_contato, lead_nome, status, total, cliente:clientes(nome), vendedor:usuarios(nome)")
+    .order("numero", { ascending: false })
+    .limit(EXPORT_CAP);
+
+  if (error) {
+    showToast(friendlyPgError(error), "error");
+    return;
+  }
+
+  exportCsv(
+    "propostas.csv",
+    ["Nº", "Data", "Contato", "Tipo", "Vendedor", "Total", "Status"],
+    (data || []).map((p) => [
+      p.numero,
+      p.data_proposta,
+      p.tipo_contato === "cliente" ? (p.cliente?.nome || "") : (p.lead_nome || ""),
+      p.tipo_contato === "cliente" ? "Cliente" : "Lead",
+      p.vendedor?.nome || "",
+      formatCsvNumber(p.total),
+      statusLabel(p.status),
+    ]),
+  );
+}
+
+// ── Formulário de proposta (modal) ──────────────────────────────────────
+// `editingProposta`/`itens` (module-scope) já devem estar preenchidos por
+// quem chama: null/[] para nova proposta, ou os dados carregados por
+// editarProposta() para edição.
+function openPropostaFormModal() {
   const admin = isAdmin();
   const usuario = getCurrentUsuario();
   const editing = editingProposta;
   const tipoInicial = editing ? editing.tipo_contato : "lead";
 
-  content.innerHTML = `
-    <div class="venda-layout">
-      <div class="card card-section venda-itens">
+  const body = openModal(editing ? `Editar proposta #${editing.numero}` : "Nova proposta", {
+    size: "wide",
+    onClose: () => {
+      itens = [];
+      editingProposta = null;
+    },
+  });
+
+  body.innerHTML = `
+    <form id="proposta-form">
+      <div id="p-error"></div>
+      <div class="form-grid">
         ${admin && !editing ? `
-          <div class="field">
-            <label>Empresa<span class="field-required">*</span></label>
-            <div data-mount="p-empresa"></div>
-          </div>
+        <div class="field field--full">
+          <label>Empresa<span class="field-required">*</span></label>
+          <div data-mount="p-empresa"></div>
+        </div>
         ` : ""}
 
-        <div class="field">
+        <div class="field field--full">
           <label>Contato</label>
           <div class="paytiles" id="p-tipo-contato" role="radiogroup" aria-label="Tipo de contato" style="max-width: 280px;">
             <button type="button" class="paytile ${tipoInicial === "lead" ? "is-active" : ""}" data-value="lead" role="radio" aria-checked="${tipoInicial === "lead"}">
@@ -110,98 +314,95 @@ function renderNovaProposta(content) {
           </div>
         </div>
 
-        <div id="p-contato-mount" style="margin-top: 0.9rem;"></div>
+        <div class="field field--full" id="p-contato-mount"></div>
 
-        <div class="form-grid" style="margin-top: 1rem;">
-          <div class="field">
-            <label for="p-telefone">Telefone</label>
-            <input class="input" type="text" id="p-telefone" value="${escapeHtml(editing?.contato_telefone || "")}" />
-          </div>
-          <div class="field">
-            <label for="p-email">E-mail</label>
-            <input class="input" type="email" id="p-email" value="${escapeHtml(editing?.contato_email || "")}" />
-          </div>
-          <div class="field">
-            <label for="p-data">Data da proposta</label>
-            <input class="input" type="date" id="p-data" value="${editing?.data_proposta || new Date().toISOString().slice(0, 10)}" />
-          </div>
-          <div class="field">
-            <label for="p-validade">Válida até <span class="field-optional">opcional</span></label>
-            <input class="input" type="date" id="p-validade" value="${editing?.validade_ate || ""}" />
-          </div>
-          <div class="field">
-            <label for="p-condicoes">Condições de pagamento <span class="field-optional">opcional</span></label>
-            <input class="input" type="text" id="p-condicoes" placeholder="Ex.: à vista, 3x sem juros…" value="${escapeHtml(editing?.condicoes_pagamento || "")}" />
-          </div>
-          <div class="field">
-            <label for="p-prazo">Prazo de entrega <span class="field-optional">opcional</span></label>
-            <input class="input" type="text" id="p-prazo" placeholder="Ex.: 5 dias úteis" value="${escapeHtml(editing?.prazo_entrega || "")}" />
-          </div>
+        <div class="field">
+          <label for="p-telefone">Telefone</label>
+          <input class="input" type="text" id="p-telefone" value="${escapeHtml(editing?.contato_telefone || "")}" />
         </div>
-
-        <p class="field-hint" style="margin: 0.5rem 0 0;">Vendedor responsável: <strong>${escapeHtml(editing?.vendedor?.nome || usuario?.nome || "—")}</strong></p>
-
-        <p class="section-title" style="margin-top: 1.5rem;">Produtos a oferecer</p>
-        <div class="form-grid form-grid--itens-proposta">
-          <div class="field">
-            <label>Produto</label>
-            <div data-mount="p-produto"></div>
-          </div>
-          <div class="field">
-            <label for="p-qtd">Qtd.</label>
-            <input class="input" type="number" id="p-qtd" min="1" step="1" value="1" />
-          </div>
-          <div class="field">
-            <label for="p-preco">Preço unit.</label>
-            <input class="input" type="number" id="p-preco" min="0" step="0.01" value="0" />
-          </div>
-          <div class="field">
-            <button type="button" class="btn btn--ghost" id="p-add-item">+ Adicionar</button>
-          </div>
+        <div class="field">
+          <label for="p-email">E-mail</label>
+          <input class="input" type="email" id="p-email" value="${escapeHtml(editing?.contato_email || "")}" />
         </div>
-
-        <div class="table-wrap" style="margin-top: 1rem;">
-          <table class="data-table" id="proposta-itens-table">
-            <thead>
-              <tr><th>Produto</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Preço</th><th style="text-align:right">Subtotal</th><th></th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+        <div class="field">
+          <label for="p-data">Data da proposta</label>
+          <input class="input" type="date" id="p-data" value="${editing?.data_proposta || todayStr()}" />
         </div>
-
-        <div class="field field--full" style="margin-top: 1rem;">
-          <label for="p-observacoes">Observações / condições gerais</label>
-          <textarea class="input" id="p-observacoes" rows="3">${escapeHtml(editing?.observacoes || "")}</textarea>
+        <div class="field">
+          <label for="p-validade">Válida até <span class="field-optional">opcional</span></label>
+          <input class="input" type="date" id="p-validade" value="${editing?.validade_ate || ""}" />
+        </div>
+        <div class="field">
+          <label for="p-condicoes">Condições de pagamento <span class="field-optional">opcional</span></label>
+          <input class="input" type="text" id="p-condicoes" placeholder="Ex.: à vista, 3x sem juros…" value="${escapeHtml(editing?.condicoes_pagamento || "")}" />
+        </div>
+        <div class="field">
+          <label for="p-prazo">Prazo de entrega <span class="field-optional">opcional</span></label>
+          <input class="input" type="text" id="p-prazo" placeholder="Ex.: 5 dias úteis" value="${escapeHtml(editing?.prazo_entrega || "")}" />
         </div>
       </div>
 
-      <div class="card receipt receipt--plain">
-        <p class="section-title">Resumo</p>
-        <div class="receipt__tear"></div>
-        <div class="receipt__row"><span>Subtotal</span><span id="p-subtotal">${formatCurrency(0)}</span></div>
-        <div class="receipt__row">
+      <p class="field-hint" style="margin: 0.9rem 0 0;">Vendedor responsável: <strong>${escapeHtml(editing?.vendedor?.nome || usuario?.nome || "—")}</strong></p>
+
+      <p class="section-title" style="margin-top: 1.35rem;">Produtos a oferecer</p>
+      <div class="form-grid form-grid--itens-proposta">
+        <div class="field">
+          <label>Produto</label>
+          <div data-mount="p-produto"></div>
+        </div>
+        <div class="field">
+          <label for="p-qtd">Qtd.</label>
+          <input class="input" type="number" id="p-qtd" min="1" step="1" value="1" />
+        </div>
+        <div class="field">
+          <label for="p-preco">Preço unit.</label>
+          <input class="input" type="number" id="p-preco" min="0" step="0.01" value="0" />
+        </div>
+        <div class="field">
+          <button type="button" class="btn btn--ghost" id="p-add-item">+ Adicionar</button>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="margin-top: 1rem;">
+        <table class="data-table" id="proposta-itens-table">
+          <thead>
+            <tr><th>Produto</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Preço</th><th style="text-align:right">Subtotal</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="field field--full" style="margin-top: 1rem;">
+        <label for="p-observacoes">Observações / condições gerais</label>
+        <textarea class="input" id="p-observacoes" rows="2">${escapeHtml(editing?.observacoes || "")}</textarea>
+      </div>
+
+      <div class="crm-totais">
+        <div class="crm-totais__row"><span>Subtotal</span><span id="p-subtotal">${formatCurrency(0)}</span></div>
+        <div class="crm-totais__row">
           <span>Desconto</span>
           <input class="input" type="number" id="p-desconto" min="0" step="0.01" value="${editing?.desconto || 0}" style="width: 110px; text-align:right; font-family: var(--font-mono);" />
         </div>
-        <div class="receipt__tear"></div>
-        <div class="receipt__total"><span>Total</span><span id="p-total">${formatCurrency(0)}</span></div>
-        <button type="button" class="btn btn--primary" id="p-salvar" style="width:100%; justify-content:center; margin-top: 1.25rem;">${editing ? "Salvar alterações" : "Salvar rascunho"}</button>
-        ${editing ? `<button type="button" class="btn btn--ghost" id="p-cancelar-edicao" style="width:100%; justify-content:center; margin-top: 0.5rem;">Cancelar edição</button>` : ""}
-        <div id="p-error"></div>
+        <div class="crm-totais__row crm-totais__row--total"><span>Total</span><span id="p-total">${formatCurrency(0)}</span></div>
       </div>
-    </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" id="p-cancel">Cancelar</button>
+        <button type="button" class="btn btn--primary" id="p-salvar">${editing ? "Salvar alterações" : "Salvar rascunho"}</button>
+      </div>
+    </form>
   `;
 
-  const cartBody = content.querySelector("#proposta-itens-table tbody");
-  const descontoInput = content.querySelector("#p-desconto");
-  const telefoneInput = content.querySelector("#p-telefone");
-  const emailInput = content.querySelector("#p-email");
-  const errorEl = content.querySelector("#p-error");
-  const contatoMount = content.querySelector("#p-contato-mount");
+  const cartBody = body.querySelector("#proposta-itens-table tbody");
+  const descontoInput = body.querySelector("#p-desconto");
+  const telefoneInput = body.querySelector("#p-telefone");
+  const emailInput = body.querySelector("#p-email");
+  const errorEl = body.querySelector("#p-error");
+  const contatoMount = body.querySelector("#p-contato-mount");
 
   const empresaSelect = admin && !editing
     ? createSearchSelect({
-        container: content.querySelector('[data-mount="p-empresa"]'),
+        container: body.querySelector('[data-mount="p-empresa"]'),
         placeholder: "Buscar empresa…",
         options: empresaSearchOptions(empresasOptions),
         allowClear: false,
@@ -214,10 +415,8 @@ function renderNovaProposta(content) {
   function renderContatoField(tipo) {
     if (tipo === "cliente") {
       contatoMount.innerHTML = `
-        <div class="field field--full">
-          <label>Cliente<span class="field-required">*</span></label>
-          <div data-mount="p-cliente"></div>
-        </div>
+        <label>Cliente<span class="field-required">*</span></label>
+        <div data-mount="p-cliente"></div>
       `;
       clienteSelect = createSearchSelect({
         container: contatoMount.querySelector('[data-mount="p-cliente"]'),
@@ -242,10 +441,8 @@ function renderNovaProposta(content) {
       }
     } else {
       contatoMount.innerHTML = `
-        <div class="field field--full">
-          <label for="p-lead-nome">Nome do lead<span class="field-required">*</span></label>
-          <input class="input" type="text" id="p-lead-nome" value="${escapeHtml(editing?.lead_nome || "")}" />
-        </div>
+        <label for="p-lead-nome">Nome do lead<span class="field-required">*</span></label>
+        <input class="input" type="text" id="p-lead-nome" value="${escapeHtml(editing?.lead_nome || "")}" />
       `;
       clienteSelect = null;
       telefoneInput.readOnly = false;
@@ -255,7 +452,7 @@ function renderNovaProposta(content) {
 
   renderContatoField(tipoInicial);
 
-  const tipoGroup = content.querySelector("#p-tipo-contato");
+  const tipoGroup = body.querySelector("#p-tipo-contato");
   tipoGroup.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-value]");
     if (!btn || btn.dataset.value === tipoAtual) return;
@@ -268,11 +465,11 @@ function renderNovaProposta(content) {
     renderContatoField(tipoAtual);
   });
 
-  const qtdInput = content.querySelector("#p-qtd");
-  const precoInput = content.querySelector("#p-preco");
+  const qtdInput = body.querySelector("#p-qtd");
+  const precoInput = body.querySelector("#p-preco");
 
   const produtoSelect = createSearchSelect({
-    container: content.querySelector('[data-mount="p-produto"]'),
+    container: body.querySelector('[data-mount="p-produto"]'),
     placeholder: "Buscar produto por nome ou SKU…",
     options: produtoSearchOptions(produtosOptions, { meta: produtoMetaPrecoEstoque }),
     allowClear: true,
@@ -330,8 +527,8 @@ function renderNovaProposta(content) {
   function updateTotals() {
     const subtotal = itens.reduce((sum, item) => sum + item.quantidade * item.preco_unitario, 0);
     const desconto = Number(descontoInput.value || 0);
-    content.querySelector("#p-subtotal").textContent = formatCurrency(subtotal);
-    content.querySelector("#p-total").textContent = formatCurrency(Math.max(subtotal - desconto, 0));
+    body.querySelector("#p-subtotal").textContent = formatCurrency(subtotal);
+    body.querySelector("#p-total").textContent = formatCurrency(Math.max(subtotal - desconto, 0));
   }
 
   descontoInput.addEventListener("input", updateTotals);
@@ -355,11 +552,13 @@ function renderNovaProposta(content) {
     renderItensTable();
   }
 
-  content.querySelector("#p-add-item").addEventListener("click", addItem);
+  body.querySelector("#p-add-item").addEventListener("click", addItem);
   qtdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } });
   precoInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } });
 
-  content.querySelector("#p-salvar").addEventListener("click", (e) => withButtonLock(e.currentTarget, async () => {
+  body.querySelector("#p-cancel").addEventListener("click", closeModal);
+
+  body.querySelector("#p-salvar").addEventListener("click", (e) => withButtonLock(e.currentTarget, async () => {
     errorEl.innerHTML = "";
 
     if (itens.length === 0) {
@@ -374,7 +573,7 @@ function renderNovaProposta(content) {
       errorEl.innerHTML = `<div class="form-error">Selecione um cliente.</div>`;
       return;
     }
-    const leadNomeInput = content.querySelector("#p-lead-nome");
+    const leadNomeInput = body.querySelector("#p-lead-nome");
     if (tipoAtual === "lead" && !leadNomeInput?.value.trim()) {
       errorEl.innerHTML = `<div class="form-error">Informe o nome do lead.</div>`;
       return;
@@ -386,11 +585,11 @@ function renderNovaProposta(content) {
       p_lead_nome: tipoAtual === "lead" ? leadNomeInput.value.trim() : null,
       p_contato_telefone: telefoneInput.value.trim() || null,
       p_contato_email: emailInput.value.trim() || null,
-      p_data_proposta: content.querySelector("#p-data").value || null,
-      p_validade_ate: content.querySelector("#p-validade").value || null,
-      p_condicoes_pagamento: content.querySelector("#p-condicoes").value.trim() || null,
-      p_prazo_entrega: content.querySelector("#p-prazo").value.trim() || null,
-      p_observacoes: content.querySelector("#p-observacoes").value.trim() || null,
+      p_data_proposta: body.querySelector("#p-data").value || null,
+      p_validade_ate: body.querySelector("#p-validade").value || null,
+      p_condicoes_pagamento: body.querySelector("#p-condicoes").value.trim() || null,
+      p_prazo_entrega: body.querySelector("#p-prazo").value.trim() || null,
+      p_observacoes: body.querySelector("#p-observacoes").value.trim() || null,
       p_desconto: Number(descontoInput.value || 0),
       p_itens: itens.map((item) => ({ produto_id: item.produto_id, quantidade: item.quantidade, preco_unitario: item.preco_unitario })),
     };
@@ -409,192 +608,11 @@ function renderNovaProposta(content) {
     }
 
     showToast(editing ? "Proposta atualizada." : "Proposta salva como rascunho.");
-    itens = [];
-    editingProposta = null;
-    activateTab("propostas");
+    closeModal();
+    loadBoard(boardView, { silent: true });
   }));
 
-  content.querySelector("#p-cancelar-edicao")?.addEventListener("click", () => {
-    itens = [];
-    editingProposta = null;
-    activateTab("propostas");
-  });
-
   renderItensTable();
-
-  registerAutoRefresh(async () => {
-    const [nextClientes, nextProdutos] = await Promise.all([loadClientesAtivos(), loadProdutosAtivos()]);
-    clientesOptions = nextClientes;
-    produtosOptions = nextProdutos;
-    if (clienteSelect) clienteSelect.setOptions(clienteSearchOptions(clientesOptions));
-    produtoSelect.setOptions(produtoSearchOptions(produtosOptions, { meta: produtoMetaPrecoEstoque }));
-  }, 15000);
-}
-
-const HISTORICO_PAGE_SIZE = 50;
-const EXPORT_CAP = 5000;
-
-const STATUS_FILTER_OPTIONS = [
-  { value: "draft", label: "Rascunho" },
-  { value: "enviada", label: "Enviada" },
-  { value: "aprovada", label: "Aprovada" },
-  { value: "reprovada", label: "Reprovada" },
-];
-
-async function exportarPropostasCsv() {
-  const { data, error } = await supabase
-    .from("propostas")
-    .select("numero, data_proposta, tipo_contato, lead_nome, status, total, cliente:clientes(nome), vendedor:usuarios(nome)")
-    .order("numero", { ascending: false })
-    .limit(EXPORT_CAP);
-
-  if (error) {
-    showToast(friendlyPgError(error), "error");
-    return;
-  }
-
-  exportCsv(
-    "propostas.csv",
-    ["Nº", "Data", "Contato", "Tipo", "Vendedor", "Total", "Status"],
-    (data || []).map((p) => [
-      p.numero,
-      p.data_proposta,
-      p.tipo_contato === "cliente" ? (p.cliente?.nome || "") : (p.lead_nome || ""),
-      p.tipo_contato === "cliente" ? "Cliente" : "Lead",
-      p.vendedor?.nome || "",
-      formatCsvNumber(p.total),
-      statusLabel(p.status),
-    ]),
-  );
-}
-
-async function renderHistorico(content) {
-  content.innerHTML = `
-    <div class="toolbar" style="margin-bottom: 1rem;">
-      <div data-mount="p-filtro-status" style="max-width: 240px;"></div>
-    </div>
-    <div class="card"><div class="table-wrap" id="propostas-table"><div class="empty-state">Carregando…</div></div></div>
-    <div id="propostas-pagination"></div>
-  `;
-
-  const state = { page: 0, status: "" };
-
-  createSearchSelect({
-    container: content.querySelector('[data-mount="p-filtro-status"]'),
-    placeholder: "Filtrar por status…",
-    options: STATUS_FILTER_OPTIONS,
-    allowClear: true,
-    onChange: (value) => {
-      state.status = value || "";
-      state.page = 0;
-      loadHistorico(content, state);
-    },
-  });
-
-  await loadHistorico(content, state);
-
-  registerAutoRefresh(() => loadHistorico(content, state, { silent: true }), 15000);
-}
-
-async function loadHistorico(content, state, opts = {}) {
-  const { silent = false } = opts;
-  const tableWrap = content.querySelector("#propostas-table");
-  if (!silent) tableWrap.innerHTML = `<div class="empty-state">Carregando…</div>`;
-
-  const from = state.page * HISTORICO_PAGE_SIZE;
-  let query = supabase
-    .from("propostas")
-    .select("id, numero, tipo_contato, lead_nome, data_proposta, total, status, venda_id, venda:vendas(numero), matricula_id, matricula:matriculas(numero), cliente:clientes(nome), vendedor:usuarios(nome)", { count: "exact" })
-    .order("numero", { ascending: false });
-  if (state.status) query = query.eq("status", state.status);
-
-  const { data, error, count } = await query.range(from, from + HISTORICO_PAGE_SIZE - 1);
-
-  if (error) {
-    tableWrap.innerHTML = `<div class="empty-state"><p class="empty-state__title">Erro ao carregar</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(error))}</p></div>`;
-    return;
-  }
-
-  if ((!data || data.length === 0) && state.page > 0 && count > 0) {
-    state.page = Math.max(0, Math.ceil(count / HISTORICO_PAGE_SIZE) - 1);
-    return loadHistorico(content, state, opts);
-  }
-
-  if (!data || data.length === 0) {
-    tableWrap.innerHTML = `<div class="empty-state"><p class="empty-state__title">Nenhuma proposta encontrada</p></div>`;
-    content.querySelector("#propostas-pagination").innerHTML = "";
-    return;
-  }
-
-  tableWrap.innerHTML = `
-    <table class="data-table">
-      <thead>
-        <tr><th>Nº</th><th>Data</th><th>Contato</th><th>Vendedor</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr>
-      </thead>
-      <tbody>
-        ${data.map((p) => `
-          <tr>
-            <td class="cell-num">#${p.numero}</td>
-            <td>${formatDate(p.data_proposta)}</td>
-            <td>${escapeHtml(p.tipo_contato === "cliente" ? (p.cliente?.nome || "—") : (p.lead_nome || "—"))} <span class="cell-muted">(${p.tipo_contato === "cliente" ? "cliente" : "lead"})</span></td>
-            <td class="cell-muted">${escapeHtml(p.vendedor?.nome || "—")}</td>
-            <td class="cell-num">${formatCurrency(p.total)}</td>
-            <td>
-              <span class="status status--${p.status}">${statusLabel(p.status)}</span>
-              ${p.status === "aprovada" ? `<div class="cell-muted" style="font-size:0.72rem; margin-top:0.2rem;">${
-                [p.venda_id ? `Venda #${p.venda?.numero ?? "?"}` : null, p.matricula_id ? `Matrícula #${p.matricula?.numero ?? "?"}` : null].filter(Boolean).join(" · ") || "Não convertida"
-              }</div>` : ""}
-            </td>
-            <td class="cell-actions">
-              <button type="button" class="btn btn--ghost btn--sm" data-detail="${p.id}">Detalhes</button>
-            </td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-  `;
-
-  // Reconsulta a lista assim que o modal de detalhe fecha — sem isso, uma
-  // troca de status feita lá dentro (aprovar/reprovar/enviar) só aparecia na
-  // tabela depois do próximo ciclo do auto-refresh (até 15s) ou de um F5, já
-  // que o auto-refresh fica pausado com o modal aberto (ver isBusy() em
-  // registerAutoRefresh, app.js). A checagem de `#propostas-table` evita
-  // recarregar em cima de outra aba, caso o modal feche depois de já ter
-  // navegado pra "Nova proposta" (ex.: botão Editar).
-  tableWrap.querySelectorAll("[data-detail]").forEach((btn) => {
-    btn.addEventListener("click", () => showDetail(btn.dataset.detail, () => {
-      if (content.querySelector("#propostas-table")) loadHistorico(content, state, { silent: true });
-    }));
-  });
-
-  renderHistoricoPagination(content, state, count);
-}
-
-function renderHistoricoPagination(content, state, count) {
-  const el = content.querySelector("#propostas-pagination");
-  const totalPages = Math.max(1, Math.ceil(count / HISTORICO_PAGE_SIZE));
-
-  if (totalPages <= 1) {
-    el.innerHTML = "";
-    return;
-  }
-
-  el.innerHTML = `
-    <div class="pagination">
-      <button type="button" class="btn btn--ghost btn--sm" id="propostas-page-prev" ${state.page === 0 ? "disabled" : ""}>‹ Anterior</button>
-      <span class="pagination__label">Página ${state.page + 1} de ${totalPages}</span>
-      <button type="button" class="btn btn--ghost btn--sm" id="propostas-page-next" ${state.page >= totalPages - 1 ? "disabled" : ""}>Próxima ›</button>
-    </div>
-  `;
-
-  el.querySelector("#propostas-page-prev").addEventListener("click", () => {
-    state.page = Math.max(0, state.page - 1);
-    loadHistorico(content, state);
-  });
-  el.querySelector("#propostas-page-next").addEventListener("click", () => {
-    state.page += 1;
-    loadHistorico(content, state);
-  });
 }
 
 async function editarProposta(id) {
@@ -615,7 +633,7 @@ async function editarProposta(id) {
     quantidade: i.quantidade,
     preco_unitario: Number(i.preco_unitario),
   }));
-  activateTab("nova");
+  openPropostaFormModal();
 }
 
 // ── Conversão (integração CRM → Vendas/Matrículas) ──────────────────────

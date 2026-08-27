@@ -25,7 +25,7 @@ const CONFIGURABLE_MENU_KEYS = ["clientes", "produtos", "fornecedores", "crm", "
 // ES modules carregar duas instâncias do módulo (hashchange listener e
 // boot() duplicados). Ver commit e4f8448 (correção original) e 3659424/
 // e75bd3a (reintrodução e reversão do bug).
-export const APP_BUILD = "2026-08-27 13:45 -03";
+export const APP_BUILD = "2026-08-27 15:10 -03";
 
 const ROUTES = {
   home: {
@@ -419,16 +419,21 @@ export function showToast(message, type = "success") {
 // ── Modal ───────────────────────────────────────────────────────────
 
 const modalOverlay = document.getElementById("modal-overlay");
+const modalEl = document.getElementById("modal");
 const modalTitleEl = document.getElementById("modal-title");
 const modalBodyEl = document.getElementById("modal-body");
 const modalCloseBtn = document.getElementById("modal-close");
 
 let onModalClose = null;
 
-export function openModal(title, { onClose } = {}) {
+// `size: "wide"` cobre formulários com tabela embutida (ex.: itens de
+// proposta no CRM) que ficam apertados nos 580px padrão — sem opção, todo
+// modal do app teria que negociar o mesmo limite estreito.
+export function openModal(title, { onClose, size } = {}) {
   modalTitleEl.textContent = title;
   modalBodyEl.innerHTML = "";
   modalOverlay.hidden = false;
+  modalEl.classList.toggle("modal--wide", size === "wide");
   onModalClose = onClose || null;
   return modalBodyEl;
 }
@@ -436,6 +441,7 @@ export function openModal(title, { onClose } = {}) {
 export function closeModal() {
   modalOverlay.hidden = true;
   modalBodyEl.innerHTML = "";
+  modalEl.classList.remove("modal--wide");
   if (onModalClose) onModalClose();
   onModalClose = null;
 }
