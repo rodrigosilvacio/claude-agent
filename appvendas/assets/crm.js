@@ -918,13 +918,17 @@ async function showDetail(propostaId, onClose) {
     </div>
     <div id="detail-error"></div>
 
-    <div class="form-actions" style="justify-content: flex-start; flex-wrap: wrap;">
-      <button type="button" class="btn btn--ghost" id="detail-imprimir">Imprimir / PDF</button>
-      <button type="button" class="btn btn--ghost" id="detail-email" ${podeEnviarEmail ? "" : "disabled title=\"Sem e-mail cadastrado para este contato\""}>Enviar por e-mail</button>
-      ${proposta.status === "draft" && !algumaConversaoFeita ? `<button type="button" class="btn btn--ghost" id="detail-editar">Editar</button>` : ""}
-      ${proposta.status !== "aprovada" && proposta.status !== "reprovada" && !algumaConversaoFeita ? `<button type="button" class="btn btn--primary" id="detail-aprovar">Aprovar</button>` : ""}
-      ${proposta.status === "aprovada" && !totalmenteConvertida ? `<button type="button" class="btn btn--primary" id="detail-converter">${escapeHtml(labelConverter)}</button>` : ""}
-      ${proposta.status !== "reprovada" && !algumaConversaoFeita ? `<button type="button" class="btn btn--danger" id="detail-reprovar">Reprovar</button>` : ""}
+    <div class="crm-detail__actions">
+      <div class="crm-detail__actions-group">
+        <button type="button" class="btn btn--ghost" id="detail-imprimir">Imprimir / PDF</button>
+        <button type="button" class="btn btn--ghost" id="detail-email" ${podeEnviarEmail ? "" : "disabled title=\"Sem e-mail cadastrado para este contato\""}>Enviar por e-mail</button>
+        ${proposta.status === "draft" && !algumaConversaoFeita ? `<button type="button" class="btn btn--ghost" id="detail-editar">Editar</button>` : ""}
+      </div>
+      <div class="crm-detail__actions-group">
+        ${proposta.status !== "reprovada" && !algumaConversaoFeita ? `<button type="button" class="btn btn--danger" id="detail-reprovar">Reprovar</button>` : ""}
+        ${proposta.status !== "aprovada" && proposta.status !== "reprovada" && !algumaConversaoFeita ? `<button type="button" class="btn btn--primary" id="detail-aprovar">Aprovar</button>` : ""}
+        ${proposta.status === "aprovada" && !totalmenteConvertida ? `<button type="button" class="btn btn--primary" id="detail-converter">${escapeHtml(labelConverter)}</button>` : ""}
+      </div>
     </div>
   `;
 

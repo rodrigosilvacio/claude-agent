@@ -24,7 +24,18 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 
-const RESEND_FROM = "ERPConnect <onboarding@resend.dev>";
+// Bug corrigido: usava o endereço sandbox onboarding@resend.dev, que só
+// entrega de fato para o e-mail dono da conta Resend — todo recibo para um
+// cliente real falhava com 403 (validation_error). Esta conta já tem o
+// domínio vigiambiental.app verificado no Resend; passamos a usá-lo, com o
+// nome de exibição seguindo dinâmico por empresa (mesmo padrão de
+// enviar-proposta/appvendas-lembretes).
+const RESEND_ADDRESS = "notificacoes@vigiambiental.app";
+const RESEND_FROM_PADRAO = "ERPConnect";
+function nomeRemetente(nome: string | null | undefined): string {
+  const limpo = (nome || RESEND_FROM_PADRAO).replace(/[<>"]/g, "").trim();
+  return limpo || RESEND_FROM_PADRAO;
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -58,12 +69,12 @@ function formatDateBR(isoDate: string | null): string {
   return new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR");
 }
 
-async function enviarEmail(to: string, subject: string, html: string): Promise<boolean> {
+async function enviarEmail(to: string, subject: string, html: string, fromName = RESEND_FROM_PADRAO): Promise<boolean> {
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", "Authorization": `Bearer ${RESEND_API_KEY}` },
-      body: JSON.stringify({ from: RESEND_FROM, to: [to], subject, html }),
+      body: JSON.stringify({ from: `${nomeRemetente(fromName)} <${RESEND_ADDRESS}>`, to: [to], subject, html }),
     });
     if (!res.ok) {
       console.error("Resend error:", res.status, await res.text());
@@ -174,7 +185,7 @@ async function confirmarVenda(
     </table>
   `;
 
-  const enviado = await enviarEmail(email, `Recibo da compra #${venda.numero} — ${empresaNome}`, envelope(empresaNome, corpo, venda.empresa?.rodape_documentos));
+  const enviado = await enviarEmail(email, `Recibo da compra #${venda.numero} — ${empresaNome}`, envelope(empresaNome, corpo, venda.empresa?.rodape_documentos), empresaNome);
   return json({ ok: true, sent: enviado });
 }
 
@@ -215,6 +226,6 @@ async function confirmarMatricula(
     </table>
   `;
 
-  const enviado = await enviarEmail(email, `Matrícula confirmada #${matricula.numero} — ${empresaNome}`, envelope(empresaNome, corpo, matricula.empresa?.rodape_documentos));
+  const enviado = await enviarEmail(email, `Matrícula confirmada #${matricula.numero} — ${empresaNome}`, envelope(empresaNome, corpo, matricula.empresa?.rodape_documentos), empresaNome);
   return json({ ok: true, sent: enviado });
 }

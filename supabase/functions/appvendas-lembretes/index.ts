@@ -33,10 +33,12 @@ const ZAPI_CLIENT_TOKEN = Deno.env.get("ZAPI_CLIENT_TOKEN")!;
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const APPVENDAS_LEMBRETES_SECRET = Deno.env.get("APPVENDAS_LEMBRETES_SECRET")!;
 
-// Sandbox do Resend (mesma ressalva do oraculo-webhook): só entrega de fato
-// para o e-mail cadastrado na conta Resend usada, a menos que um domínio
-// próprio esteja verificado — nesse caso, troque este endereço.
-const RESEND_SANDBOX_ADDRESS = "onboarding@resend.dev";
+// Bug corrigido: usava o endereço sandbox onboarding@resend.dev, que só
+// entrega de fato para o e-mail dono da conta Resend — todo lembrete/cobrança
+// para um cliente ou aluno real falhava com 403 (validation_error). Esta
+// conta já tem o domínio vigiambiental.app verificado no Resend; passamos a
+// usá-lo como remetente.
+const RESEND_SANDBOX_ADDRESS = "notificacoes@vigiambiental.app";
 const RESEND_FROM_PADRAO = "ERPConnect";
 
 // Bug corrigido: o nome de exibição do remetente era fixo ("BjjConnect",

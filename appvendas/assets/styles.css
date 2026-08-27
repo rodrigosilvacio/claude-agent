@@ -2613,6 +2613,27 @@ svg {
   white-space: nowrap;
 }
 
+/* Ações do modal agrupadas em dois blocos (utilitárias à esquerda, decisão
+   à direita) em vez de uma única fileira solta — evitava confundir "Enviar
+   por e-mail"/"Editar" com "Aprovar"/"Reprovar" quando todos os botões
+   possíveis apareciam juntos. */
+.crm-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.crm-detail__actions-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
 @media (max-width: 900px) {
   .crm-board {
     grid-template-columns: 1fr;
