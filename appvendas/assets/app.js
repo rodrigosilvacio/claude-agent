@@ -25,7 +25,7 @@ const CONFIGURABLE_MENU_KEYS = ["clientes", "produtos", "fornecedores", "crm", "
 // ES modules carregar duas instâncias do módulo (hashchange listener e
 // boot() duplicados). Ver commit e4f8448 (correção original) e 3659424/
 // e75bd3a (reintrodução e reversão do bug).
-export const APP_BUILD = "2026-08-26 21:40 -03";
+export const APP_BUILD = "2026-08-27 09:15 -03";
 
 const ROUTES = {
   home: {
@@ -131,7 +131,6 @@ const userChipAvatar = document.getElementById("user-chip-avatar");
 const userChipName = document.getElementById("user-chip-name");
 const userChipMeta = document.getElementById("user-chip-meta");
 const logoutBtn = document.getElementById("logout-btn");
-const navBadgeContasReceber = document.getElementById("nav-badge-contas-receber");
 const navBadgeEstoques = document.getElementById("nav-badge-estoques");
 
 // Diagnóstico de cache: se este build não bater com o timestamp do último
@@ -146,12 +145,17 @@ function initials(nome) {
   return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
 }
 
-// ── Badges de pendência no menu (faixa roxa do roadmap) ──────────────
+// ── Badge de pendência no menu (faixa roxa do roadmap) ────────────────
 //
-// Antes, estoque baixo e parcelas vencidas só apareciam abrindo o painel
-// Início — o app era 100% reativo. Estes badges ficam visíveis no menu o
-// tempo todo (contados a cada minuto), independente de qual tela está
-// aberta. Ficam escondidos (não zerados) enquanto ninguém está logado.
+// Antes, estoque baixo só aparecia abrindo o painel Início — o app era 100%
+// reativo. Este badge fica visível no menu o tempo todo (contado a cada
+// minuto), independente de qual tela está aberta. Fica escondido (não
+// zerado) enquanto ninguém está logado.
+//
+// Havia um badge igual em Contas a Receber (parcelas de matrícula vencidas)
+// — removido a pedido: o número sem rótulo ao lado do item de menu lia como
+// ruído, não como aviso. O dado continua disponível dentro da própria tela
+// de Contas a Receber.
 
 function setNavBadge(el, count) {
   if (!el) return;
@@ -164,25 +168,20 @@ function setNavBadge(el, count) {
 }
 
 function hidePendencyBadges() {
-  setNavBadge(navBadgeContasReceber, 0);
   setNavBadge(navBadgeEstoques, 0);
 }
 
 async function refreshPendencyBadges() {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const [parcelasRes, produtosRes] = await Promise.all([
-    supabase.from("matricula_parcelas").select("id", { count: "exact", head: true }).eq("status", "pendente").lt("data_vencimento", hoje),
-    supabase.from("produtos").select("estoque, estoque_minimo, tipo").eq("ativo", true),
-  ]);
+  const { data, error } = await supabase.from("produtos").select("estoque, estoque_minimo, tipo").eq("ativo", true);
 
-  if (parcelasRes.error) console.error("Falha ao atualizar badge de contas a receber:", parcelasRes.error);
-  else setNavBadge(navBadgeContasReceber, parcelasRes.count || 0);
-
-  if (produtosRes.error) console.error("Falha ao atualizar badge de estoque baixo:", produtosRes.error);
+  if (error) {
+    console.error("Falha ao atualizar badge de estoque baixo:", error);
+    return;
+  }
   // Serviço (tipo="servico") nunca recebe entrada de estoque — mesma
   // exclusão de home.js/estoques.js/relatorios.js, senão o badge fica
   // aceso pra sempre por causa de um curso/mensalidade.
-  else setNavBadge(navBadgeEstoques, (produtosRes.data || []).filter((p) => p.tipo === "produto" && p.estoque <= p.estoque_minimo).length);
+  setNavBadge(navBadgeEstoques, (data || []).filter((p) => p.tipo === "produto" && p.estoque <= p.estoque_minimo).length);
 }
 
 let badgeRefreshTimer = null;
