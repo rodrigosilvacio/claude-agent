@@ -64,7 +64,7 @@ async function loadRows(view, term) {
 
   const { data, error } = await supabase
     .from("usuarios")
-    .select("id, nome, login, role, ativo, empresa_id, created_at, empresa:empresas(nome_fantasia)")
+    .select("id, nome, login, role, ativo, empresa_id, created_at, empresa:empresas(nome_fantasia), leads_demo(cargo, empresa_lead, telefone, email, created_at)")
     .order("nome", { ascending: true });
 
   const card = view.querySelector(".card");
@@ -98,14 +98,17 @@ function renderTable(view, card, data) {
 
   const rows = data.map((row) => {
     const isSelf = Boolean(me && me.id === row.id);
+    const lead = Array.isArray(row.leads_demo) ? row.leads_demo[0] : row.leads_demo;
     return `
     <tr>
       <td class="cell-rail" style="--rail-color: var(${row.ativo ? "--success" : "--text-muted"})">${escapeHtml(row.nome)}${isSelf ? ' <span class="cell-muted">(você)</span>' : ""}</td>
       <td>${escapeHtml(row.login)}</td>
       <td><span class="status status--${row.role}">${roleLabel(row.role)}</span></td>
       <td>${escapeHtml(row.empresa?.nome_fantasia || "—")}</td>
+      <td>${lead ? '<span class="status status--manual">Demo</span>' : '<span class="cell-muted">—</span>'}</td>
       <td><span class="status status--${row.ativo ? "ativo" : "inativo"}">${row.ativo ? "Ativo" : "Inativo"}</span></td>
       <td class="cell-actions">
+        ${lead ? `<button type="button" class="btn btn--ghost btn--sm" data-lead="${row.id}">Ver lead</button>` : ""}
         <button type="button" class="btn btn--ghost btn--sm" data-edit="${row.id}">Editar</button>
         <button type="button" class="btn btn--ghost btn--sm" data-reset="${row.id}">Redefinir senha</button>
         ${isSelf ? "" : `<button type="button" class="btn btn--danger btn--sm" data-delete="${row.id}">Excluir</button>`}
@@ -117,11 +120,19 @@ function renderTable(view, card, data) {
   card.innerHTML = `
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>Nome</th><th>Usuário</th><th>Papel</th><th>Empresa</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Usuário</th><th>Papel</th><th>Empresa</th><th>Origem</th><th>Status</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
   `;
+
+  card.querySelectorAll("[data-lead]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = data.find((r) => r.id === btn.dataset.lead);
+      const lead = Array.isArray(row.leads_demo) ? row.leads_demo[0] : row.leads_demo;
+      openLeadInfo(row, lead);
+    });
+  });
 
   card.querySelectorAll("[data-edit]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -284,6 +295,25 @@ async function openForm(existingRow, onSaved) {
       errorEl.innerHTML = `<div class="form-error">${escapeHtml(err.message)}</div>`;
     }
   });
+}
+
+function openLeadInfo(row, lead) {
+  const body = openModal("Lead de demonstração");
+  const dataCadastro = lead.created_at ? new Date(lead.created_at).toLocaleString("pt-BR") : "—";
+  body.innerHTML = `
+    <p class="cell-muted" style="margin: -0.4rem 0 1.1rem;">Conta criada automaticamente pela página pública de teste grátis (demo.html) para <strong>${escapeHtml(row.nome)}</strong>.</p>
+    <div class="receipt" style="padding: 0;">
+      <div class="receipt__row"><span>E-mail</span><span>${escapeHtml(lead.email || "—")}</span></div>
+      <div class="receipt__row"><span>Telefone</span><span>${escapeHtml(lead.telefone || "—")}</span></div>
+      <div class="receipt__row"><span>Cargo</span><span>${escapeHtml(lead.cargo || "—")}</span></div>
+      <div class="receipt__row"><span>Empresa</span><span>${escapeHtml(lead.empresa_lead || "—")}</span></div>
+      <div class="receipt__row"><span>Pediu acesso em</span><span>${escapeHtml(dataCadastro)}</span></div>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn btn--primary" id="btn-close-lead">Fechar</button>
+    </div>
+  `;
+  body.querySelector("#btn-close-lead").addEventListener("click", closeModal);
 }
 
 function openResetForm(id) {
