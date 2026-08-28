@@ -511,22 +511,27 @@ function renderVendasTable(vendas) {
 // ── Financeiro ────────────────────────────────────────────────────────
 
 async function loadFinanceiro(content, state) {
-  const [vendasRes, parcelasRes, recebimentosRes, contasRes] = await Promise.all([
-    aplicaFiltros(supabase.from("vendas").select("id, total, status, data_venda"), state, "data_venda"),
+  const [vendasRes, parcelasRes, vendaParcelasRes, recebimentosRes, contasRes] = await Promise.all([
+    // "parcelas:venda_parcelas(id)" só pra excluir venda parcelada do caixa
+    // à vista abaixo — o dinheiro de uma venda parcelada entra aos poucos
+    // (venda_parcelas.status = pago), não tudo de uma vez na data da venda.
+    aplicaFiltros(supabase.from("vendas").select("id, total, status, data_venda, parcelas:venda_parcelas(id)"), state, "data_venda"),
     aplicaFiltros(supabase.from("matricula_parcelas").select("id, valor, status, data_pagamento").eq("status", "pago"), state, "data_pagamento"),
+    aplicaFiltros(supabase.from("venda_parcelas").select("id, valor, status, data_pagamento").eq("status", "pago"), state, "data_pagamento"),
     aplicaFiltros(supabase.from("recebimentos").select("id, valor, status, data_recebimento"), state, "data_recebimento"),
     aplicaFiltros(supabase.from("contas_pagar").select("id, valor, status, data_pagamento, fornecedor:fornecedores(nome)").eq("status", "pago"), state, "data_pagamento"),
   ]);
 
-  const firstError = vendasRes.error || parcelasRes.error || recebimentosRes.error || contasRes.error;
+  const firstError = vendasRes.error || parcelasRes.error || vendaParcelasRes.error || recebimentosRes.error || contasRes.error;
   if (firstError) { content.innerHTML = erroBox(firstError); return; }
 
-  const vendasConfirmadas = (vendasRes.data || []).filter((v) => v.status === "confirmada");
+  const vendasConfirmadas = (vendasRes.data || []).filter((v) => v.status === "confirmada" && (!v.parcelas || v.parcelas.length === 0));
   const parcelasPagas = parcelasRes.data || [];
+  const vendaParcelasPagas = vendaParcelasRes.data || [];
   const recebimentosOk = (recebimentosRes.data || []).filter((r) => r.status !== "cancelado");
   const contasPagas = contasRes.data || [];
 
-  const totalVendas = sum(vendasConfirmadas, "total");
+  const totalVendas = sum(vendasConfirmadas, "total") + sum(vendaParcelasPagas, "valor");
   const totalParcelas = sum(parcelasPagas, "valor");
   const totalRecebimentos = sum(recebimentosOk, "valor");
   const entradas = totalVendas + totalParcelas + totalRecebimentos;
@@ -550,6 +555,7 @@ async function loadFinanceiro(content, state) {
     [
       ...vendasConfirmadas.map((v) => ({ data: v.data_venda, valor: v.total })),
       ...parcelasPagas.map((p) => ({ data: p.data_pagamento, valor: p.valor })),
+      ...vendaParcelasPagas.map((p) => ({ data: p.data_pagamento, valor: p.valor })),
       ...recebimentosOk.map((r) => ({ data: r.data_recebimento, valor: r.valor })),
     ],
     "data", "valor", state.inicio, state.fim,

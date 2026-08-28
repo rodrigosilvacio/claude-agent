@@ -790,7 +790,7 @@ async function showDetail(matriculaId, onChange) {
 // sentido como uma opção de um <select> de baixa manual. Exportado: também
 // usado em financeiro.js (Contas a Receber lista as parcelas pendentes de
 // matrícula ao lado de vendas/recebimentos manuais).
-export function openPagamentoParcelaForm(parcelaId, onSaved) {
+export function openPagamentoParcelaForm(parcelaId, onSaved, rpcName = "registrar_pagamento_parcela_matricula") {
   const body = openModal("Registrar pagamento da parcela");
 
   body.innerHTML = `
@@ -824,7 +824,7 @@ export function openPagamentoParcelaForm(parcelaId, onSaved) {
       const errorEl = body.querySelector("#mp-form-error");
       errorEl.innerHTML = "";
 
-      const { error } = await supabase.rpc("registrar_pagamento_parcela_matricula", {
+      const { error } = await supabase.rpc(rpcName, {
         p_parcela_id: parcelaId,
         p_data_pagamento: body.querySelector("#mp-data").value || null,
         p_forma_pagamento: body.querySelector("#mp-forma").value || null,
