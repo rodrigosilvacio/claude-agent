@@ -579,6 +579,52 @@ svg {
   margin: 0 auto;
 }
 
+/* Bloco de credenciais mostrado após o cadastro em demo.html (URL, usuário,
+   senha) — cada linha com um botão "Copiar" próprio, pra não obrigar
+   ninguém a selecionar texto na tela do celular. */
+.precadastro-credentials {
+  text-align: left;
+  margin-top: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.precadastro-credentials__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--paper);
+}
+
+.precadastro-credentials__row + .precadastro-credentials__row {
+  border-top: 1px solid var(--line);
+}
+
+.precadastro-credentials__label {
+  flex: 0 0 72px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.precadastro-credentials__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.87rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.precadastro-credentials__value--mono {
+  font-family: var(--font-mono);
+}
+
 /* ── Buttons ───────────────────────────────────────────────────────── */
 
 .btn {
