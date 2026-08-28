@@ -90,6 +90,30 @@ function mapParcelaLinha(p) {
   };
 }
 
+// Mesmo racional de mapParcelaLinha, para venda_parcelas (vendas de produto
+// parceladas — migration 0042). Bug corrigido: antes desta função existir,
+// uma venda parcelada aparecia em "Contas a Receber" com o total inteiro já
+// como "Recebido" na data da venda (a query de vendas abaixo não sabia
+// diferenciar), enquanto as parcelas de verdade (o que efetivamente ainda
+// falta receber) não apareciam em lugar nenhum nesta tela.
+const PARCELA_VENDA_SELECT = "id, numero_parcela, valor, data_vencimento, data_pagamento, forma_pagamento, status, cliente:clientes(nome), venda:vendas(numero)";
+
+function mapParcelaVendaLinha(p) {
+  const vencida = p.status === "pendente" && p.data_vencimento < todayStr();
+  return {
+    origem: "venda_parcela",
+    id: p.id,
+    data: p.status === "pago" ? p.data_pagamento : p.data_vencimento,
+    cliente: p.cliente?.nome || "Sem cliente",
+    itens: `Parcela ${p.numero_parcela} — Venda #${p.venda?.numero ?? "?"}`,
+    formaPagamento: p.forma_pagamento,
+    valor: Number(p.valor || 0),
+    status: p.status,
+    numero: p.venda?.numero,
+    vencida,
+  };
+}
+
 async function load(view, state, opts = {}) {
   const { silent = false } = opts;
   const content = view.querySelector("#cr-content");
@@ -99,29 +123,33 @@ async function load(view, state, opts = {}) {
   // (vendas/manual) — é uma lista à parte, "quem ainda me deve", ordenada
   // pelo vencimento mais próximo primeiro (não pela mais recente).
   if (state.somentePendentes) {
-    const { data, error } = await supabase
-      .from("matricula_parcelas")
-      .select(PARCELA_SELECT)
-      .eq("status", "pendente")
-      .order("data_vencimento", { ascending: true })
-      .limit(FETCH_CAP);
+    const [matriculaRes, vendaRes] = await Promise.all([
+      supabase.from("matricula_parcelas").select(PARCELA_SELECT).eq("status", "pendente").order("data_vencimento", { ascending: true }).limit(FETCH_CAP),
+      supabase.from("venda_parcelas").select(PARCELA_VENDA_SELECT).eq("status", "pendente").order("data_vencimento", { ascending: true }).limit(FETCH_CAP),
+    ]);
 
-    if (error) {
-      content.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar as parcelas pendentes</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(error))}</p></div>`;
+    if (matriculaRes.error || vendaRes.error) {
+      const err = matriculaRes.error || vendaRes.error;
+      content.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar as parcelas pendentes</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(err))}</p></div>`;
       return;
     }
 
-    state.linhas = (data || []).map(mapParcelaLinha);
+    state.linhas = [...(matriculaRes.data || []).map(mapParcelaLinha), ...(vendaRes.data || []).map(mapParcelaVendaLinha)]
+      .sort((a, b) => new Date(a.data) - new Date(b.data));
     const totalPages = Math.max(1, Math.ceil(state.linhas.length / PAGE_SIZE));
     state.page = Math.min(state.page, totalPages - 1);
     renderContent(view, state);
     return;
   }
 
-  const [vendasRes, recebimentosRes, parcelasRes] = await Promise.all([
+  const [vendasRes, recebimentosRes, parcelasRes, vendaParcelasRes] = await Promise.all([
     supabase
       .from("vendas")
-      .select("id, numero, data_venda, forma_pagamento, total, cliente:clientes(nome), itens:venda_itens(quantidade, produto:produtos(nome))")
+      // "parcelas:venda_parcelas(id)" só pra saber se a venda foi parcelada —
+      // uma venda parcelada não entra aqui como "recebido" na data da venda
+      // (o dinheiro ainda não entrou todo); ela é representada pelas próprias
+      // linhas de venda_parcelas abaixo, cada uma na sua data de fato.
+      .select("id, numero, data_venda, forma_pagamento, total, cliente:clientes(nome), itens:venda_itens(quantidade, produto:produtos(nome)), parcelas:venda_parcelas(id)")
       .eq("status", "confirmada")
       .gte("data_venda", state.inicio)
       .lte("data_venda", state.fim)
@@ -141,25 +169,33 @@ async function load(view, state, opts = {}) {
       .select(PARCELA_SELECT)
       .or(`and(status.eq.pago,data_pagamento.gte.${state.inicio},data_pagamento.lte.${state.fim}),and(status.eq.pendente,data_vencimento.gte.${state.inicio},data_vencimento.lte.${state.fim})`)
       .limit(FETCH_CAP),
+    // Parcelas de venda: mesmo racional das parcelas de matrícula acima.
+    supabase
+      .from("venda_parcelas")
+      .select(PARCELA_VENDA_SELECT)
+      .or(`and(status.eq.pago,data_pagamento.gte.${state.inicio},data_pagamento.lte.${state.fim}),and(status.eq.pendente,data_vencimento.gte.${state.inicio},data_vencimento.lte.${state.fim})`)
+      .limit(FETCH_CAP),
   ]);
 
-  if (vendasRes.error || recebimentosRes.error || parcelasRes.error) {
-    const err = vendasRes.error || recebimentosRes.error || parcelasRes.error;
+  if (vendasRes.error || recebimentosRes.error || parcelasRes.error || vendaParcelasRes.error) {
+    const err = vendasRes.error || recebimentosRes.error || parcelasRes.error || vendaParcelasRes.error;
     content.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar os recebimentos</p><p class="empty-state__hint">${escapeHtml(friendlyPgError(err))}</p></div>`;
     return;
   }
 
-  const linhasVendas = (vendasRes.data || []).map((v) => ({
-    origem: "venda",
-    id: v.id,
-    data: v.data_venda,
-    cliente: v.cliente?.nome || "Sem cliente",
-    itens: (v.itens || []).map((i) => `${i.quantidade}x ${i.produto?.nome || "Produto"}`).join(", ") || "—",
-    formaPagamento: v.forma_pagamento,
-    valor: Number(v.total || 0),
-    status: "recebido",
-    numero: v.numero,
-  }));
+  const linhasVendas = (vendasRes.data || [])
+    .filter((v) => !v.parcelas || v.parcelas.length === 0)
+    .map((v) => ({
+      origem: "venda",
+      id: v.id,
+      data: v.data_venda,
+      cliente: v.cliente?.nome || "Sem cliente",
+      itens: (v.itens || []).map((i) => `${i.quantidade}x ${i.produto?.nome || "Produto"}`).join(", ") || "—",
+      formaPagamento: v.forma_pagamento,
+      valor: Number(v.total || 0),
+      status: "recebido",
+      numero: v.numero,
+    }));
 
   const linhasManuais = (recebimentosRes.data || []).map((r) => ({
     origem: "manual",
@@ -173,8 +209,9 @@ async function load(view, state, opts = {}) {
   }));
 
   const linhasParcelas = (parcelasRes.data || []).map(mapParcelaLinha);
+  const linhasParcelasVenda = (vendaParcelasRes.data || []).map(mapParcelaVendaLinha);
 
-  state.linhas = [...linhasVendas, ...linhasManuais, ...linhasParcelas].sort((a, b) => new Date(b.data) - new Date(a.data));
+  state.linhas = [...linhasVendas, ...linhasManuais, ...linhasParcelas, ...linhasParcelasVenda].sort((a, b) => new Date(b.data) - new Date(a.data));
   const totalPages = Math.max(1, Math.ceil(state.linhas.length / PAGE_SIZE));
   state.page = Math.min(state.page, totalPages - 1);
 
@@ -219,7 +256,8 @@ function renderContent(view, state) {
 
   content.querySelectorAll("[data-pagar-parcela]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      openPagamentoParcelaForm(btn.dataset.pagarParcela, () => load(view, state, { silent: true }));
+      const rpcName = btn.dataset.pagarParcelaOrigem === "venda_parcela" ? "registrar_pagamento_parcela_venda" : "registrar_pagamento_parcela_matricula";
+      openPagamentoParcelaForm(btn.dataset.pagarParcela, () => load(view, state, { silent: true }), rpcName);
     });
   });
 
@@ -236,7 +274,7 @@ function statsPeriodo(linhas) {
   const linhasPendentes = linhasAtivas.filter((l) => l.status === "pendente");
 
   const totalRecebido = linhasRecebidas.reduce((sum, l) => sum + l.valor, 0);
-  const totalVendas = linhasRecebidas.filter((l) => l.origem === "venda").reduce((sum, l) => sum + l.valor, 0);
+  const totalVendas = linhasRecebidas.filter((l) => l.origem === "venda" || l.origem === "venda_parcela").reduce((sum, l) => sum + l.valor, 0);
   const totalMatriculas = linhasRecebidas.filter((l) => l.origem === "matricula").reduce((sum, l) => sum + l.valor, 0);
   const totalAReceber = linhasPendentes.reduce((sum, l) => sum + l.valor, 0);
 
@@ -252,9 +290,9 @@ function statsPeriodo(linhas) {
   };
 }
 
-// Modo "Só pendentes": lista fechada de parcelas de matrícula pendentes, de
-// qualquer vencimento (passado ou futuro) — separa quem está em atraso
-// (vencimento já passou) de quem só ainda não venceu.
+// Modo "Só pendentes": lista fechada de parcelas pendentes (matrícula e
+// venda parcelada), de qualquer vencimento (passado ou futuro) — separa
+// quem está em atraso (vencimento já passou) de quem só ainda não venceu.
 function statsPendentes(linhas) {
   const vencidas = linhas.filter((l) => l.vencida);
   const totalPendente = linhas.reduce((sum, l) => sum + l.valor, 0);
@@ -276,6 +314,7 @@ const ORIGEM_LABEL = {
   venda: (l) => `Venda #${l.numero}`,
   manual: () => "Manual",
   matricula: (l) => `Matrícula #${l.numero}`,
+  venda_parcela: (l) => `Venda #${l.numero} (parcela)`,
 };
 
 // pago/recebido são a mesma coisa em espírito (dinheiro já entrou) — status
@@ -317,7 +356,7 @@ function renderTabela(linhas, emptyMessage = "Nenhum valor recebido ou a receber
               <td><span class="status status--${statusMeta.cls}">${statusMeta.label}</span></td>
               <td class="cell-actions">
                 ${l.origem === "manual" && l.status === "recebido" ? `<button type="button" class="btn btn--danger btn--sm" data-cancelar="${l.id}">Cancelar</button>` : ""}
-                ${l.origem === "matricula" && l.status === "pendente" ? `<button type="button" class="btn btn--primary btn--sm" data-pagar-parcela="${l.id}">Registrar pagamento</button>` : ""}
+                ${(l.origem === "matricula" || l.origem === "venda_parcela") && l.status === "pendente" ? `<button type="button" class="btn btn--primary btn--sm" data-pagar-parcela="${l.id}" data-pagar-parcela-origem="${l.origem}">Registrar pagamento</button>` : ""}
               </td>
             </tr>
           `;

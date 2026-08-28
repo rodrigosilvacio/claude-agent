@@ -84,10 +84,13 @@ async function load(view, state, opts = {}) {
   // hoje — e o front separa os dois intervalos depois. Mesmo espírito de
   // "busca ampla, filtra na memória" já usado no kardex de estoque e no
   // board do CRM.
-  const [vendasRes, parcelasRes, recebimentosRes, contasPagarRes, produtosRes, propostasRes, contasFuturasRes, parcelasFuturasRes, vendaParcelasFuturasRes, empresaRes] = await Promise.all([
+  const [vendasRes, parcelasRes, vendaParcelasPagasRes, recebimentosRes, contasPagarRes, produtosRes, propostasRes, contasFuturasRes, parcelasFuturasRes, vendaParcelasFuturasRes, empresaRes] = await Promise.all([
+    // "parcelas:venda_parcelas(id)" só pra saber se a venda foi parcelada —
+    // usado abaixo pra não contar o total dela como "entrada de caixa" na
+    // data da venda (o dinheiro entra aos poucos, via venda_parcelas.pago).
     aplicaEmpresa(supabase
       .from("vendas")
-      .select("id, numero, total, status, data_venda, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome))")
+      .select("id, numero, total, status, data_venda, cliente:clientes(nome), itens:venda_itens(produto_id, quantidade, subtotal, produto:produtos(nome)), parcelas:venda_parcelas(id)")
       .gte("data_venda", toKey(inicioMesAnterior))),
     // Entrada de matrícula é o pagamento de cada parcela, não a data da
     // matrícula em si — uma parcela paga este mês pode ser de uma matrícula
@@ -95,6 +98,11 @@ async function load(view, state, opts = {}) {
     aplicaEmpresa(supabase
       .from("matricula_parcelas")
       .select("id, numero_parcela, valor, data_pagamento, cliente:clientes(nome), matricula:matriculas(numero, produto:produtos(id, nome))")
+      .eq("status", "pago")
+      .gte("data_pagamento", toKey(inicioMesAnterior))),
+    aplicaEmpresa(supabase
+      .from("venda_parcelas")
+      .select("id, valor, data_pagamento")
       .eq("status", "pago")
       .gte("data_pagamento", toKey(inicioMesAnterior))),
     aplicaEmpresa(supabase
@@ -118,7 +126,7 @@ async function load(view, state, opts = {}) {
       : Promise.resolve({ data: null, error: null }),
   ]);
 
-  const firstError = vendasRes.error || parcelasRes.error || recebimentosRes.error || contasPagarRes.error || produtosRes.error || propostasRes.error || contasFuturasRes.error || parcelasFuturasRes.error || vendaParcelasFuturasRes.error;
+  const firstError = vendasRes.error || parcelasRes.error || vendaParcelasPagasRes.error || recebimentosRes.error || contasPagarRes.error || produtosRes.error || propostasRes.error || contasFuturasRes.error || parcelasFuturasRes.error || vendaParcelasFuturasRes.error;
   if (firstError) {
     view.innerHTML = `<div class="empty-state"><p class="empty-state__title">Não foi possível carregar o painel</p><p class="empty-state__hint">${escapeHtml(firstError.message)}</p></div>`;
     return;
@@ -137,6 +145,16 @@ async function load(view, state, opts = {}) {
   const parcelasMes = parcelasPagas.filter((p) => noPeriodo(p.data_pagamento, inicioMesAtualKey, hojeKey));
   const parcelasMesAnterior = parcelasPagas.filter((p) => noPeriodo(p.data_pagamento, inicioMesAnteriorKey, fimMesAnteriorKey));
 
+  // Só pra "Entradas do mês" (caixa) — uma venda parcelada não deve entrar
+  // com o total inteiro na data da venda, já que o dinheiro chega aos
+  // poucos (venda_parcelas.pago), senão o mesmo valor conta duas vezes
+  // (uma vez cheio aqui, outra vez fatiado quando cada parcela é paga).
+  const vendasMesCash = vendasMes.filter((v) => !v.parcelas || v.parcelas.length === 0);
+  const vendasMesAnteriorCash = vendasMesAnterior.filter((v) => !v.parcelas || v.parcelas.length === 0);
+  const vendaParcelasPagas = vendaParcelasPagasRes.data || [];
+  const vendaParcelasPagasMes = vendaParcelasPagas.filter((p) => noPeriodo(p.data_pagamento, inicioMesAtualKey, hojeKey));
+  const vendaParcelasPagasMesAnterior = vendaParcelasPagas.filter((p) => noPeriodo(p.data_pagamento, inicioMesAnteriorKey, fimMesAnteriorKey));
+
   const recebimentosOk = (recebimentosRes.data || []).filter((r) => r.status !== "cancelado");
   const recebimentosMes = recebimentosOk.filter((r) => noPeriodo(r.data_recebimento, inicioMesAtualKey, hojeKey));
   const recebimentosMesAnterior = recebimentosOk.filter((r) => noPeriodo(r.data_recebimento, inicioMesAnteriorKey, fimMesAnteriorKey));
@@ -145,8 +163,8 @@ async function load(view, state, opts = {}) {
   const contasPagasMes = contasPagas.filter((c) => noPeriodo(c.data_pagamento, inicioMesAtualKey, hojeKey));
   const contasPagasMesAnterior = contasPagas.filter((c) => noPeriodo(c.data_pagamento, inicioMesAnteriorKey, fimMesAnteriorKey));
 
-  const entradasMes = sum(vendasMes, "total") + sum(parcelasMes, "valor") + sum(recebimentosMes, "valor");
-  const entradasMesAnterior = sum(vendasMesAnterior, "total") + sum(parcelasMesAnterior, "valor") + sum(recebimentosMesAnterior, "valor");
+  const entradasMes = sum(vendasMesCash, "total") + sum(parcelasMes, "valor") + sum(vendaParcelasPagasMes, "valor") + sum(recebimentosMes, "valor");
+  const entradasMesAnterior = sum(vendasMesAnteriorCash, "total") + sum(parcelasMesAnterior, "valor") + sum(vendaParcelasPagasMesAnterior, "valor") + sum(recebimentosMesAnterior, "valor");
   const saidasMes = sum(contasPagasMes, "valor");
   const saidasMesAnterior = sum(contasPagasMesAnterior, "valor");
   const saldoMes = entradasMes - saidasMes;

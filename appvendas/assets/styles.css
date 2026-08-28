@@ -1071,6 +1071,7 @@ svg {
 .status--aprovado { color: var(--success); background: var(--success-soft); }
 .status--reprovado { color: var(--danger); background: var(--danger-soft); }
 .status--venda { color: var(--accent-deep); background: var(--accent-soft); }
+.status--venda_parcela { color: var(--accent-deep); background: var(--accent-soft); }
 .status--manual { color: var(--amber-deep); background: var(--amber-soft); }
 .status--matricula { color: var(--info-deep); background: var(--info-soft); }
 .status--atrasada { color: var(--danger-deep); background: var(--danger-soft); }
