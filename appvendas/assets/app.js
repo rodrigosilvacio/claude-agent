@@ -25,7 +25,7 @@ const CONFIGURABLE_MENU_KEYS = ["clientes", "produtos", "fornecedores", "crm", "
 // ES modules carregar duas instâncias do módulo (hashchange listener e
 // boot() duplicados). Ver commit e4f8448 (correção original) e 3659424/
 // e75bd3a (reintrodução e reversão do bug).
-export const APP_BUILD = "2026-08-27 22:00 -03";
+export const APP_BUILD = "2026-08-28 15:00 -03";
 
 const ROUTES = {
   home: {
@@ -106,6 +106,12 @@ const ROUTES = {
     load: () => import("./usuarios.js"),
     adminOnly: true,
   },
+  "leads-demo": {
+    breadcrumb: "Administração",
+    title: "Demo",
+    load: () => import("./leads-demo.js"),
+    adminOnly: true,
+  },
   configuracoes: {
     breadcrumb: "Administração",
     title: "Configurações",
@@ -123,6 +129,7 @@ const titleEl = document.getElementById("page-title");
 const topbarActionsEl = document.getElementById("topbar-actions");
 const navLinks = Array.from(document.querySelectorAll(".nav-link"));
 const navUsuarios = document.getElementById("nav-usuarios");
+const navLeadsDemo = document.getElementById("nav-leads-demo");
 const navEmpresas = document.getElementById("nav-empresas");
 const navConfiguracoes = document.getElementById("nav-configuracoes");
 const sidebarBrandMark = document.getElementById("sidebar-brand-mark");
@@ -205,6 +212,7 @@ function updateAuthUI() {
 
   appShell.classList.toggle("is-locked", !logged);
   navUsuarios.hidden = !isAdmin();
+  navLeadsDemo.hidden = !isAdmin();
   navEmpresas.hidden = !isGlobalAdmin();
   navConfiguracoes.hidden = !isGlobalAdmin();
 
