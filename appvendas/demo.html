@@ -3,57 +3,51 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Teste grátis · ERPConnect</title>
+  <title>Avaliação encerrada · ERPConnect</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./assets/styles.css?v=23" />
+  <link rel="stylesheet" href="./assets/styles.css?v=24" />
 </head>
 <body>
-  <div class="precadastro-screen">
-    <div class="precadastro-card">
-      <div class="login-card__brand">
-        <span class="sidebar__brand-mark" style="background: var(--accent);">EC</span>
-        <span class="login-card__brand-name">ERPConnect</span>
+  <div class="encerrado-screen">
+    <div class="encerrado-glow encerrado-glow--a"></div>
+    <div class="encerrado-glow encerrado-glow--b"></div>
+
+    <div class="encerrado-card">
+      <div class="encerrado-brand">
+        <span class="sidebar__brand-mark encerrado-brand__mark">EC</span>
+        <span class="encerrado-brand__name">ERPConnect</span>
       </div>
-      <h1 class="precadastro-title">Teste o ERPConnect gratuitamente</h1>
-      <p class="login-card__hint">Preencha seus dados e receba na hora um acesso de demonstração — usuário e senha prontos para explorar o sistema com dados de exemplo.</p>
 
-      <form id="demo-form">
-        <div id="demo-error"></div>
-        <div class="form-grid">
-          <div class="field field--full">
-            <label for="dm-nome">Nome<span class="field-required">*</span></label>
-            <input class="input" type="text" id="dm-nome" name="nome" required />
-          </div>
-          <div class="field field--full">
-            <label for="dm-email">E-mail<span class="field-required">*</span></label>
-            <input class="input" type="email" id="dm-email" name="email" required />
-          </div>
-          <div class="field">
-            <label for="dm-telefone">Telefone</label>
-            <input class="input" type="text" id="dm-telefone" name="telefone" />
-          </div>
-          <div class="field">
-            <label for="dm-cargo">Cargo</label>
-            <input class="input" type="text" id="dm-cargo" name="cargo" />
-          </div>
-          <div class="field field--full">
-            <label for="dm-empresa">Empresa</label>
-            <input class="input" type="text" id="dm-empresa" name="empresa" />
-          </div>
-        </div>
-        <div class="hp-field" aria-hidden="true">
-          <label for="dm-website">Deixe este campo em branco</label>
-          <input type="text" id="dm-website" name="website" tabindex="-1" autocomplete="off" />
-        </div>
-        <button type="submit" class="btn btn--primary" id="demo-submit" style="width:100%; justify-content:center; margin-top: 1.25rem;">Quero testar grátis</button>
-      </form>
+      <span class="encerrado-badge">Avaliação encerrada</span>
 
-      <div id="demo-success" hidden></div>
+      <h1 class="encerrado-title">O período de avaliação<br />da ferramenta acabou!</h1>
+
+      <p class="encerrado-lead">Espero que tenha gostado dos <strong>16 módulos</strong> desenvolvidos com Claude Code.</p>
+
+      <div class="encerrado-stats">
+        <div class="encerrado-stat">
+          <span class="encerrado-stat__value">16</span>
+          <span class="encerrado-stat__label">Módulos desenvolvidos</span>
+        </div>
+        <div class="encerrado-stat">
+          <span class="encerrado-stat__value">300+</span>
+          <span class="encerrado-stat__label">Acessos em 5 dias</span>
+        </div>
+      </div>
+
+      <p class="encerrado-thanks">Agradeço aos mais de <strong>300 acessos em 5 dias</strong>! 🙏</p>
+
+      <div class="encerrado-callout">
+        <p>Esta aplicação foi desenvolvida para a comunidade, sem fins lucrativos.</p>
+      </div>
+
+      <div class="encerrado-contact">
+        <span class="encerrado-contact__label">Para mais informações, me chame no inbox</span>
+        <span class="encerrado-contact__handle">@rodrigosilvacio</span>
+      </div>
     </div>
   </div>
-
-  <script type="module" src="./assets/demo.js?v=1"></script>
 </body>
 </html>

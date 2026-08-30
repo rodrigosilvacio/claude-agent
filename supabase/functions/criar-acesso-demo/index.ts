@@ -111,9 +111,19 @@ function pareceBot(body: Record<string, unknown>) {
   return Date.now() - loadedAt < MIN_SUBMIT_MS;
 }
 
+// Período de avaliação pública encerrado (demo.html não tem mais
+// formulário) — mas esta função continua pública e sem autenticação, então
+// fecha aqui também: senão bastaria chamá-la direto (fora da UI) para
+// continuar criando/resetando contas demo mesmo com a página desativada.
+const CADASTROS_ENCERRADOS = true;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
+
+  if (CADASTROS_ENCERRADOS) {
+    return json({ error: "O período de avaliação do ERPConnect foi encerrado. Obrigado a todos que testaram!" }, 410);
+  }
 
   let body: Record<string, unknown>;
   try {
