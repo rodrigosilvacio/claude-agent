@@ -410,7 +410,11 @@ function renderNovaMatricula(content) {
       p_observacoes: content.querySelector("#m-obs").value || null,
     };
     if (admin) payload.p_empresa_id = empresaSelect.getValue();
-    if (precoOverride != null) payload.p_valor_servico_override = precoOverride;
+    // Preço negociado na proposta de origem (se houver) — criar_matricula
+    // resolve o valor sozinha a partir do id da proposta; precoOverride
+    // aqui é só o que aparece na tela (r-mensalidade-hint), nunca o que é
+    // cobrado.
+    if (propostaOrigemId) payload.p_proposta_id = propostaOrigemId;
 
     const formaPagamento = paytiles.getValue();
 

@@ -47,10 +47,27 @@ async function copiar(texto, btn) {
   setTimeout(() => { btn.textContent = original; }, 1800);
 }
 
-function mostrarSucesso({ nome, login, senha }) {
+// `senha` só vem preenchida em cadastro novo (a criar-acesso-demo devolve
+// direto). Num e-mail que já tinha conta, a senha é redefinida mas enviada
+// só para aquele e-mail (`sentToEmail`) — nunca volta na resposta HTTP,
+// senão bastaria saber o e-mail de um lead anterior pra sequestrar a conta.
+function mostrarSucesso({ nome, login, senha, sentToEmail }) {
   form.hidden = true;
   successEl.hidden = false;
   const url = urlDoErp();
+
+  if (sentToEmail) {
+    successEl.innerHTML = `
+      <div class="precadastro-success">
+        <div class="precadastro-success__icon">
+          <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <p class="precadastro-success__title">Prontinho, ${escapeHtml(nome)}! Você já tinha um acesso de demonstração.</p>
+        <p class="precadastro-success__hint">Redefinimos sua senha e enviamos os dados de acesso para <strong>${escapeHtml(sentToEmail)}</strong>. Confira sua caixa de entrada (e o spam) para continuar.</p>
+      </div>
+    `;
+    return;
+  }
 
   successEl.innerHTML = `
     <div class="precadastro-success">
