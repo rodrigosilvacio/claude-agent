@@ -358,6 +358,10 @@ function renderNovaVenda(content) {
       p_itens: cart.map((item) => ({ produto_id: item.produto_id, quantidade: item.quantidade, preco_unitario: item.preco_unitario })),
     };
     if (admin) payload.p_empresa_id = empresaSelect.getValue();
+    // Preço negociado na proposta de origem (se houver) — criar_venda
+    // resolve o valor sozinha a partir do id da proposta; o preco_unitario
+    // que vai em p_itens é só o que aparece na tela, nunca o que é cobrado.
+    if (propostaOrigemId) payload.p_proposta_id = propostaOrigemId;
 
     const formaPagamento = paytiles.getValue();
 

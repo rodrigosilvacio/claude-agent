@@ -19,6 +19,12 @@ const DEMO_ROLE = "caixa";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+
+// Mesma infra de e-mail de enviar-proposta/appvendas-lembretes (Resend) —
+// não é uma secret nova.
+const RESEND_ADDRESS = "notificacoes@vigiambiental.app";
+const RESEND_FROM = "ERPConnect";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -31,6 +37,34 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
+}
+
+function escapeHtml(str: unknown): string {
+  return String(str ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c] as string));
+}
+
+async function enviarEmail(to: string, subject: string, html: string): Promise<boolean> {
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Authorization": `Bearer ${RESEND_API_KEY}` },
+      body: JSON.stringify({ from: `${RESEND_FROM} <${RESEND_ADDRESS}>`, to: [to], subject, html }),
+    });
+    if (!res.ok) {
+      console.error("Resend error:", res.status, await res.text());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("Falha ao chamar Resend:", err);
+    return false;
+  }
 }
 
 const DIACRITICS_RE = new RegExp("[̀-ͯ]", "g");
@@ -77,9 +111,19 @@ function pareceBot(body: Record<string, unknown>) {
   return Date.now() - loadedAt < MIN_SUBMIT_MS;
 }
 
+// Período de avaliação pública encerrado (demo.html não tem mais
+// formulário) — mas esta função continua pública e sem autenticação, então
+// fecha aqui também: senão bastaria chamá-la direto (fora da UI) para
+// continuar criando/resetando contas demo mesmo com a página desativada.
+const CADASTROS_ENCERRADOS = true;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
+
+  if (CADASTROS_ENCERRADOS) {
+    return json({ error: "O período de avaliação do ERPConnect foi encerrado. Obrigado a todos que testaram!" }, 410);
+  }
 
   let body: Record<string, unknown>;
   try {
@@ -128,6 +172,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Não foi possível localizar seu acesso. Tente novamente em instantes." }, 500);
     }
 
+    // Reset de senha de uma conta já existente não pode devolver a senha
+    // nova direto na resposta HTTP: essa rota é pública e sem autenticação,
+    // então qualquer um que soubesse (ou adivinhasse) o e-mail de um lead
+    // anterior conseguiria sequestrar aquela conta só reenviando o mesmo
+    // e-mail. Em vez disso, a senha nova é enviada para o e-mail já
+    // cadastrado (o mesmo que casou com `leadExistente` acima) — só quem
+    // tem acesso àquela caixa de entrada consegue de fato usá-la.
     const novaSenha = gerarSenha();
     const { error: resetError } = await admin.auth.admin.updateUserById(usuarioRow.id, { password: novaSenha });
     if (resetError) return json({ error: "Não foi possível gerar seu acesso. Tente novamente em instantes." }, 500);
@@ -137,7 +188,19 @@ Deno.serve(async (req: Request) => {
     await admin.from("usuarios").update({ ativo: true, role: DEMO_ROLE, empresa_id: DEMO_EMPRESA_ID }).eq("id", usuarioRow.id);
     await admin.from("leads_demo").update({ nome, telefone, cargo, empresa_lead: empresaLead }).eq("usuario_id", usuarioRow.id);
 
-    return json({ nome: usuarioRow.nome, login: usuarioRow.login, senha: novaSenha });
+    const enviado = await enviarEmail(
+      email,
+      "Seu acesso de demonstração ao ERPConnect",
+      `<p>Olá, ${escapeHtml(usuarioRow.nome)}!</p>
+       <p>Seu acesso de demonstração ao ERPConnect foi redefinido. Use os dados abaixo para entrar:</p>
+       <p><strong>Usuário:</strong> ${escapeHtml(usuarioRow.login)}<br/><strong>Senha:</strong> ${escapeHtml(novaSenha)}</p>`,
+    );
+
+    if (!enviado) {
+      return json({ error: "Não foi possível enviar seu acesso por e-mail. Tente novamente em instantes." }, 502);
+    }
+
+    return json({ nome: usuarioRow.nome, login: usuarioRow.login, sentToEmail: email });
   }
 
   // Login único: base a partir do nome, com sufixo numérico se já existir.

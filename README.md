@@ -366,8 +366,11 @@ de estoque, quando (e se) a proposta virar uma venda de verdade.
   copiar os dados na mão. Em qualquer caso, o "prefill" (mesmo mecanismo
   `setVendaPrefill`/`setMatriculaPrefill` já usado por Agenda → Vendas/
   Matrículas) carrega cliente/lead, itens, **o preço negociado na proposta**
-  (não o de catálogo — `criar_matricula` ganhou o parâmetro
-  `p_valor_servico_override` pra isso, migration `0033`) e o desconto
+  (não o de catálogo — `criar_venda`/`criar_matricula` recebem o
+  `p_proposta_id` e resolvem o valor negociado sozinhas, olhando
+  `proposta_itens` da própria proposta; o `preco_unitario` que o front manda
+  em `p_itens` é só o que aparece na tela, nunca o que é cobrado — ver
+  migration `0044`) e o desconto
   (aplicado uma única vez, no primeiro registro gerado, pra não descontar a
   mesma proposta duas vezes quando ela vira venda + matrícula). Uma proposta
   só é marcada como convertida (`propostas.venda_id`/`matricula_id`/
@@ -393,7 +396,13 @@ migration `0032_propostas_venda_link.sql` acrescenta `propostas.venda_id`
 `0033_propostas_matricula_link_e_preco_override.sql` acrescenta
 `propostas.matricula_id` (FK para `matriculas`) e o parâmetro
 `p_valor_servico_override` em `criar_matricula` (preço negociado na
-proposta, no lugar do preço de catálogo do curso/serviço).
+proposta, no lugar do preço de catálogo do curso/serviço) — **substituído em
+`0044`** por `p_proposta_id`: o número solto vindo do cliente era aceito sem
+checagem nenhuma (qualquer usuário autenticado podia contratar um curso, ou
+comprar um produto via `criar_venda`, por qualquer valor). Agora o preço
+negociado só é aplicado quando a proposta referenciada existe, é da mesma
+empresa, está `aprovada` e tem um item daquele mesmo produto — resolvido
+inteiramente no servidor.
 
 ### Lembretes e cobranças (`supabase/functions/appvendas-lembretes`)
 

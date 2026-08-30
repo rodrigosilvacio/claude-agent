@@ -94,6 +94,11 @@ async function criarCheckoutVenda(
     p_itens: body.p_itens ?? [],
     p_empresa_id: body.p_empresa_id ?? null,
     p_status: "aguardando_pagamento",
+    // Proposta do CRM de origem (se houver) — criar_venda resolve o preço
+    // negociado sozinha a partir dela; preco_unitario vindo em p_itens é
+    // só um valor de exibição, nunca é usado para cobrar (ver migration
+    // 0044).
+    p_proposta_id: body.p_proposta_id ?? null,
   });
 
   if (criarError || !vendaId) {
@@ -164,10 +169,12 @@ async function criarCheckoutMatricula(
     p_observacoes: body.p_observacoes ?? null,
     p_empresa_id: body.p_empresa_id ?? null,
     p_status: "aguardando_pagamento",
-    // Valor negociado numa proposta do CRM (ver crm.js/matriculas.js) — sem
-    // isso, uma matrícula convertida via Stripe cobraria o preço de
-    // catálogo do curso, ignorando o que foi negociado na proposta.
-    p_valor_servico_override: body.p_valor_servico_override ?? null,
+    // Proposta do CRM de origem (ver crm.js/matriculas.js) — sem isso, uma
+    // matrícula convertida via Stripe cobraria o preço de catálogo do
+    // curso, ignorando o que foi negociado na proposta. criar_matricula
+    // resolve o valor negociado sozinha a partir dela, nunca a partir de um
+    // número solto vindo do cliente (ver migration 0044).
+    p_proposta_id: body.p_proposta_id ?? null,
   });
 
   if (criarError || !matriculaId) {
