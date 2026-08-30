@@ -1,5 +1,7 @@
 # claude-agent
 
+Repositório com Projetos desenvolvidos com Claude Code como exemplo.
+
 ## Notícias de IA (`/ninanews`)
 
 Página com um único botão ("Buscar notícias de hoje") que aciona a Edge
