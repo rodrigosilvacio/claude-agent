@@ -426,8 +426,8 @@ els.btnSaveWeight.addEventListener('click', function () {
 
   var dateISO = state.weightDateVal || todayISO();
   var weight = parseFloat(String(state.weightVal).replace(',', '.'));
-  if (!weight || weight <= 0) {
-    showWeightToast('Informe um peso válido.');
+  if (!weight || weight <= 0 || weight >= 500) {
+    showWeightToast('Informe um peso válido (entre 0 e 500 kg).');
     return;
   }
 
