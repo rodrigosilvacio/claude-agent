@@ -200,6 +200,17 @@ para não ficar com o realce cinza/menu de contexto do Safari, e
 Também ganhou meta tags de "adicionar à tela de início" (ícone, título,
 barra de status).
 
+### Hospedagem (GitHub Pages) e cache
+
+Mesmo padrão do Reports Panel (ver seção abaixo): `styles.css` e `app.js`
+são referenciados com `?v=N` em `index.html`, e o próprio `import` do
+`supabaseClient.js` dentro de `app.js` também carrega `?v=N` — sem isso, o
+CDN do GitHub Pages e o cache do navegador podem continuar servindo a
+versão antiga por vários minutos mesmo depois do merge (foi exatamente
+esse cache que fez o fix da vírgula no campo de peso parecer que não tinha
+entrado no ar). **Sempre que alterar `app.js`, `styles.css` ou
+`supabaseClient.js`, incremente esse número nos três lugares.**
+
 ## Painel de Reports (`/reports`)
 
 Painel interno para centralizar dashboards em HTML gerados pelo Claude:
