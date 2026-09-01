@@ -30,6 +30,14 @@ var state = {
   deletingId: null,
   monthlyGoal: DEFAULT_MONTHLY_GOAL,
   savingGoal: false,
+  weights: [],
+  weightsLoading: true,
+  weightsLoadError: false,
+  weightDateVal: todayISO(),
+  weightVal: '',
+  savingWeight: false,
+  weightsPage: 0,
+  deletingWeightId: null,
 };
 var timerHandle = null;
 
@@ -49,6 +57,10 @@ function fmtDuration(min) {
 function fmtDayLabel(iso) {
   var parts = iso.split('-');
   return parts[2] + '/' + parts[1];
+}
+
+function fmtWeight(kg) {
+  return (Math.round(kg * 10) / 10).toFixed(1).replace('.', ',');
 }
 
 // First day 00:00 .. last day 23:59:59 of the calendar month containing `date`.
@@ -112,6 +124,36 @@ async function updateSettings(monthlyGoal) {
   if (error) throw error;
 }
 
+async function fetchWeights() {
+  var { data, error } = await supabase
+    .from('pandafit_weights')
+    .select('id, date, weight_kg')
+    .order('date', { ascending: false })
+    .limit(500);
+  if (error) throw error;
+  return data;
+}
+
+// Upsert on `date`: correcting today's weight overwrites the row instead of
+// creating a second entry for the same day.
+async function upsertWeight(row) {
+  var { data, error } = await supabase
+    .from('pandafit_weights')
+    .upsert(row, { onConflict: 'date' })
+    .select('id, date, weight_kg')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteWeight(id) {
+  var { error } = await supabase
+    .from('pandafit_weights')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ── DOM refs ──
 var $ = function (sel) { return document.querySelector(sel); };
 
@@ -120,6 +162,7 @@ var els = {
     painel: $('#screen-painel'),
     registrar: $('#screen-registrar'),
     meta: $('#screen-meta'),
+    peso: $('#screen-peso'),
   },
   monthLabel: $('#month-label'),
   monthCount: $('#month-count'),
@@ -157,6 +200,17 @@ var els = {
   metaProgressPct: $('#meta-progress-pct'),
   metaProgressCount: $('#meta-progress-count'),
   evolutionList: $('#evolution-list'),
+
+  inputWeightDate: $('#input-weight-date'),
+  inputWeightValue: $('#input-weight-value'),
+  btnSaveWeight: $('#btn-save-weight'),
+  weightToast: $('#weight-toast'),
+  weightsList: $('#weights-list'),
+  weightCountNote: $('#weight-count-note'),
+  weightsPager: $('#weights-pager'),
+  weightsPagerPrev: $('#weights-pager-prev'),
+  weightsPagerNext: $('#weights-pager-next'),
+  weightsPagerNote: $('#weights-pager-note'),
 };
 
 // ── tab bar wiring ──
@@ -174,11 +228,13 @@ function setTab(tab) {
   });
   if (tab === 'painel') renderPainel();
   if (tab === 'meta') renderMeta();
+  if (tab === 'peso') renderWeights();
 }
 
 function renderActiveTab() {
   if (state.tab === 'painel') renderPainel();
   if (state.tab === 'meta') renderMeta();
+  if (state.tab === 'peso') renderWeights();
 }
 
 // ── records pagination ──
@@ -191,6 +247,17 @@ els.pagerPrev.addEventListener('click', function () {
 els.pagerNext.addEventListener('click', function () {
   state.recordsPage += 1;
   renderPainel();
+});
+
+els.weightsPagerPrev.addEventListener('click', function () {
+  if (state.weightsPage > 0) {
+    state.weightsPage -= 1;
+    renderWeights();
+  }
+});
+els.weightsPagerNext.addEventListener('click', function () {
+  state.weightsPage += 1;
+  renderWeights();
 });
 
 // ── mode tabs (Cronômetro / Manual) ──
@@ -344,6 +411,66 @@ function makeToaster(el) {
 
 var showToast = makeToaster(els.toast);
 var showGoalToast = makeToaster(els.goalToast);
+var showWeightToast = makeToaster(els.weightToast);
+
+// ── weight fields ──
+els.inputWeightDate.addEventListener('change', function (e) {
+  state.weightDateVal = e.target.value || todayISO();
+});
+els.inputWeightValue.addEventListener('input', function (e) {
+  state.weightVal = e.target.value;
+});
+
+els.btnSaveWeight.addEventListener('click', function () {
+  if (state.savingWeight) return;
+
+  var dateISO = state.weightDateVal || todayISO();
+  var weight = parseFloat(String(state.weightVal).replace(',', '.'));
+  if (!weight || weight <= 0) {
+    showWeightToast('Informe um peso válido.');
+    return;
+  }
+
+  state.savingWeight = true;
+  els.btnSaveWeight.disabled = true;
+
+  upsertWeight({ date: dateISO, weight_kg: weight })
+    .then(function (row) {
+      state.weights = state.weights.filter(function (w) { return w.date !== row.date; });
+      state.weights.push(row);
+      state.weights.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+      state.weightsPage = 0;
+      renderWeights();
+      showWeightToast('Peso de ' + fmtWeight(row.weight_kg) + ' kg registrado em ' + fmtDayLabel(row.date) + '.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar peso', err);
+      showWeightToast('Não foi possível salvar. Tente de novo.');
+    })
+    .finally(function () {
+      state.savingWeight = false;
+      els.btnSaveWeight.disabled = false;
+    });
+});
+
+function handleDeleteWeightClick(id) {
+  if (state.deletingWeightId) return;
+  if (!window.confirm('Excluir este registro de peso? Essa ação não pode ser desfeita.')) return;
+
+  state.deletingWeightId = id;
+  deleteWeight(id)
+    .then(function () {
+      state.weights = state.weights.filter(function (w) { return w.id !== id; });
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir peso', err);
+      window.alert('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingWeightId = null;
+      renderWeights();
+    });
+}
 
 // ── render: Registrar screen ──
 function renderRegistrar() {
@@ -491,6 +618,72 @@ function renderMeta() {
   }).join('');
 }
 
+// ── render: Peso screen ──
+function renderWeights() {
+  els.inputWeightDate.value = state.weightDateVal;
+  els.inputWeightValue.value = state.weightVal;
+
+  if (state.weightsLoading) {
+    els.weightsList.innerHTML = '<p class="empty-state">Carregando pesos…</p>';
+    els.weightsPager.hidden = true;
+    return;
+  }
+
+  if (state.weightsLoadError) {
+    els.weightsList.innerHTML = '<p class="empty-state">Não foi possível carregar os pesos. Recarregue a página.</p>';
+    els.weightsPager.hidden = true;
+    return;
+  }
+
+  var sorted = state.weights; // already sorted date desc
+  els.weightCountNote.textContent = sorted.length + (sorted.length === 1 ? ' registro' : ' registros');
+
+  if (sorted.length === 0) {
+    els.weightsList.innerHTML = '<p class="empty-state">Nenhum peso registrado ainda.</p>';
+    els.weightsPager.hidden = true;
+    state.weightsPage = 0;
+    return;
+  }
+
+  var pageCount = Math.ceil(sorted.length / RECORDS_PAGE_SIZE);
+  if (state.weightsPage >= pageCount) state.weightsPage = pageCount - 1;
+  if (state.weightsPage < 0) state.weightsPage = 0;
+
+  var start = state.weightsPage * RECORDS_PAGE_SIZE;
+  var pageItems = sorted.slice(start, start + RECORDS_PAGE_SIZE);
+
+  els.weightsList.innerHTML = pageItems.map(function (w, i) {
+    var prev = sorted[start + i + 1]; // next-older entry, chronologically
+    var trendClass = '';
+    var deltaLabel = '—';
+    if (prev) {
+      var diff = w.weight_kg - prev.weight_kg;
+      if (diff > 0.05) { trendClass = 'weight-up'; deltaLabel = '▲ ' + fmtWeight(diff); }
+      else if (diff < -0.05) { trendClass = 'weight-down'; deltaLabel = '▼ ' + fmtWeight(Math.abs(diff)); }
+      else { deltaLabel = '= 0,0'; }
+    }
+    return '<div class="record-row">' +
+      '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
+      '<span class="weight-value">' + fmtWeight(w.weight_kg) + ' kg</span>' +
+      '<span class="weight-delta ' + trendClass + '">' + deltaLabel + '</span>' +
+      '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir peso">' +
+      '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</button>' +
+      '</div>';
+  }).join('');
+
+  els.weightsList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      handleDeleteWeightClick(Number(btn.dataset.id));
+    });
+  });
+
+  els.weightsPager.hidden = pageCount <= 1;
+  els.weightsPagerNote.textContent = 'Página ' + (state.weightsPage + 1) + ' de ' + pageCount;
+  els.weightsPagerPrev.disabled = state.weightsPage === 0;
+  els.weightsPagerNext.disabled = state.weightsPage >= pageCount - 1;
+}
+
 els.btnSaveGoal.addEventListener('click', function () {
   if (state.savingGoal) return;
 
@@ -521,6 +714,7 @@ els.btnSaveGoal.addEventListener('click', function () {
 
 // ── init ──
 els.inputDate.value = state.dateVal;
+els.inputWeightDate.value = state.weightDateVal;
 startTimerLoop();
 renderRegistrar();
 setTab('painel');
@@ -543,5 +737,17 @@ fetchSettings()
   })
   .catch(function (err) {
     console.error('Falha ao carregar meta', err);
+  })
+  .finally(renderActiveTab);
+
+fetchWeights()
+  .then(function (rows) {
+    state.weights = rows;
+    state.weightsLoading = false;
+  })
+  .catch(function (err) {
+    console.error('Falha ao carregar pesos', err);
+    state.weightsLoading = false;
+    state.weightsLoadError = true;
   })
   .finally(renderActiveTab);

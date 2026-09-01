@@ -166,6 +166,48 @@
     </div>
   </main>
 
+  <!-- ───────── Peso ───────── -->
+  <main class="screen" id="screen-peso" data-screen="peso" hidden>
+    <div class="screen-head">
+      <h1 class="title">Peso</h1>
+    </div>
+
+    <div class="screen-body">
+
+      <div class="ticket goal-card">
+        <span class="corner tl">+</span><span class="corner tr">+</span>
+        <span class="corner bl">+</span><span class="corner br">+</span>
+        <div class="label">Registrar peso</div>
+        <label class="field goal-field">
+          <span class="field-label">Data</span>
+          <input type="date" id="input-weight-date" />
+        </label>
+        <label class="field goal-field">
+          <span class="field-label">Peso (kg)</span>
+          <input type="number" id="input-weight-value" inputmode="decimal" step="0.1" min="1" max="499" placeholder="Ex: 78,4" />
+        </label>
+        <div class="toast" id="weight-toast" hidden></div>
+        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">Salvar peso</button>
+      </div>
+
+      <div class="section">
+        <div class="section-head-row">
+          <span class="section-title">Histórico</span>
+          <span class="section-note" id="weight-count-note">0 registros</span>
+        </div>
+        <div id="weights-list" class="records-list">
+          <p class="empty-state">Nenhum peso registrado ainda.</p>
+        </div>
+        <div id="weights-pager" class="pager" hidden>
+          <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
+          <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
+          <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
   <!-- ───────── Tab bar ───────── -->
   <nav class="tabbar">
     <button type="button" class="tab-btn" data-tab="painel">
@@ -179,6 +221,10 @@
     <button type="button" class="tab-btn" data-tab="meta">
       <span class="tab-mark"></span>
       <span>Meta</span>
+    </button>
+    <button type="button" class="tab-btn" data-tab="peso">
+      <span class="tab-mark"></span>
+      <span>Peso</span>
     </button>
   </nav>
 
