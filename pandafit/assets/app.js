@@ -1,9 +1,10 @@
-import { supabase } from './supabaseClient.js?v=2';
+import { supabase } from './supabaseClient.js?v=3';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
 var EVOLUTION_MONTHS = 6;
 var MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+var MAX_WORKOUT_MINUTES = 720;
 
 var WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -55,6 +56,13 @@ function pad(n) { return String(n).padStart(2, '0'); }
 function todayISO() {
   var d = new Date();
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+// Belt-and-suspenders alongside the input's max attribute: a typed (not
+// picked) date can still slip past native validation in some browsers.
+function clampDateToToday(iso) {
+  var today = todayISO();
+  return iso > today ? today : iso;
 }
 
 function fmtDuration(min) {
@@ -443,16 +451,16 @@ function renderTypeOptions() {
 // ── save ──
 function liveMinutes() {
   if (state.mode === 'timer') {
-    return Math.max(1, Math.round(state.secs / 60));
+    return Math.min(MAX_WORKOUT_MINUTES, Math.max(1, Math.round(state.secs / 60)));
   }
-  return Math.max(1, parseInt(state.minsVal, 10) || 0);
+  return Math.min(MAX_WORKOUT_MINUTES, Math.max(1, parseInt(state.minsVal, 10) || 0));
 }
 
 els.btnSave.addEventListener('click', function () {
   if (state.saving) return;
 
   var min = liveMinutes();
-  var dateISO = state.mode === 'timer' ? todayISO() : (state.dateVal || todayISO());
+  var dateISO = state.mode === 'timer' ? todayISO() : clampDateToToday(state.dateVal || todayISO());
   var local = state.local.trim();
   var wasTimer = state.mode === 'timer';
 
@@ -527,7 +535,7 @@ els.inputWeightValue.addEventListener('input', function (e) {
 els.btnSaveWeight.addEventListener('click', function () {
   if (state.savingWeight) return;
 
-  var dateISO = state.weightDateVal || todayISO();
+  var dateISO = clampDateToToday(state.weightDateVal || todayISO());
   var weight = parseFloat(String(state.weightVal).replace(',', '.'));
   if (!weight || weight <= 0 || weight >= 500) {
     showWeightToast('Informe um peso válido (entre 0 e 500 kg).');
@@ -926,7 +934,9 @@ els.btnSaveGoal.addEventListener('click', function () {
 
 // ── init ──
 els.inputDate.value = state.dateVal;
+els.inputDate.max = todayISO();
 els.inputWeightDate.value = state.weightDateVal;
+els.inputWeightDate.max = todayISO();
 startTimerLoop();
 renderRegistrar();
 setTab('painel');
