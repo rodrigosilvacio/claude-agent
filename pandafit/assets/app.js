@@ -1,10 +1,11 @@
-import { supabase } from './supabaseClient.js?v=7';
+import { supabase } from './supabaseClient.js?v=8';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
 var EVOLUTION_MONTHS = 6;
 var MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 var MAX_WORKOUT_MINUTES = 720;
+var MAX_MONTH_OFFSET = 60;
 
 var WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -31,6 +32,7 @@ var state = {
   saving: false,
   recordsPage: 0,
   deletingId: null,
+  painelMonthOffset: 0,
   monthlyGoal: DEFAULT_MONTHLY_GOAL,
   savingGoal: false,
   targetWeight: null,
@@ -93,6 +95,13 @@ function monthRange(date) {
   var end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
   end.setHours(23, 59, 59, 999);
   return { start: start, end: end };
+}
+
+// The calendar month currently shown on the Painel screen: offset 0 is the
+// present month, 1 is the month before, etc.
+function viewedMonthDate() {
+  var now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - state.painelMonthOffset, 1);
 }
 
 function parseISO(iso) {
@@ -241,6 +250,8 @@ var els = {
     documentos: $('#screen-documentos'),
   },
   monthLabel: $('#month-label'),
+  monthPrev: $('#month-prev'),
+  monthNext: $('#month-next'),
   monthCount: $('#month-count'),
   monthGoalSuffix: $('#month-goal-suffix'),
   goalBar: $('#goal-bar'),
@@ -356,6 +367,20 @@ function setRegistrarSection(section) {
 
 document.querySelectorAll('.section-tab').forEach(function (btn) {
   btn.addEventListener('click', function () { setRegistrarSection(btn.dataset.section); });
+});
+
+// ── painel month navigation ──
+els.monthPrev.addEventListener('click', function () {
+  if (state.painelMonthOffset >= MAX_MONTH_OFFSET) return;
+  state.painelMonthOffset += 1;
+  state.recordsPage = 0;
+  renderPainel();
+});
+els.monthNext.addEventListener('click', function () {
+  if (state.painelMonthOffset <= 0) return;
+  state.painelMonthOffset -= 1;
+  state.recordsPage = 0;
+  renderPainel();
 });
 
 // ── records pagination ──
@@ -717,8 +742,10 @@ function renderRegistrar() {
 
 // ── render: Painel screen ──
 function renderPainel() {
-  var now = new Date();
-  els.monthLabel.textContent = MONTHS_PT[now.getMonth()] + ' ' + now.getFullYear();
+  var viewDate = viewedMonthDate();
+  els.monthLabel.textContent = MONTHS_PT[viewDate.getMonth()] + ' ' + viewDate.getFullYear();
+  els.monthPrev.disabled = state.painelMonthOffset >= MAX_MONTH_OFFSET;
+  els.monthNext.disabled = state.painelMonthOffset <= 0;
 
   if (state.loading) {
     els.recordsList.innerHTML = '<p class="empty-state">Carregando treinos…</p>';
@@ -732,7 +759,7 @@ function renderPainel() {
     return;
   }
 
-  var range = monthRange(now);
+  var range = monthRange(viewDate);
   var monthWorkouts = state.workouts.filter(function (w) {
     var d = parseISO(w.date);
     return d >= range.start && d <= range.end;

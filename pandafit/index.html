@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=7" />
+<link rel="stylesheet" href="assets/styles.css?v=8" />
 </head>
 <body>
 
@@ -24,7 +24,11 @@
   <!-- ───────── Painel do mês ───────── -->
   <main class="screen" id="screen-painel" data-screen="painel">
     <div class="screen-head">
-      <div class="eyebrow" id="month-label">Mês</div>
+      <div class="month-nav">
+        <button type="button" class="month-nav-btn" id="month-prev" aria-label="Mês anterior">‹</button>
+        <div class="eyebrow" id="month-label">Mês</div>
+        <button type="button" class="month-nav-btn" id="month-next" aria-label="Próximo mês" disabled>›</button>
+      </div>
       <h1 class="title">Mês em movimento</h1>
     </div>
 
@@ -299,6 +303,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=7"></script>
+<script type="module" src="assets/app.js?v=8"></script>
 </body>
 </html>

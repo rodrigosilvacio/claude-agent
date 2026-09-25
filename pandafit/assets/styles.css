@@ -115,6 +115,36 @@ html, body {
   color: var(--accent);
 }
 
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.month-nav-btn {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  background: transparent;
+  width: 32px;
+  height: 32px;
+  margin: -6px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 18px/1 "Barlow Condensed", sans-serif;
+  color: var(--ink);
+}
+.month-nav-btn:disabled {
+  color: var(--dot-off);
+  cursor: default;
+}
+@media (hover: hover) {
+  .month-nav-btn:not(:disabled):hover { background: var(--hover-tint); }
+}
+
 .title {
   margin: 0;
   font: 600 32px/1.05 "Barlow Condensed", sans-serif;

@@ -174,11 +174,13 @@ Reproduz o protótipo de design em anexo (Barlow / Barlow Condensed, paleta
 azul-marinho `#1d2d3d` + azul acinzentado `#5980a6`, cartões com cantos retos
 e marcas "+" nos vértices, estilo ticket/recibo).
 
-- **Painel**: cabeçalho com o mês atual; cartão de total de treinos no mês
-  (contagem, não duração) com barra de progresso até a meta mensal; divisão
-  do tempo por tipo de treino (Musculação, Jiu Jitsu, Corrida); lista dos
-  registros do mês (dia, tipo, local, duração), paginada de 5 em 5, com
-  botão de excluir (confirmação antes de apagar) em cada linha.
+- **Painel**: cabeçalho com o mês exibido e setas `‹`/`›` para navegar entre
+  meses (a seta `›` fica desabilitada no mês atual — não dá pra ver o
+  futuro); cartão de total de treinos no mês (contagem, não duração) com
+  barra de progresso até a meta mensal; divisão do tempo por tipo de treino
+  (Musculação, Jiu Jitsu, Corrida); lista dos registros do mês (dia, tipo,
+  local, duração), paginada de 5 em 5, com botão de excluir (confirmação
+  antes de apagar) em cada linha — tudo recalculado para o mês selecionado.
 - **Registrar**: alterna entre **Treino** e **Peso** por uma aba superior;
   dentro de Treino, alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
