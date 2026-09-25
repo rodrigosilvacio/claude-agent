@@ -235,6 +235,27 @@ do media query — segue a preferência do sistema operacional/navegador, sem
 alternância manual. `color-scheme: light dark` também é declarado para que
 controles nativos (date picker, seletor de arquivo) sigam o tema.
 
+### PWA (manifest + service worker)
+
+`manifest.json` (nome, ícones 192/512px gerados a partir do mesmo panda do
+favicon, `display: standalone`, cores do tema) deixa o Chrome/Android
+oferecer instalação de verdade, além do "adicionar à tela de início" que já
+existia via meta tags para iOS. `sw.js` faz cache básico do app shell
+(`index.html`, `manifest.json`, `styles.css`, `app.js`,
+`supabaseClient.js`, ícones) — estratégia cache-first com atualização em
+segundo plano (stale-while-revalidate), então o app abre mesmo sem
+internet (a UI carrega do cache; os dados do Supabase, esses sim, exigem
+rede). O service worker só intercepta pedidos same-origin — chamadas ao
+Supabase e ao esm.sh (import do `supabase-js`) são cross-origin e vão
+direto pra rede, nunca ficam em cache, então os dados nunca aparecem
+desatualizados por causa disso.
+
+**Atenção**: como o service worker cacheia os arquivos versionados
+(`?v=N`), sempre que incrementar essa versão em `styles.css`/`app.js`/
+`supabaseClient.js` (ver seção abaixo), também é preciso atualizar o
+`CACHE_NAME` e a lista `APP_SHELL` em `sw.js` com o mesmo número — senão o
+cache antigo nunca é limpo.
+
 ### Hospedagem (GitHub Pages) e cache
 
 Mesmo padrão do Reports Panel (ver seção abaixo): `styles.css` e `app.js`
@@ -244,7 +265,8 @@ CDN do GitHub Pages e o cache do navegador podem continuar servindo a
 versão antiga por vários minutos mesmo depois do merge (foi exatamente
 esse cache que fez o fix da vírgula no campo de peso parecer que não tinha
 entrado no ar). **Sempre que alterar `app.js`, `styles.css` ou
-`supabaseClient.js`, incremente esse número nos três lugares.**
+`supabaseClient.js`, incremente esse número nos três lugares — e também em
+`CACHE_NAME`/`APP_SHELL` dentro de `sw.js` (ver seção PWA acima).**
 
 ## Painel de Reports (`/reports`)
 

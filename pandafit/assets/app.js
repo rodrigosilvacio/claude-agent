@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=12';
+import { supabase } from './supabaseClient.js?v=13';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -1382,3 +1382,12 @@ fetchDocuments()
     state.documentsLoadError = true;
   })
   .finally(renderActiveTab);
+
+// ── PWA: service worker (app-shell cache for offline/instalação) ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./sw.js').catch(function (err) {
+      console.error('Falha ao registrar service worker', err);
+    });
+  });
+}
