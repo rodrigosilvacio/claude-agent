@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=13';
+import { supabase } from './supabaseClient.js?v=14';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -39,6 +39,7 @@ var state = {
   deletingId: null,
   editingWorkoutId: null,
   painelMonthOffset: 0,
+  dismissedReminders: {},
   monthlyGoal: DEFAULT_MONTHLY_GOAL,
   savingGoal: false,
   targetWeight: null,
@@ -321,6 +322,7 @@ var els = {
     meta: $('#screen-meta'),
     documentos: $('#screen-documentos'),
   },
+  reminderBanners: $('#reminder-banners'),
   monthLabel: $('#month-label'),
   monthPrev: $('#month-prev'),
   monthNext: $('#month-next'),
@@ -909,8 +911,57 @@ function renderRegistrar() {
   renderTypeOptions();
 }
 
+// ── reminder banners (shown on Painel when the app opens) ──
+function computeReminders() {
+  var reminders = [];
+
+  if (state.painelMonthOffset === 0 && !state.loading && !state.loadError) {
+    var range = monthRange(new Date());
+    var goal = state.monthlyGoal;
+    var count = state.workouts.filter(function (w) {
+      var d = parseISO(w.date);
+      return d >= range.start && d <= range.end;
+    }).length;
+    if (goal && count < goal) {
+      var missing = goal - count;
+      reminders.push({
+        id: 'goal',
+        text: 'Faltam ' + missing + (missing === 1 ? ' treino' : ' treinos') + ' para bater a meta deste mês.',
+      });
+    }
+  }
+
+  if (!state.weightsLoading && !state.weightsLoadError) {
+    var today = todayISO();
+    var hasToday = state.weights.some(function (w) { return w.date === today; });
+    if (!hasToday) {
+      reminders.push({ id: 'weight', text: 'Você ainda não registrou seu peso hoje.' });
+    }
+  }
+
+  return reminders.filter(function (r) { return !state.dismissedReminders[r.id]; });
+}
+
+function renderReminders() {
+  var reminders = computeReminders();
+  els.reminderBanners.hidden = reminders.length === 0;
+  els.reminderBanners.innerHTML = reminders.map(function (r) {
+    return '<div class="reminder-banner">' +
+      '<span>' + r.text + '</span>' +
+      '<button type="button" class="reminder-banner-dismiss" data-id="' + r.id + '" aria-label="Dispensar">×</button>' +
+      '</div>';
+  }).join('');
+  els.reminderBanners.querySelectorAll('.reminder-banner-dismiss').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      state.dismissedReminders[btn.dataset.id] = true;
+      renderReminders();
+    });
+  });
+}
+
 // ── render: Painel screen ──
 function renderPainel() {
+  renderReminders();
   var viewDate = viewedMonthDate();
   els.monthLabel.textContent = MONTHS_PT[viewDate.getMonth()] + ' ' + viewDate.getFullYear();
   els.monthPrev.disabled = state.painelMonthOffset >= MAX_MONTH_OFFSET;

@@ -206,6 +206,36 @@ html, body {
 .corner.bl { bottom: -9px; left: -5px; }
 .corner.br { bottom: -9px; right: -5px; }
 
+/* ── reminder banners (Painel) ── */
+.reminder-banners {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reminder-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font: 500 12px/1.4 "Barlow", sans-serif;
+}
+
+.reminder-banner-dismiss {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: 400 18px/1 "Barlow", sans-serif;
+  padding: 2px 4px;
+  flex: none;
+}
+
 /* ── total card ── */
 .label {
   font: 400 10px/1 "Barlow", sans-serif;

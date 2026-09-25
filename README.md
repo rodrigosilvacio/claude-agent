@@ -174,9 +174,15 @@ Reproduz o protótipo de design em anexo (Barlow / Barlow Condensed, paleta
 azul-marinho `#1d2d3d` + azul acinzentado `#5980a6`, cartões com cantos retos
 e marcas "+" nos vértices, estilo ticket/recibo).
 
-- **Painel**: cabeçalho com o mês exibido e setas `‹`/`›` para navegar entre
-  meses (a seta `›` fica desabilitada no mês atual — não dá pra ver o
-  futuro); cartão de total de treinos no mês (contagem, não duração) com
+- **Painel**: banners de lembrete no topo (só no mês atual) — "faltam X
+  treinos para bater a meta deste mês" quando ainda não bateu, e "você ainda
+  não registrou seu peso hoje" quando não há peso salvo com a data de hoje;
+  cada um pode ser dispensado (`×`) só pra aquela sessão/carregamento da
+  página, sem push notification de verdade (fora do escopo — precisaria de
+  infra de VAPID/Edge Function). Cabeçalho com o mês exibido e setas `‹`/`›`
+  para navegar entre meses (a seta `›` fica desabilitada no mês atual — não
+  dá pra ver o futuro); cartão de total de treinos no mês (contagem, não
+  duração) com
   barra de progresso até a meta mensal; divisão do tempo por tipo de treino
   (Musculação, Jiu Jitsu, Corrida); lista dos registros do mês (dia, tipo,
   local, duração), paginada de 5 em 5, com botão de editar (lápis) e de
