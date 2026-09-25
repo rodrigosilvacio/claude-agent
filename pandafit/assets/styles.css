@@ -1,62 +1,65 @@
 :root {
-  --ink: #211f1b;
-  --ink-dark: #1d2d3d;
-  --muted: #6b665e;
-  --faint: #948d81;
-  --accent: #b6633f;
-  --accent-hover: #c17048;
-  --accent-active: #914c30;
-  --accent-bg: #f7ebe1;
-  --accent-text: #8f4c30;
-  --on-accent: #fbf8f4;
-  --on-accent-soft: rgba(251, 248, 244, 0.7);
-  --line: rgba(33, 31, 27, 0.14);
-  --line-soft: rgba(33, 31, 27, 0.09);
-  --hover-tint: rgba(33, 31, 27, 0.06);
-  --shadow: rgba(35, 25, 15, 0.08);
-  --card-shadow: 0 2px 12px rgba(40, 30, 18, 0.07);
-  --overlay: rgba(20, 15, 10, 0.45);
-  --bg-app: #fbf8f4;
-  --bg-page: #efeae2;
-  --track: #e9e3d9;
-  --dot-off: #c9c0b2;
-  --border-off: #a39a8c;
-  --bad: #b3423f;
-  --bad-hover: #9c3835;
-  --bad-bg: #fbeceb;
-  --good: #3f7d52;
-  --good-bg: #eaf5ee;
+  --ink: #0f172a;
+  --ink-dark: #0f172a;
+  --muted: #475569;
+  --faint: #94a3b8;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-active: #1e40af;
+  --accent-bg: #eff6ff;
+  --accent-text: #1d4ed8;
+  --on-accent: #ffffff;
+  --on-accent-soft: rgba(255, 255, 255, 0.72);
+  --line: #e2e8f0;
+  --line-soft: #eef2f6;
+  --hover-tint: rgba(15, 23, 42, 0.04);
+  --shadow: rgba(15, 23, 42, 0.08);
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.06);
+  --overlay: rgba(15, 23, 42, 0.5);
+  --bg-app: #ffffff;
+  --bg-page: #f8fafc;
+  --track: #e2e8f0;
+  --dot-off: #cbd5e1;
+  --border-off: #94a3b8;
+  --bad: #dc2626;
+  --bad-hover: #b91c1c;
+  --bad-bg: #fef2f2;
+  --good: #16a34a;
+  --good-bg: #f0fdf4;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #f2ede4;
-    --ink-dark: #cfe0ef;
-    --muted: #b6ac9d;
-    --faint: #8f8676;
-    --accent: #d68a63;
-    --accent-hover: #dd9873;
-    --accent-active: #c17a54;
-    --accent-bg: rgba(214, 138, 99, 0.16);
-    --accent-text: #e3a988;
-    --on-accent: #1b1712;
-    --on-accent-soft: rgba(27, 23, 18, 0.7);
-    --line: rgba(255, 247, 235, 0.14);
-    --line-soft: rgba(255, 247, 235, 0.09);
-    --hover-tint: rgba(255, 247, 235, 0.07);
+    --ink: #f1f5f9;
+    --ink-dark: #f1f5f9;
+    --muted: #94a3b8;
+    --faint: #64748b;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-active: #2563eb;
+    --accent-bg: rgba(59, 130, 246, 0.16);
+    --accent-text: #93c5fd;
+    --on-accent: #ffffff;
+    --on-accent-soft: rgba(255, 255, 255, 0.72);
+    --line: rgba(241, 245, 249, 0.12);
+    --line-soft: rgba(241, 245, 249, 0.07);
+    --hover-tint: rgba(241, 245, 249, 0.06);
     --shadow: rgba(0, 0, 0, 0.4);
-    --card-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.3);
     --overlay: rgba(0, 0, 0, 0.6);
-    --bg-app: #1c1712;
-    --bg-page: #120f0b;
-    --track: #2c261e;
-    --dot-off: #4c4335;
-    --border-off: #605646;
-    --bad: #e0736f;
-    --bad-hover: #c85f5b;
-    --bad-bg: rgba(224, 115, 111, 0.16);
-    --good: #6cbf85;
-    --good-bg: rgba(108, 191, 133, 0.16);
+    --bg-app: #1e293b;
+    --bg-page: #0f172a;
+    --track: #334155;
+    --dot-off: #475569;
+    --border-off: #64748b;
+    --bad: #f87171;
+    --bad-hover: #ef4444;
+    --bad-bg: rgba(248, 113, 113, 0.16);
+    --good: #4ade80;
+    --good-bg: rgba(74, 222, 128, 0.16);
   }
 }
 
@@ -72,7 +75,7 @@ html, body {
   min-height: 100dvh;
   background: var(--bg-page);
   color: var(--ink);
-  font-family: "Barlow", -apple-system, system-ui, sans-serif;
+  font-family: "Inter", -apple-system, system-ui, sans-serif;
   overscroll-behavior-y: none;
 }
 
@@ -120,15 +123,44 @@ html, body {
 }
 
 .screen-head {
-  padding: max(20px, env(safe-area-inset-top)) 22px 12px;
+  padding: 18px 22px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex-shrink: 0;
 }
 
+/* ── app topbar: persistent brand + account, gives the app a real "chrome" ── */
+.app-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(12px, env(safe-area-inset-top)) 18px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-app);
+  flex-shrink: 0;
+}
+
+.app-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+}
+
+.app-topbar-mark {
+  color: var(--accent);
+  flex: none;
+}
+
+.app-topbar-brand span {
+  font: 600 12px/1 "Inter", sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
 .eyebrow {
-  font: 400 10px/1 "Barlow", sans-serif;
+  font: 400 10px/1 "Inter", sans-serif;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--accent);
@@ -153,7 +185,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 600 18px/1 "Barlow Condensed", sans-serif;
+  font: 600 18px/1 "Inter", sans-serif;
   color: var(--ink);
 }
 .month-nav-btn:disabled {
@@ -166,7 +198,7 @@ html, body {
 
 .title {
   margin: 0;
-  font: 600 32px/1.05 "Barlow Condensed", sans-serif;
+  font: 700 28px/1.15 "Inter", sans-serif;
   letter-spacing: -0.015em;
 }
 
@@ -184,7 +216,7 @@ html, body {
   border: 0;
   background: transparent;
   padding: 4px 0;
-  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  font: 600 11px/1 "Inter", sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-decoration: underline;
@@ -212,20 +244,11 @@ html, body {
 .ticket {
   position: relative;
   border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   padding: 20px 18px 18px;
   background: var(--bg-app);
   box-shadow: var(--card-shadow);
 }
-
-.corner {
-  position: absolute;
-  font: 400 13px/1 "Barlow", sans-serif;
-  color: var(--accent);
-}
-.corner.tl { top: -8px; left: -5px; }
-.corner.tr { top: -8px; right: -5px; }
-.corner.bl { bottom: -9px; left: -5px; }
-.corner.br { bottom: -9px; right: -5px; }
 
 /* ── reminder banners (Painel) ── */
 .reminder-banners {
@@ -240,9 +263,10 @@ html, body {
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
+  border-radius: var(--radius-sm);
   background: var(--accent-bg);
   color: var(--accent-text);
-  font: 500 12px/1.4 "Barlow", sans-serif;
+  font: 500 12px/1.4 "Inter", sans-serif;
 }
 
 .reminder-banner-dismiss {
@@ -252,14 +276,14 @@ html, body {
   border: 0;
   background: transparent;
   color: inherit;
-  font: 400 18px/1 "Barlow", sans-serif;
+  font: 400 18px/1 "Inter", sans-serif;
   padding: 2px 4px;
   flex: none;
 }
 
 /* ── total card ── */
 .label {
-  font: 400 10px/1 "Barlow", sans-serif;
+  font: 400 10px/1 "Inter", sans-serif;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
@@ -273,13 +297,13 @@ html, body {
 }
 
 .total-hours {
-  font: 600 68px/0.85 "Barlow Condensed", sans-serif;
+  font: 700 58px/0.9 "Inter", sans-serif;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .total-mins {
-  font: 600 22px/1 "Barlow Condensed", sans-serif;
+  font: 600 22px/1 "Inter", sans-serif;
   color: var(--accent);
   padding-bottom: 6px;
 }
@@ -303,7 +327,7 @@ html, body {
   display: flex;
   justify-content: space-between;
   margin-top: 7px;
-  font: 400 11px/1.3 "Barlow", sans-serif;
+  font: 400 11px/1.3 "Inter", sans-serif;
   color: var(--muted);
 }
 
@@ -315,7 +339,7 @@ html, body {
 }
 
 .section-title {
-  font: 600 12px/1 "Barlow Condensed", sans-serif;
+  font: 600 12px/1 "Inter", sans-serif;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink);
@@ -328,7 +352,13 @@ html, body {
 }
 
 .section-note {
-  font: 400 11px/1 "Barlow", sans-serif;
+  font: 400 11px/1 "Inter", sans-serif;
+  color: var(--muted);
+}
+
+.doc-summary {
+  margin: -2px 0 8px;
+  font: 400 12px/1.4 "Inter", sans-serif;
   color: var(--muted);
 }
 
@@ -355,11 +385,11 @@ html, body {
 }
 
 .split-name {
-  font: 500 14px/1.2 "Barlow", sans-serif;
+  font: 500 14px/1.2 "Inter", sans-serif;
 }
 
 .split-value {
-  font: 600 15px/1 "Barlow Condensed", sans-serif;
+  font: 600 15px/1 "Inter", sans-serif;
   font-variant-numeric: tabular-nums;
   color: var(--accent-text);
 }
@@ -380,7 +410,7 @@ html, body {
 .split-pct {
   position: absolute;
   right: 5px; top: 1px;
-  font: 400 10px/12px "Barlow", sans-serif;
+  font: 400 10px/12px "Inter", sans-serif;
   color: var(--muted);
 }
 
@@ -404,7 +434,7 @@ html, body {
 }
 
 .record-day {
-  font: 600 15px/1 "Barlow Condensed", sans-serif;
+  font: 600 15px/1 "Inter", sans-serif;
   font-variant-numeric: tabular-nums;
   color: var(--accent-text);
 }
@@ -416,11 +446,11 @@ html, body {
 }
 
 .record-type {
-  font: 500 14px/1.25 "Barlow", sans-serif;
+  font: 500 14px/1.25 "Inter", sans-serif;
 }
 
 .record-local {
-  font: 400 11px/1.3 "Barlow", sans-serif;
+  font: 400 11px/1.3 "Inter", sans-serif;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -428,10 +458,11 @@ html, body {
 }
 
 .record-dur {
-  font: 400 10px/1 "Barlow", sans-serif;
+  font: 400 10px/1 "Inter", sans-serif;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 5px 7px;
+  border-radius: var(--radius-sm);
   background: var(--accent-bg);
   color: var(--accent-text);
   white-space: nowrap;
@@ -439,7 +470,7 @@ html, body {
 
 .empty-state {
   margin: 4px 0 0;
-  font: 400 13px/1.5 "Barlow", sans-serif;
+  font: 400 13px/1.5 "Inter", sans-serif;
   color: var(--faint);
 }
 
@@ -499,10 +530,11 @@ html, body {
   cursor: pointer;
   -webkit-touch-callout: none;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: transparent;
   min-height: 44px;
   padding: 0 14px;
-  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  font: 600 11px/1 "Inter", sans-serif;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink);
@@ -517,7 +549,7 @@ html, body {
 }
 
 .pager-note {
-  font: 400 11px/1 "Barlow", sans-serif;
+  font: 400 11px/1 "Inter", sans-serif;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -528,6 +560,8 @@ html, body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
   margin-top: 10px;
 }
 
@@ -540,7 +574,7 @@ html, body {
   -webkit-touch-callout: none;
   min-height: 44px;
   padding: 15px 0;
-  font: 600 13px/1 "Barlow Condensed", sans-serif;
+  font: 600 13px/1 "Inter", sans-serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   background: transparent;
@@ -572,6 +606,7 @@ html, body {
 .dot {
   width: 8px;
   height: 8px;
+  border-radius: 50%;
   background: var(--dot-off);
 }
 
@@ -586,14 +621,14 @@ html, body {
 }
 
 #timer-run-label {
-  font: 400 10px/1 "Barlow", sans-serif;
+  font: 400 10px/1 "Inter", sans-serif;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .clock {
-  font: 600 82px/0.82 "Barlow Condensed", sans-serif;
+  font: 700 72px/0.9 "Inter", sans-serif;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
@@ -608,10 +643,10 @@ html, body {
   appearance: none;
   cursor: pointer;
   -webkit-touch-callout: none;
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 /* Tactile press feedback across every tap target — a small, fast scale-down
@@ -629,7 +664,8 @@ html, body {
 .record-edit,
 .record-delete,
 .account-btn,
-.patient-row {
+.patient-row,
+.settings-row {
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 .btn:active,
@@ -644,7 +680,8 @@ html, body {
 .record-edit:active,
 .record-delete:active,
 .account-btn:active,
-.patient-row:active {
+.patient-row:active,
+.settings-row:active {
   transform: scale(0.97);
 }
 
@@ -653,7 +690,7 @@ html, body {
   min-height: 44px;
   border: 1px solid var(--accent);
   padding: 15px 0;
-  font: 600 14px/1 "Barlow Condensed", sans-serif;
+  font: 600 14px/1 "Inter", sans-serif;
   letter-spacing: 0.1em;
   background: var(--accent);
   color: var(--on-accent);
@@ -669,7 +706,7 @@ html, body {
   min-height: 44px;
   background: transparent;
   border: 1px solid var(--line);
-  font: 600 14px/1 "Barlow Condensed", sans-serif;
+  font: 600 14px/1 "Inter", sans-serif;
   letter-spacing: 0.08em;
   color: var(--ink);
 }
@@ -689,7 +726,7 @@ html, body {
 }
 
 .field-label {
-  font: 400 10px/1 "Barlow", sans-serif;
+  font: 400 10px/1 "Inter", sans-serif;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
@@ -704,22 +741,23 @@ input[type="number"] {
   padding: 11px 12px;
   /* 16px minimum: iOS Safari auto-zooms the page on focus for any input
      with a smaller computed font-size. */
-  font: 400 16px/1.2 "Barlow", sans-serif;
+  font: 400 16px/1.2 "Inter", sans-serif;
   color: var(--ink);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   width: 100%;
   min-height: 44px;
 }
 
 .mins-input {
-  font: 600 22px/1.2 "Barlow Condensed", sans-serif !important;
+  font: 600 22px/1.2 "Inter", sans-serif !important;
   font-variant-numeric: tabular-nums;
 }
 
 input[type="file"] {
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 8px;
-  font: 400 13px/1.3 "Barlow", sans-serif;
+  font: 400 13px/1.3 "Inter", sans-serif;
   color: var(--muted);
   width: 100%;
   min-height: 44px;
@@ -728,9 +766,10 @@ input[type="file"] {
 input[type="file"]::file-selector-button {
   appearance: none;
   border: 0;
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--on-accent);
-  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  font: 600 11px/1 "Inter", sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 9px 12px;
@@ -757,6 +796,7 @@ input[type="file"]::file-selector-button {
   -webkit-touch-callout: none;
   padding: 13px 12px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
 }
@@ -770,6 +810,7 @@ input[type="file"]::file-selector-button {
   width: 11px;
   height: 11px;
   flex: none;
+  border-radius: 50%;
   background: transparent;
   border: 1px solid var(--border-off);
 }
@@ -780,12 +821,12 @@ input[type="file"]::file-selector-button {
 }
 
 .type-name {
-  font: 500 15px/1.2 "Barlow", sans-serif;
+  font: 500 15px/1.2 "Inter", sans-serif;
 }
 
 .type-hint {
   margin-left: auto;
-  font: 400 11px/1 "Barlow", sans-serif;
+  font: 400 11px/1 "Inter", sans-serif;
   color: var(--faint);
 }
 
@@ -802,8 +843,9 @@ input[type="file"]::file-selector-button {
 .toast {
   margin-bottom: 10px;
   padding: 9px 11px;
+  border-radius: var(--radius-sm);
   background: var(--accent-bg);
-  font: 500 12px/1.3 "Barlow", sans-serif;
+  font: 500 12px/1.3 "Inter", sans-serif;
   color: var(--accent-text);
 }
 
@@ -811,17 +853,17 @@ input[type="file"]::file-selector-button {
   position: relative;
   width: 100%;
   border: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   background: var(--accent);
   color: var(--on-accent);
   padding: 15px 0;
-  font: 600 16px/1 "Barlow Condensed", sans-serif;
+  font: 600 16px/1 "Inter", sans-serif;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 .btn-save:hover { background: var(--accent-hover); }
 .btn-save:active { background: var(--accent-active); }
-.btn-save .corner { color: var(--on-accent-soft); }
 
 /* ── tab bar ── */
 .tabbar {
@@ -829,7 +871,7 @@ input[type="file"]::file-selector-button {
   bottom: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   background: var(--bg-app);
   border-top: 1px solid var(--line);
   padding: 10px 0 calc(8px + env(safe-area-inset-bottom));
@@ -849,7 +891,7 @@ input[type="file"]::file-selector-button {
   gap: 5px;
   min-height: 44px;
   padding: 6px 0;
-  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  font: 600 11px/1 "Inter", sans-serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -858,6 +900,7 @@ input[type="file"]::file-selector-button {
 .tab-mark {
   width: 9px;
   height: 9px;
+  border-radius: 50%;
   border: 1px solid var(--border-off);
 }
 
@@ -894,7 +937,7 @@ input[type="file"]::file-selector-button {
 
 .streak-note {
   margin-top: 10px;
-  font: 500 12px/1.4 "Barlow", sans-serif;
+  font: 500 12px/1.4 "Inter", sans-serif;
   color: var(--muted);
 }
 .streak-note.is-active {
@@ -914,8 +957,9 @@ input[type="file"]::file-selector-button {
   cursor: pointer;
   -webkit-touch-callout: none;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: transparent;
-  font: 600 12px/1 "Barlow Condensed", sans-serif;
+  font: 600 12px/1 "Inter", sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink);
@@ -939,7 +983,7 @@ input[type="file"]::file-selector-button {
 }
 
 .evolution-label {
-  font: 500 12px/1 "Barlow Condensed", sans-serif;
+  font: 500 12px/1 "Inter", sans-serif;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -964,7 +1008,7 @@ input[type="file"]::file-selector-button {
 }
 
 .evolution-count {
-  font: 600 13px/1 "Barlow Condensed", sans-serif;
+  font: 600 13px/1 "Inter", sans-serif;
   font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--ink);
@@ -986,7 +1030,7 @@ input[type="file"]::file-selector-button {
   display: flex;
   justify-content: space-between;
   margin-top: 8px;
-  font: 400 11px/1.3 "Barlow", sans-serif;
+  font: 400 11px/1.3 "Inter", sans-serif;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -998,14 +1042,15 @@ input[type="file"]::file-selector-button {
 
 /* ── weight tracking (Peso) ── */
 .weight-value {
-  font: 500 14px/1.25 "Barlow", sans-serif;
+  font: 500 14px/1.25 "Inter", sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
 .weight-delta {
-  font: 600 10px/1 "Barlow", sans-serif;
+  font: 600 10px/1 "Inter", sans-serif;
   letter-spacing: 0.02em;
   padding: 5px 7px;
+  border-radius: var(--radius-sm);
   background: var(--track);
   color: var(--muted);
   white-space: nowrap;
@@ -1016,7 +1061,8 @@ input[type="file"]::file-selector-button {
 .weight-delta.weight-down { background: var(--good-bg); color: var(--good); }
 
 /* ── documents ── */
-.doc-view-link {
+.doc-view-link,
+.doc-download-link {
   text-decoration: none;
   display: inline-block;
 }
@@ -1039,12 +1085,13 @@ input[type="file"]::file-selector-button {
   max-width: 340px;
   background: var(--bg-app);
   border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   padding: 22px 18px 18px;
 }
 
 .modal-message {
   margin: 0 0 18px;
-  font: 400 15px/1.5 "Barlow", sans-serif;
+  font: 400 15px/1.5 "Inter", sans-serif;
   color: var(--ink);
 }
 
@@ -1060,9 +1107,10 @@ input[type="file"]::file-selector-button {
   border: 0;
   cursor: pointer;
   -webkit-touch-callout: none;
-  font: 600 13px/1 "Barlow Condensed", sans-serif;
+  font: 600 13px/1 "Inter", sans-serif;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  border-radius: var(--radius-sm);
 }
 
 .modal-btn-cancel {
@@ -1088,14 +1136,15 @@ input[type="file"]::file-selector-button {
   justify-content: center;
   align-items: center;
   padding: 24px;
+  background: var(--bg-page);
 }
 
 .login-wrap {
   width: 100%;
-  max-width: 320px;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
-  gap: 30px;
+  gap: 26px;
   animation: screenFadeIn 0.4s ease both;
 }
 
@@ -1108,26 +1157,35 @@ input[type="file"]::file-selector-button {
 }
 
 .login-mark {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--accent-bg);
   color: var(--accent);
   border: 1px solid var(--line);
+  border-radius: var(--radius-md);
 }
 
 .login-title {
   margin: 0;
-  font: 600 42px/1 "Barlow Condensed", sans-serif;
-  letter-spacing: -0.01em;
+  font: 700 28px/1.2 "Inter", sans-serif;
+  letter-spacing: -0.015em;
 }
 
 .login-subtitle {
   margin: 0;
-  font: 400 13px/1.4 "Barlow", sans-serif;
+  font: 400 13px/1.4 "Inter", sans-serif;
   color: var(--muted);
+}
+
+.login-card {
+  background: var(--bg-app);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+  padding: 28px 24px;
 }
 
 .login-form {
@@ -1148,18 +1206,15 @@ input[type="file"]::file-selector-button {
 .login-footnote {
   margin: 0;
   text-align: center;
-  font: 400 11px/1.5 "Barlow", sans-serif;
+  font: 400 11px/1.5 "Inter", sans-serif;
   color: var(--faint);
 }
 
 /* ── account button (avatar + sair), fixed top-right once logged in ── */
 .account-btn {
-  position: absolute;
-  top: max(14px, env(safe-area-inset-top));
-  right: 16px;
-  z-index: 20;
-  width: 34px;
-  height: 34px;
+  flex: none;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 1px solid var(--line);
   appearance: none;
@@ -1170,8 +1225,7 @@ input[type="file"]::file-selector-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 600 13px/1 "Barlow Condensed", sans-serif;
-  box-shadow: var(--card-shadow);
+  font: 600 12px/1 "Inter", sans-serif;
 }
 @media (hover: hover) {
   .account-btn:hover { background: var(--accent-hover); }
@@ -1182,7 +1236,7 @@ input[type="file"]::file-selector-button {
 }
 .account-email {
   margin: 0 0 10px;
-  font: 400 12px/1.4 "Barlow", sans-serif;
+  font: 400 12px/1.4 "Inter", sans-serif;
   color: var(--muted);
 }
 
@@ -1191,6 +1245,8 @@ input[type="file"]::file-selector-button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
   margin-top: 6px;
 }
 
@@ -1211,14 +1267,14 @@ input[type="file"]::file-selector-button {
 }
 
 .user-name {
-  font: 500 14px/1.25 "Barlow", sans-serif;
+  font: 500 14px/1.25 "Inter", sans-serif;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .user-email {
-  font: 400 11px/1.3 "Barlow", sans-serif;
+  font: 400 11px/1.3 "Inter", sans-serif;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1228,10 +1284,11 @@ input[type="file"]::file-selector-button {
 .user-role-select {
   appearance: none;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background-color: var(--bg-app);
   color: var(--ink);
   padding: 8px 24px 8px 9px;
-  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  font: 600 11px/1 "Inter", sans-serif;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   min-height: 34px;
@@ -1246,7 +1303,8 @@ input[type="file"]::file-selector-button {
 }
 
 /* ── médico: Pacientes ── */
-.patient-row {
+.patient-row,
+.settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1262,16 +1320,23 @@ input[type="file"]::file-selector-button {
   text-align: left;
   color: var(--ink);
 }
-.patient-row:first-child { border-top: 0; }
+.patient-row:first-child,
+.settings-row:first-child { border-top: 0; }
 
-.patient-row-arrow {
-  font: 400 18px/1 "Barlow", sans-serif;
+.settings-row-label {
+  font: 500 15px/1.2 "Inter", sans-serif;
+}
+
+.patient-row-arrow,
+.settings-row-arrow {
+  font: 400 18px/1 "Inter", sans-serif;
   color: var(--faint);
   flex: none;
 }
 
 @media (hover: hover) {
-  .patient-row:hover { background: var(--hover-tint); }
+  .patient-row:hover,
+  .settings-row:hover { background: var(--hover-tint); }
 }
 
 .back-link {
@@ -1283,7 +1348,7 @@ input[type="file"]::file-selector-button {
   padding: 4px 0;
   margin: -4px 0 4px;
   align-self: flex-start;
-  font: 600 12px/1 "Barlow Condensed", sans-serif;
+  font: 600 12px/1 "Inter", sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent-text);

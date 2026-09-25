@@ -160,12 +160,23 @@ Storage `pandafit-documents`, no Supabase (`ClaudeProjects`) — cada linha
 pertence a um `user_id` e os dados persistem no banco, disponíveis em
 qualquer dispositivo em que a mesma conta faça login.
 
-Visual em Barlow / Barlow Condensed, paleta terracota `#b6633f` sobre
-neutros quentes (`#fbf8f4`/`#efeae2`), cartões com cantos retos, marcas "+"
-nos vértices e leve elevação (`box-shadow`) — estilo ticket/recibo, com
-modo escuro automático (ver abaixo), transição suave ao trocar de aba e
-feedback tátil (`:active { transform: scale(...) }`) em todo alvo de
-toque.
+Visual corporativo: fonte única Inter (400 a 800), paleta azul/slate
+(`#2563eb` de destaque sobre neutros frios `#ffffff`/`#f8fafc`, com
+equivalente em azul `#3b82f6` sobre slate `#0f172a`/`#1e293b` no modo
+escuro), cantos suavemente arredondados (`--radius-sm/md/lg`: 6/10/14px)
+em cartões, botões, campos e badges, e leve elevação (`box-shadow`) —
+substituiu o visual anterior em Barlow/Barlow Condensed com paleta
+terracota, cantos retos e marcas "+" nos vértices (estilo ticket/recibo).
+Mantém modo escuro automático (ver abaixo), transição suave ao trocar de
+aba e feedback tátil (`:active { transform: scale(...) }`) em todo alvo de
+toque. Uma barra de topo fixa (marca "PandaFit" + avatar da conta) fica
+sempre visível acima do conteúdo em todas as telas, dando ao app uma
+identidade de "cabeçalho" persistente em vez de cada tela abrir direto no
+título grande — sem ela, no topo sobrava um espaço vazio do tamanho da
+barra de status antes de qualquer conteúdo aparecer. A tela de login
+("LaVie Fit") segue o mesmo padrão: formulário dentro de um cartão com
+borda e sombra centralizado sobre o fundo da página, em vez de campos
+soltos direto na tela.
 
 ### Autenticação e papéis
 
@@ -182,12 +193,13 @@ essa tabela via a função `pandafit_current_role()` (`security definer`,
 nenhuma política libera nada — uma conta autenticada de *outro* app deste
 mesmo projeto nunca enxerga dado nenhum do PandaFit.
 
-- **usuario**: acesso só às próprias linhas (`user_id = auth.uid()`) —
-  Painel/Registrar/Meta/Documentos, exatamente como descrito abaixo.
+- **usuario**: acesso só às próprias linhas (`user_id = auth.uid()`) — a
+  tabbar mostra **Painel · Registrar · Config.** (3 abas — Meta e
+  Documentos moraram dentro de Configurações, ver abaixo).
 - **admin**: mesmo acesso de um usuario às próprias telas (o admin também
-  treina), mais uma aba **Usuários** — cadastrar (nome, e-mail, senha
-  inicial, papel usuario/médico), trocar o papel de alguém ou revogar o
-  acesso ao PandaFit. Tudo isso chama a edge function
+  treina), mais um item **Usuários** dentro de Configurações — cadastrar
+  (nome, e-mail, senha inicial, papel usuario/médico), trocar o papel de
+  alguém ou revogar o acesso ao PandaFit. Tudo isso chama a edge function
   `pandafit-admin-users` (service role key, nunca exposta no cliente), que
   confirma que quem chamou é admin antes de qualquer ação. Ao convidar um
   e-mail que já tem conta neste projeto compartilhado (comum, já que é
@@ -196,10 +208,14 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   conta pode logar em outro app. Revogar remove só a linha de
   `pandafit_usuarios` (nunca a conta em `auth.users`, pelo mesmo motivo).
 - **medico**: sem tabbar — cai direto numa tela **Pacientes**, lista de
-  contas com `role = 'usuario'`; ao selecionar uma, vê (somente leitura,
-  sem editar/excluir) os documentos enviados, o gráfico de tendência de
-  peso, o histórico de peso e os treinos mais recentes daquele paciente. É
-  a tela pedida para o médico acompanhar o que o usuário envia.
+  contas com `role = 'usuario'`; ao selecionar uma, vê o gráfico de
+  tendência de peso, o histórico de peso e os treinos mais recentes
+  daquele paciente (somente leitura, sem editar/excluir) e a seção
+  **Documentos**, com um resumo (espaço total ocupado + data do envio mais
+  recente), link **Baixar** (signed URL com download forçado, em vez de só
+  abrir numa aba) além do **Ver**, e exclusão — o único ponto onde o médico
+  pode apagar algo do paciente, pra tirar um exame enviado errado ou já
+  obsoleto (ver `0053_pandafit_medico_pode_excluir_documentos.sql`).
 
 O primeiro admin (`rodrigosilvapmp@hotmail.com`) foi cadastrado direto via
 SQL (`0049_pandafit_bootstrap_admin.sql`) reaproveitando uma conta que já
@@ -209,17 +225,27 @@ autenticação foi migrado para essa conta.
 
 Documentos: o bucket `pandafit-documents` **não é mais público** — cada
 arquivo vive em `<user_id>/<arquivo>` e as políticas de Storage restringem
-`select`/`insert`/`delete` à própria pasta (médico tem `select` em todas).
-O link "Ver" gera uma signed URL (`createSignedUrl`, expira em 5 minutos)
-na hora do clique em vez de expor uma URL pública permanente — importante
-agora que a aba guarda exame médico de verdade.
+`insert` à própria pasta e `select`/`delete` à própria pasta **ou** ao
+médico (que enxerga e pode excluir o documento de qualquer paciente, mas
+nunca insere um). O link "Ver" gera uma signed URL (`createSignedUrl`,
+expira em 5 minutos) na hora do clique em vez de expor uma URL pública
+permanente — importante agora que a aba guarda exame médico de verdade; o
+"Baixar" do médico usa a mesma signed URL com a opção `download`, que força
+o navegador a salvar o arquivo em vez de só abri-lo numa aba.
 
 A tela de login exibe o nome **LaVie Fit** (o app em si continua se
 chamando PandaFit em todo o resto — título da aba, ícones, nome do PWA).
 
-As quatro telas abaixo (Painel/Registrar/Meta/Documentos) são a
-experiência de quem loga como **usuario** ou **admin**; o **medico** vê a
-tela de Pacientes descrita acima em vez delas.
+Quem loga como **usuario** ou **admin** vê a tabbar com **Painel ·
+Registrar · Config.** — Meta, Documentos e (só para admin) Usuários não
+têm aba própria: são linhas dentro de **Configurações**, cada uma abrindo
+sua tela com um "‹ Configurações" para voltar. Isso existe porque a
+tabbar com uma aba por tela (Painel/Registrar/Meta/Documentos/Usuários)
+quebrava visualmente assim que o admin logava — 5 itens não cabem numa
+grade de 4 colunas e a 5ª aba ("Usuários") ficava sozinha numa segunda
+linha. Com só 3 abas fixas, a tabbar nunca quebra, seja qual for o papel.
+O **medico** não tem tabbar nem Configurações — vê só a tela de Pacientes
+descrita acima.
 
 - **Painel**: banners de lembrete no topo (só no mês atual) — "faltam X
   treinos para bater a meta deste mês" quando ainda não bateu, e "você ainda
@@ -230,16 +256,18 @@ tela de Pacientes descrita acima em vez delas.
   para navegar entre meses (a seta `›` fica desabilitada no mês atual — não
   dá pra ver o futuro); cartão de total de treinos no mês (contagem, não
   duração) com
-  barra de progresso até a meta mensal; divisão do tempo por tipo de treino
-  (Musculação, Jiu Jitsu, Corrida); lista dos registros do mês (dia, tipo,
+  barra de progresso até a meta mensal; divisão do tempo por modalidade
+  (só as usadas no mês — não o catálogo inteiro, ver Modalidades abaixo);
+  lista dos registros do mês (dia, tipo,
   local, duração), paginada de 5 em 5, com botão de editar (lápis) e de
   excluir (confirmação antes de apagar) em cada linha — tudo recalculado
   para o mês selecionado.
 - **Registrar**: alterna entre **Treino** e **Peso** por uma aba superior;
   dentro de Treino, alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
-  duração corrida ao salvar), com seletor do tipo de treino e campo opcional
-  de local; dentro de Peso, registra data + kg (salvar no mesmo dia
+  duração corrida ao salvar), com seletor do tipo de treino (vem do catálogo
+  de Modalidades — ver abaixo) e campo de local com autocomplete (vem do
+  catálogo de Locais); dentro de Peso, registra data + kg (salvar no mesmo dia
   sobrescreve em vez de duplicar — `upsert` por `date`, que é `unique` na
   tabela), mostra um gráfico de linha simples (SVG, sem biblioteca) com a
   tendência dos últimos 30 pesos registrados — some se houver menos de 2
@@ -265,13 +293,31 @@ tela de Pacientes descrita acima em vez delas.
   meta; botões para baixar todos os treinos e todos os pesos já carregados
   em CSV (ordenado por data, `,` como separador, `.` como decimal — sem
   formatação brasileira para não colidir com o separador de campo — e BOM
-  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local); seção
-  "Conta" no fim mostrando e-mail/papel logado e o botão **Sair**.
+  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local).
 - **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
   Supabase, salvo em `<user_id>/<arquivo>`; lista paginada de 5 em 5 com
   nome, tamanho, data de envio, link "Ver" (gera uma signed URL na hora do
   clique — o bucket não é público) e exclusão (remove do Storage e da
   tabela).
+- **Modalidades** e **Locais**: catálogos por usuário (`pandafit_workout_types`
+  e `pandafit_locations`) — tudo que é "cadastrável" no PandaFit mora em
+  Configurações, não mais numa lista fixa no código. Modalidades tem nome +
+  apelido opcional (ex: "Natação" / "piscina") e alimenta os botões de tipo
+  em Registrar; Locais tem só nome e alimenta o autocomplete do campo Local.
+  Excluir um item do catálogo não apaga treinos já registrados com ele (o
+  texto fica salvo solto na linha do treino). Uma conta nova recebe as 3
+  modalidades clássicas (Musculação/Jiu Jitsu/Corrida) de largada; contas
+  que já tinham treinos registrados antes dessa mudança tiveram seu
+  histórico migrado direto para os novos catálogos
+  (`0051_pandafit_workout_types_and_locations.sql`). Digitar um local novo
+  direto em Registrar (sem passar por Configurações primeiro) também
+  cadastra ele sozinho no catálogo — conveniência que substitui o
+  autocomplete antigo (calculado na hora a partir do histórico de treinos).
+- **Configurações**: tela raiz com uma linha por item (Meta, Modalidades,
+  Locais, Documentos e, só para admin, Usuários), cada uma abrindo a tela
+  correspondente; embaixo, a seção "Conta" mostra e-mail + papel logado e o
+  botão **Sair** (o mesmo avatar da barra de topo também abre a confirmação
+  de logout, de qualquer tela).
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`
@@ -281,7 +327,7 @@ excluir, `-webkit-tap-highlight-color`/`-webkit-touch-callout` desligados
 para não ficar com o realce cinza/menu de contexto do Safari, e
 `overscroll-behavior` para conter o bounce de rolagem à área de conteúdo.
 Também ganhou meta tags de "adicionar à tela de início" (ícone, título,
-barra de status). Um botão circular no canto superior direito (iniciais do
+barra de status). Um botão circular na barra de topo (iniciais do
 nome/e-mail) fica visível em qualquer tela após o login e abre a
 confirmação de logout — mesmo modal reusado para excluir registros.
 
@@ -325,6 +371,15 @@ esse cache que fez o fix da vírgula no campo de peso parecer que não tinha
 entrado no ar). **Sempre que alterar `app.js`, `styles.css` ou
 `supabaseClient.js`, incremente esse número nos três lugares — e também em
 `CACHE_NAME`/`APP_SHELL` dentro de `sw.js` (ver seção PWA acima).**
+
+**`<base href="/pandafit/">`**: o app também é servido via Vercel a partir
+da raiz deste repositório (ex: `erpconnect.vercel.app/pandafit`), e esse
+host — ao contrário do GitHub Pages — não redireciona `.../pandafit` (sem
+barra final) para `.../pandafit/`. Sem a barra, o navegador resolve os
+caminhos relativos (`assets/styles.css`, `assets/app.js`, `manifest.json`,
+`sw.js`) a partir da raiz do domínio em vez desta pasta, e nada carrega — a
+tela de login aparecia sem nenhum CSS/JS aplicado. A tag `<base>` no
+`<head>` fixa a URL-base da página independente de como ela foi aberta.
 
 ## Painel de Reports (`/reports`)
 

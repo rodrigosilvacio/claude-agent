@@ -2,10 +2,18 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8" />
+<!-- Fixa a URL-base da página em /pandafit/ para que os caminhos relativos
+     (assets/styles.css, assets/app.js, manifest.json, sw.js) resolvam certo
+     mesmo quando a página é aberta sem a barra final (".../pandafit" em vez
+     de ".../pandafit/") — alguns hosts (ex: Vercel) não redirecionam esse
+     caso automaticamente como o GitHub Pages faz, e sem isso o navegador
+     resolve os caminhos relativos a partir da raiz do domínio, não desta
+     pasta, e nada carrega. -->
+<base href="/pandafit/" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>PandaFit · Registro de treinos</title>
-<meta name="theme-color" content="#fbf8f4" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#1c1712" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="PandaFit" />
@@ -15,8 +23,8 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=15" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/styles.css?v=18" />
 </head>
 <body>
 
@@ -35,33 +43,41 @@
         <p class="login-subtitle">Treinos, peso e exames em um só lugar.</p>
       </div>
 
-      <form class="login-form" id="login-form" novalidate>
-        <label class="field">
-          <span class="field-label">E-mail</span>
-          <input type="email" id="login-email" inputmode="email" autocomplete="username" required />
-        </label>
-        <label class="field">
-          <span class="field-label">Senha</span>
-          <input type="password" id="login-password" autocomplete="current-password" required />
-        </label>
-        <div class="toast toast-error" id="login-error" hidden></div>
-        <button type="submit" class="btn btn-save login-submit" id="btn-login">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
-          <span id="btn-login-label">Entrar</span>
-        </button>
-      </form>
+      <div class="login-card">
+        <form class="login-form" id="login-form" novalidate>
+          <label class="field">
+            <span class="field-label">E-mail</span>
+            <input type="email" id="login-email" inputmode="email" autocomplete="username" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Senha</span>
+            <input type="password" id="login-password" autocomplete="current-password" required />
+          </label>
+          <div class="toast toast-error" id="login-error" hidden></div>
+          <button type="submit" class="btn btn-save login-submit" id="btn-login">
+            <span id="btn-login-label">Entrar</span>
+          </button>
+        </form>
+      </div>
 
       <p class="login-footnote">Acesso só por convite — fale com o administrador se precisar de uma conta.</p>
     </div>
   </main>
 
-  <!-- ───────── Conta (avatar + sair), visível após login ───────── -->
-  <button type="button" class="account-btn" id="btn-account" hidden aria-label="Conta">
-    <span id="account-initial"></span>
-  </button>
-
   <div id="app-shell" hidden>
+
+    <!-- ───────── Barra de topo (marca do app + conta) ───────── -->
+    <header class="app-topbar">
+      <div class="app-topbar-brand">
+        <svg class="app-topbar-mark" width="16" height="16" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+          <path d="M4 21h6.5l2.5-9 5 19 4-15 2.5 5H36" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>PandaFit</span>
+      </div>
+      <button type="button" class="account-btn" id="btn-account" aria-label="Conta">
+        <span id="account-initial"></span>
+      </button>
+    </header>
 
     <!-- ───────── Painel do mês ───────── -->
     <main class="screen" id="screen-painel" data-screen="painel">
@@ -79,8 +95,6 @@
         <div id="reminder-banners" class="reminder-banners" hidden></div>
 
         <div class="ticket total-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Treinos no mês</div>
           <div class="total-row">
             <span class="total-hours" id="month-count">0</span>
@@ -140,8 +154,6 @@
         </div>
 
         <div class="ticket timer-card" id="timer-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="timer-status">
             <span class="dot" id="timer-dot"></span>
             <span id="timer-run-label">Pausado</span>
@@ -179,8 +191,6 @@
       <div class="save-bar" id="save-bar-treino">
         <div class="toast" id="toast" hidden></div>
         <button type="button" class="btn btn-save" id="btn-save">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <span id="btn-save-label">Salvar treino</span>
         </button>
       </div>
@@ -189,8 +199,6 @@
       <div class="screen-body" id="section-peso" hidden>
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Registrar peso</div>
           <label class="field goal-field">
             <span class="field-label">Data</span>
@@ -234,14 +242,13 @@
     <!-- ───────── Meta ───────── -->
     <main class="screen" id="screen-meta" data-screen="meta" hidden>
       <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
         <h1 class="title">Meta</h1>
       </div>
 
       <div class="screen-body">
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Meta mensal</div>
           <label class="field goal-field">
             <span class="field-label">Treinos por mês (1 a 30)</span>
@@ -269,8 +276,6 @@
         </div>
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Meta de peso</div>
           <label class="field goal-field">
             <span class="field-label">Peso-alvo em kg (opcional — em branco remove a meta)</span>
@@ -292,10 +297,72 @@
           </div>
         </div>
 
-        <div class="section account-section">
-          <div class="section-title">Conta</div>
-          <p class="account-email" id="meta-account-email"></p>
-          <button type="button" class="export-btn" id="btn-logout-meta">Sair</button>
+      </div>
+    </main>
+
+    <!-- ───────── Modalidades ───────── -->
+    <main class="screen" id="screen-modalidades" data-screen="modalidades" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
+        <h1 class="title">Modalidades</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <div class="label">Cadastrar modalidade</div>
+          <label class="field goal-field">
+            <span class="field-label">Nome</span>
+            <input type="text" id="input-type-name" placeholder="Ex: Natação" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">Apelido (opcional)</span>
+            <input type="text" id="input-type-hint" placeholder="Ex: piscina" />
+          </label>
+          <div class="toast" id="type-form-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-type">Cadastrar</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Modalidades cadastradas</span>
+            <span class="section-note" id="types-count-note">0 modalidades</span>
+          </div>
+          <div id="types-list" class="records-list">
+            <p class="empty-state">Carregando modalidades…</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Locais ───────── -->
+    <main class="screen" id="screen-locais" data-screen="locais" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
+        <h1 class="title">Locais</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <div class="label">Cadastrar local</div>
+          <label class="field goal-field">
+            <span class="field-label">Nome</span>
+            <input type="text" id="input-location-name" placeholder="Ex: Academia Center" />
+          </label>
+          <div class="toast" id="location-form-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-location">Cadastrar</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Locais cadastrados</span>
+            <span class="section-note" id="locations-count-note">0 locais</span>
+          </div>
+          <div id="locations-list" class="records-list">
+            <p class="empty-state">Carregando locais…</p>
+          </div>
         </div>
 
       </div>
@@ -304,14 +371,13 @@
     <!-- ───────── Documentos ───────── -->
     <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
       <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
         <h1 class="title">Documentos</h1>
       </div>
 
       <div class="screen-body">
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Enviar exame</div>
           <label class="field goal-field">
             <span class="field-label">Arquivo (PDF, JPG ou PNG — até 10MB)</span>
@@ -339,17 +405,58 @@
       </div>
     </main>
 
+    <!-- ───────── Configurações ───────── -->
+    <main class="screen" id="screen-config" data-screen="config" hidden>
+      <div class="screen-head">
+        <h1 class="title">Configurações</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="section">
+          <div class="settings-list">
+            <button type="button" class="settings-row" data-open="meta">
+              <span class="settings-row-label">Meta</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="modalidades">
+              <span class="settings-row-label">Modalidades</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="locais">
+              <span class="settings-row-label">Locais</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="documentos">
+              <span class="settings-row-label">Documentos</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="usuarios" id="settings-row-usuarios" hidden>
+              <span class="settings-row-label">Usuários</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="section account-section">
+          <div class="section-title">Conta</div>
+          <p class="account-email" id="config-account-email"></p>
+          <button type="button" class="export-btn" id="btn-logout-config">Sair</button>
+        </div>
+
+      </div>
+    </main>
+
     <!-- ───────── Usuários (admin) ───────── -->
     <main class="screen" id="screen-usuarios" data-screen="usuarios" hidden>
       <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
         <h1 class="title">Usuários</h1>
       </div>
 
       <div class="screen-body">
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Cadastrar usuário</div>
           <label class="field goal-field">
             <span class="field-label">Nome</span>
@@ -403,9 +510,6 @@
             <p class="empty-state">Carregando pacientes…</p>
           </div>
         </div>
-        <div class="section account-section">
-          <button type="button" class="export-btn" id="btn-logout-pacientes">Sair</button>
-        </div>
       </div>
 
       <div class="screen-body" id="pacientes-detail-view" hidden>
@@ -416,6 +520,7 @@
             <span class="section-title">Documentos</span>
             <span class="section-note" id="patient-docs-note"></span>
           </div>
+          <p class="doc-summary" id="patient-docs-summary" hidden></p>
           <div id="patient-documents-list" class="records-list"></div>
         </div>
 
@@ -452,17 +557,9 @@
         <span class="tab-mark"></span>
         <span>Registrar</span>
       </button>
-      <button type="button" class="tab-btn" data-tab="meta">
+      <button type="button" class="tab-btn" data-tab="config">
         <span class="tab-mark"></span>
-        <span>Meta</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="documentos">
-        <span class="tab-mark"></span>
-        <span>Documentos</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="usuarios" id="tab-btn-usuarios" hidden>
-        <span class="tab-mark"></span>
-        <span>Usuários</span>
+        <span>Config.</span>
       </button>
     </nav>
 
@@ -471,8 +568,6 @@
   <!-- ───────── Confirm modal ───────── -->
   <div class="modal-overlay" id="confirm-modal" hidden>
     <div class="modal-card">
-      <span class="corner tl">+</span><span class="corner tr">+</span>
-      <span class="corner bl">+</span><span class="corner br">+</span>
       <p class="modal-message" id="confirm-modal-message"></p>
       <div class="modal-actions">
         <button type="button" class="modal-btn modal-btn-cancel" id="confirm-modal-cancel">Cancelar</button>
@@ -483,6 +578,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=15"></script>
+<script type="module" src="assets/app.js?v=18"></script>
 </body>
 </html>
