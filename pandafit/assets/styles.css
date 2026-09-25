@@ -1,25 +1,26 @@
 :root {
-  --ink: #1d1f20;
+  --ink: #211f1b;
   --ink-dark: #1d2d3d;
-  --muted: #5d5d60;
-  --faint: #7a7a7d;
-  --accent: #5980a6;
-  --accent-hover: #597ea3;
-  --accent-active: #416180;
-  --accent-bg: #eef6ff;
-  --accent-text: #2c455d;
-  --on-accent: #f2f2f3;
-  --on-accent-soft: rgba(242, 242, 243, 0.65);
-  --line: rgba(29, 31, 32, 0.16);
-  --line-soft: rgba(29, 31, 32, 0.1);
-  --hover-tint: rgba(29, 31, 32, 0.07);
-  --shadow: rgba(0, 0, 0, 0.06);
-  --overlay: rgba(0, 0, 0, 0.45);
-  --bg-app: #f2f2f3;
-  --bg-page: #e7e7ea;
-  --track: #e7e7ea;
-  --dot-off: #b7b7ba;
-  --border-off: #98989b;
+  --muted: #6b665e;
+  --faint: #948d81;
+  --accent: #b6633f;
+  --accent-hover: #c17048;
+  --accent-active: #914c30;
+  --accent-bg: #f7ebe1;
+  --accent-text: #8f4c30;
+  --on-accent: #fbf8f4;
+  --on-accent-soft: rgba(251, 248, 244, 0.7);
+  --line: rgba(33, 31, 27, 0.14);
+  --line-soft: rgba(33, 31, 27, 0.09);
+  --hover-tint: rgba(33, 31, 27, 0.06);
+  --shadow: rgba(35, 25, 15, 0.08);
+  --card-shadow: 0 2px 12px rgba(40, 30, 18, 0.07);
+  --overlay: rgba(20, 15, 10, 0.45);
+  --bg-app: #fbf8f4;
+  --bg-page: #efeae2;
+  --track: #e9e3d9;
+  --dot-off: #c9c0b2;
+  --border-off: #a39a8c;
   --bad: #b3423f;
   --bad-hover: #9c3835;
   --bad-bg: #fbeceb;
@@ -29,25 +30,28 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #eef1f3;
+    --ink: #f2ede4;
     --ink-dark: #cfe0ef;
-    --muted: #a6a9ac;
-    --faint: #82868a;
-    --accent: #6fa0cc;
-    --accent-hover: #7cabd4;
-    --accent-active: #5c8fbd;
-    --accent-bg: rgba(111, 160, 204, 0.16);
-    --accent-text: #a9cdea;
-    --line: rgba(255, 255, 255, 0.16);
-    --line-soft: rgba(255, 255, 255, 0.1);
-    --hover-tint: rgba(255, 255, 255, 0.08);
+    --muted: #b6ac9d;
+    --faint: #8f8676;
+    --accent: #d68a63;
+    --accent-hover: #dd9873;
+    --accent-active: #c17a54;
+    --accent-bg: rgba(214, 138, 99, 0.16);
+    --accent-text: #e3a988;
+    --on-accent: #1b1712;
+    --on-accent-soft: rgba(27, 23, 18, 0.7);
+    --line: rgba(255, 247, 235, 0.14);
+    --line-soft: rgba(255, 247, 235, 0.09);
+    --hover-tint: rgba(255, 247, 235, 0.07);
     --shadow: rgba(0, 0, 0, 0.4);
+    --card-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
     --overlay: rgba(0, 0, 0, 0.6);
-    --bg-app: #15191c;
-    --bg-page: #0d0f11;
-    --track: #262b2f;
-    --dot-off: #45494d;
-    --border-off: #55595d;
+    --bg-app: #1c1712;
+    --bg-page: #120f0b;
+    --track: #2c261e;
+    --dot-off: #4c4335;
+    --border-off: #605646;
     --bad: #e0736f;
     --bad-hover: #c85f5b;
     --bad-bg: rgba(224, 115, 111, 0.16);
@@ -98,6 +102,21 @@ html, body {
 }
 [hidden] {
   display: none !important;
+}
+
+#app-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes screenFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.screen-body {
+  animation: screenFadeIn 0.28s ease both;
 }
 
 .screen-head {
@@ -193,7 +212,9 @@ html, body {
 .ticket {
   position: relative;
   border: 1px solid var(--line);
-  padding: 18px 16px 16px;
+  padding: 20px 18px 18px;
+  background: var(--bg-app);
+  box-shadow: var(--card-shadow);
 }
 
 .corner {
@@ -501,7 +522,7 @@ html, body {
   white-space: nowrap;
 }
 
-/* ── mode tabs (registrar) ── */
+/* ── mode tabs (registrar), role picker (usuários) ── */
 .mode-tabs,
 .section-tabs {
   display: grid;
@@ -511,7 +532,8 @@ html, body {
 }
 
 .mode-tab,
-.section-tab {
+.section-tab,
+.role-option {
   appearance: none;
   border: 0;
   cursor: pointer;
@@ -526,7 +548,8 @@ html, body {
 }
 
 .mode-tab.active,
-.section-tab.active {
+.section-tab.active,
+.role-option.active {
   background: var(--accent);
   color: var(--on-accent);
 }
@@ -589,6 +612,40 @@ html, body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   border-radius: 0;
+}
+
+/* Tactile press feedback across every tap target — a small, fast scale-down
+   reads as "the app noticed my tap" on a phone, where there's no hover. */
+.btn,
+.btn-save,
+.export-btn,
+.pager-btn,
+.month-nav-btn,
+.mode-tab,
+.section-tab,
+.type-option,
+.role-option,
+.tab-btn,
+.record-edit,
+.record-delete,
+.account-btn,
+.patient-row {
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.btn:active,
+.btn-save:active,
+.export-btn:active,
+.pager-btn:not(:disabled):active,
+.month-nav-btn:not(:disabled):active,
+.mode-tab:active,
+.section-tab:active,
+.type-option:active,
+.role-option:active,
+.record-edit:active,
+.record-delete:active,
+.account-btn:active,
+.patient-row:active {
+  transform: scale(0.97);
 }
 
 .btn-primary {
@@ -1024,4 +1081,210 @@ input[type="file"]::file-selector-button {
 .modal-btn-confirm:active { background: var(--bad-hover); }
 @media (hover: hover) {
   .modal-btn-confirm:hover { background: var(--bad-hover); }
+}
+
+/* ── login screen ("LaVie Fit") ── */
+.screen-login {
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+
+.login-wrap {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  animation: screenFadeIn 0.4s ease both;
+}
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.login-mark {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid var(--line);
+}
+
+.login-title {
+  margin: 0;
+  font: 600 42px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.login-subtitle {
+  margin: 0;
+  font: 400 13px/1.4 "Barlow", sans-serif;
+  color: var(--muted);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-submit {
+  margin-top: 4px;
+}
+
+.toast-error {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+
+.login-footnote {
+  margin: 0;
+  text-align: center;
+  font: 400 11px/1.5 "Barlow", sans-serif;
+  color: var(--faint);
+}
+
+/* ── account button (avatar + sair), fixed top-right once logged in ── */
+.account-btn {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 16px;
+  z-index: 20;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 13px/1 "Barlow Condensed", sans-serif;
+  box-shadow: var(--card-shadow);
+}
+@media (hover: hover) {
+  .account-btn:hover { background: var(--accent-hover); }
+}
+
+.account-section {
+  padding-top: 4px;
+}
+.account-email {
+  margin: 0 0 10px;
+  font: 400 12px/1.4 "Barlow", sans-serif;
+  color: var(--muted);
+}
+
+/* ── admin: Usuários ── */
+.role-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  margin-top: 6px;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.user-row:first-child { border-top: 0; }
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-name {
+  font: 500 14px/1.25 "Barlow", sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-email {
+  font: 400 11px/1.3 "Barlow", sans-serif;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-role-select {
+  appearance: none;
+  border: 1px solid var(--line);
+  background-color: var(--bg-app);
+  color: var(--ink);
+  padding: 8px 24px 8px 9px;
+  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-height: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23948d81' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 10px 6px;
+  padding-right: 26px;
+}
+.user-role-select:disabled {
+  opacity: 0.5;
+}
+
+/* ── médico: Pacientes ── */
+.patient-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: transparent;
+  padding: 13px 0;
+  text-align: left;
+  color: var(--ink);
+}
+.patient-row:first-child { border-top: 0; }
+
+.patient-row-arrow {
+  font: 400 18px/1 "Barlow", sans-serif;
+  color: var(--faint);
+  flex: none;
+}
+
+@media (hover: hover) {
+  .patient-row:hover { background: var(--hover-tint); }
+}
+
+.back-link {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  margin: -4px 0 4px;
+  align-self: flex-start;
+  font: 600 12px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
 }

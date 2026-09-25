@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=14';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=15';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -8,6 +8,8 @@ var MAX_WORKOUT_MINUTES = 720;
 var MAX_MONTH_OFFSET = 60;
 var MAX_STREAK_LOOKBACK = 240;
 var WEIGHT_CHART_MAX_POINTS = 30;
+var PATIENT_RECENT_LIMIT = 20;
+var SIGNED_URL_TTL_SECONDS = 300;
 
 var WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -22,6 +24,10 @@ var EDIT_ICON_SVG = '<svg width="15" height="16" viewBox="0 0 16 16" fill="none"
 
 // ── state ──
 var state = {
+  session: null,
+  profile: null, // { id, email, nome, role }
+  loginLoading: false,
+
   tab: 'painel',
   registrarSection: 'treino',
   mode: 'manual',
@@ -59,6 +65,20 @@ var state = {
   uploadingDocument: false,
   documentsPage: 0,
   deletingDocumentId: null,
+
+  // admin: Usuários
+  users: [],
+  usersLoading: true,
+  usersLoadError: false,
+  creatingUser: false,
+  newUserRole: 'usuario',
+
+  // medico: Pacientes
+  patients: [],
+  patientsLoading: true,
+  patientsLoadError: false,
+  selectedPatient: null,
+  patientDetail: null, // { workouts, weights, documents, loading, loadError }
 };
 var timerHandle = null;
 
@@ -160,22 +180,29 @@ function parseISO(iso) {
   return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
-// ── Supabase persistence ──
-async function fetchWorkouts() {
+function currentUserId() {
+  return state.session && state.session.user && state.session.user.id;
+}
+
+// ── Supabase persistence (all scoped to a user_id — either the caller's own,
+// via currentUserId(), or a selected patient's, when a médico is viewing) ──
+async function fetchWorkouts(userId, limit) {
   var { data, error } = await supabase
     .from('pandafit_workouts')
     .select('id, date, type, minutes, local')
+    .eq('user_id', userId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(500);
+    .limit(limit || 500);
   if (error) throw error;
   return data;
 }
 
 async function insertWorkout(row) {
+  var payload = Object.assign({ user_id: currentUserId() }, row);
   var { data, error } = await supabase
     .from('pandafit_workouts')
-    .insert(row)
+    .insert(payload)
     .select('id, date, type, minutes, local')
     .single();
   if (error) throw error;
@@ -201,48 +228,45 @@ async function deleteWorkout(id) {
   if (error) throw error;
 }
 
-async function fetchSettings() {
+async function fetchSettings(userId) {
   var { data, error } = await supabase
     .from('pandafit_settings')
     .select('monthly_goal, target_weight_kg')
-    .eq('id', 1)
-    .single();
+    .eq('user_id', userId)
+    .maybeSingle();
   if (error) throw error;
-  return data;
+  return data; // null for a brand-new account that never saved settings
 }
 
-async function updateSettings(monthlyGoal) {
+// Upsert-by-user_id: only the keys in `patch` are written, so saving the
+// goal alone never clobbers an already-saved target_weight_kg (and vice
+// versa) — Postgres' ON CONFLICT DO UPDATE only touches the columns given.
+async function upsertSettings(patch) {
+  var payload = Object.assign({ user_id: currentUserId(), updated_at: new Date().toISOString() }, patch);
   var { error } = await supabase
     .from('pandafit_settings')
-    .update({ monthly_goal: monthlyGoal, updated_at: new Date().toISOString() })
-    .eq('id', 1);
+    .upsert(payload, { onConflict: 'user_id' });
   if (error) throw error;
 }
 
-async function updateTargetWeight(kg) {
-  var { error } = await supabase
-    .from('pandafit_settings')
-    .update({ target_weight_kg: kg, updated_at: new Date().toISOString() })
-    .eq('id', 1);
-  if (error) throw error;
-}
-
-async function fetchWeights() {
+async function fetchWeights(userId, limit) {
   var { data, error } = await supabase
     .from('pandafit_weights')
     .select('id, date, weight_kg')
+    .eq('user_id', userId)
     .order('date', { ascending: false })
-    .limit(500);
+    .limit(limit || 500);
   if (error) throw error;
   return data;
 }
 
-// Upsert on `date`: correcting today's weight overwrites the row instead of
-// creating a second entry for the same day.
+// Upsert on (user_id, date): correcting today's weight overwrites the row
+// instead of creating a second entry for the same day.
 async function upsertWeight(row) {
+  var payload = Object.assign({ user_id: currentUserId() }, row);
   var { data, error } = await supabase
     .from('pandafit_weights')
-    .upsert(row, { onConflict: 'date' })
+    .upsert(payload, { onConflict: 'user_id,date' })
     .select('id, date, weight_kg')
     .single();
   if (error) throw error;
@@ -268,18 +292,23 @@ async function deleteWeight(id) {
   if (error) throw error;
 }
 
-async function fetchDocuments() {
+async function fetchDocuments(userId, limit) {
   var { data, error } = await supabase
     .from('pandafit_documents')
     .select('id, file_name, file_path, file_type, file_size, uploaded_at')
+    .eq('user_id', userId)
     .order('uploaded_at', { ascending: false })
-    .limit(200);
+    .limit(limit || 200);
   if (error) throw error;
   return data;
 }
 
+// Arquivos vivem em "<user_id>/<arquivo>" — é essa pasta que a policy de
+// Storage usa pra restringir cada usuário à própria pasta (ver migration
+// 0048). O bucket não é mais público: ver documentPublicUrl() abaixo.
 async function uploadDocument(file) {
-  var path = Date.now() + '-' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var userId = currentUserId();
+  var path = userId + '/' + Date.now() + '-' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   var { error: uploadError } = await supabase.storage
     .from('pandafit-documents')
     .upload(path, file);
@@ -288,6 +317,7 @@ async function uploadDocument(file) {
   var { data, error } = await supabase
     .from('pandafit_documents')
     .insert({
+      user_id: userId,
       file_name: file.name,
       file_path: path,
       file_type: file.type || 'application/octet-stream',
@@ -308,19 +338,60 @@ async function deleteDocument(doc) {
   if (error) throw error;
 }
 
-function documentPublicUrl(path) {
-  return supabase.storage.from('pandafit-documents').getPublicUrl(path).data.publicUrl;
+// Link temporário (o bucket é privado) — gerado só quando alguém clica em
+// "Ver", em vez de pré-gerar um por documento renderizado.
+async function documentSignedUrl(path) {
+  var { data, error } = await supabase.storage
+    .from('pandafit-documents')
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+// ── edge function: pandafit-admin-users (cadastro/gestão, só admin) ──
+async function callAdminUsers(action, payload) {
+  var res = await fetch(SUPABASE_URL + '/functions/v1/pandafit-admin-users', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_KEY,
+      Authorization: 'Bearer ' + state.session.access_token,
+    },
+    body: JSON.stringify(Object.assign({ action: action }, payload)),
+  });
+  var body = await res.json();
+  if (!res.ok) throw new Error(body.error || 'Erro ao processar a solicitação.');
+  return body;
 }
 
 // ── DOM refs ──
 var $ = function (sel) { return document.querySelector(sel); };
 
 var els = {
+  screenLogin: $('#screen-login'),
+  loginForm: $('#login-form'),
+  loginEmail: $('#login-email'),
+  loginPassword: $('#login-password'),
+  loginError: $('#login-error'),
+  btnLogin: $('#btn-login'),
+  btnLoginLabel: $('#btn-login-label'),
+
+  appShell: $('#app-shell'),
+  tabbar: $('#tabbar'),
+  tabBtnUsuarios: $('#tab-btn-usuarios'),
+  btnAccount: $('#btn-account'),
+  accountInitial: $('#account-initial'),
+  metaAccountEmail: $('#meta-account-email'),
+  btnLogoutMeta: $('#btn-logout-meta'),
+  btnLogoutPacientes: $('#btn-logout-pacientes'),
+
   screens: {
     painel: $('#screen-painel'),
     registrar: $('#screen-registrar'),
     meta: $('#screen-meta'),
     documentos: $('#screen-documentos'),
+    usuarios: $('#screen-usuarios'),
+    pacientes: $('#screen-pacientes'),
   },
   reminderBanners: $('#reminder-banners'),
   monthLabel: $('#month-label'),
@@ -406,7 +477,191 @@ var els = {
   confirmModalMessage: $('#confirm-modal-message'),
   confirmModalCancel: $('#confirm-modal-cancel'),
   confirmModalConfirm: $('#confirm-modal-confirm'),
+
+  // admin: Usuários
+  inputUserNome: $('#input-user-nome'),
+  inputUserEmail: $('#input-user-email'),
+  inputUserPassword: $('#input-user-password'),
+  roleOptions: $('#role-options'),
+  userFormToast: $('#user-form-toast'),
+  btnCreateUser: $('#btn-create-user'),
+  usersList: $('#users-list'),
+  usersCountNote: $('#users-count-note'),
+
+  // medico: Pacientes
+  pacientesTitle: $('#pacientes-title'),
+  pacientesListView: $('#pacientes-list-view'),
+  pacientesDetailView: $('#pacientes-detail-view'),
+  patientsList: $('#patients-list'),
+  patientsCountNote: $('#patients-count-note'),
+  btnBackToPatients: $('#btn-back-to-patients'),
+  patientDocsNote: $('#patient-docs-note'),
+  patientDocumentsList: $('#patient-documents-list'),
+  patientWeightChartWrap: $('#patient-weight-chart-wrap'),
+  patientWeightsNote: $('#patient-weights-note'),
+  patientWeightsList: $('#patient-weights-list'),
+  patientWorkoutsNote: $('#patient-workouts-note'),
+  patientWorkoutsList: $('#patient-workouts-list'),
 };
+
+// ── confirm modal (replaces window.confirm to match the app's own look) ──
+function confirmModal(message) {
+  return new Promise(function (resolve) {
+    els.confirmModalMessage.textContent = message;
+    els.confirmModal.hidden = false;
+
+    function onCancel() { finish(false); }
+    function onConfirm() { finish(true); }
+    function finish(result) {
+      els.confirmModal.hidden = true;
+      els.confirmModalCancel.removeEventListener('click', onCancel);
+      els.confirmModalConfirm.removeEventListener('click', onConfirm);
+      resolve(result);
+    }
+
+    els.confirmModalCancel.addEventListener('click', onCancel);
+    els.confirmModalConfirm.addEventListener('click', onConfirm);
+  });
+}
+
+function makeToaster(el) {
+  var handle = null;
+  return function (msg) {
+    clearTimeout(handle);
+    el.textContent = msg;
+    el.hidden = false;
+    handle = setTimeout(function () { el.hidden = true; }, 4000);
+  };
+}
+
+var showToast = makeToaster(els.toast);
+var showGoalToast = makeToaster(els.goalToast);
+var showWeightToast = makeToaster(els.weightToast);
+var showDocumentToast = makeToaster(els.documentToast);
+var showTargetWeightToast = makeToaster(els.targetWeightToast);
+var showUserFormToast = makeToaster(els.userFormToast);
+
+// ── auth: login, logout, role-based routing ──
+async function doLogout() {
+  await supabase.auth.signOut();
+}
+
+async function confirmLogout() {
+  var ok = await confirmModal('Sair da conta?');
+  if (ok) doLogout();
+}
+
+els.btnAccount.addEventListener('click', confirmLogout);
+els.btnLogoutMeta.addEventListener('click', confirmLogout);
+els.btnLogoutPacientes.addEventListener('click', confirmLogout);
+
+function showLoginScreen(errorMessage) {
+  els.appShell.hidden = true;
+  els.btnAccount.hidden = true;
+  els.screenLogin.hidden = false;
+  if (errorMessage) {
+    els.loginError.textContent = errorMessage;
+    els.loginError.hidden = false;
+  }
+}
+
+function resetAppState() {
+  state.session = null;
+  state.profile = null;
+  state.workouts = [];
+  state.loading = true;
+  state.loadError = false;
+  state.weights = [];
+  state.weightsLoading = true;
+  state.weightsLoadError = false;
+  state.documents = [];
+  state.documentsLoading = true;
+  state.documentsLoadError = false;
+  state.monthlyGoal = DEFAULT_MONTHLY_GOAL;
+  state.targetWeight = null;
+  state.users = [];
+  state.usersLoading = true;
+  state.patients = [];
+  state.patientsLoading = true;
+  state.selectedPatient = null;
+  state.patientDetail = null;
+  els.loginEmail.value = '';
+  els.loginPassword.value = '';
+}
+
+els.loginForm.addEventListener('submit', function (e) {
+  e.preventDefault();
+  if (state.loginLoading) return;
+
+  var email = els.loginEmail.value.trim();
+  var password = els.loginPassword.value;
+  state.loginLoading = true;
+  els.btnLogin.disabled = true;
+  els.btnLoginLabel.textContent = 'Entrando…';
+  els.loginError.hidden = true;
+
+  supabase.auth.signInWithPassword({ email: email, password: password })
+    .then(function (res) {
+      if (res.error) throw res.error;
+      return handleSignedIn(res.data.session);
+    })
+    .catch(function (err) {
+      console.error('Falha no login', err);
+      els.loginError.textContent = 'E-mail ou senha inválidos.';
+      els.loginError.hidden = false;
+    })
+    .finally(function () {
+      state.loginLoading = false;
+      els.btnLogin.disabled = false;
+      els.btnLoginLabel.textContent = 'Entrar';
+    });
+});
+
+async function handleSignedIn(session) {
+  state.session = session;
+  var { data, error } = await supabase
+    .from('pandafit_usuarios')
+    .select('id, email, nome, role')
+    .eq('id', session.user.id)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.error('Falha ao carregar perfil PandaFit', error);
+    await supabase.auth.signOut();
+    showLoginScreen('Esta conta não tem acesso ao PandaFit.');
+    return;
+  }
+
+  state.profile = data;
+  showAppShell();
+}
+
+function showAppShell() {
+  els.screenLogin.hidden = true;
+  els.appShell.hidden = false;
+  els.btnAccount.hidden = false;
+  var label = (state.profile.nome || state.profile.email || '?').trim();
+  els.accountInitial.textContent = label.charAt(0).toUpperCase();
+  els.metaAccountEmail.textContent = state.profile.email + ' · ' + roleLabel(state.profile.role);
+
+  var role = state.profile.role;
+  els.tabBtnUsuarios.hidden = role !== 'admin';
+  els.tabbar.hidden = role === 'medico';
+
+  if (role === 'medico') {
+    setTab('pacientes');
+    loadPatients();
+  } else {
+    setTab('painel');
+    startOwnData();
+  }
+}
+
+function roleLabel(role) {
+  if (role === 'admin') return 'admin';
+  if (role === 'medico') return 'médico';
+  return 'usuário';
+}
 
 // ── tab bar wiring ──
 document.querySelectorAll('.tab-btn').forEach(function (btn) {
@@ -425,6 +680,7 @@ function setTab(tab) {
   if (tab === 'meta') renderMeta();
   if (tab === 'registrar') setRegistrarSection(state.registrarSection);
   if (tab === 'documentos') renderDocuments();
+  if (tab === 'usuarios') { renderUsers(); loadUsers(); }
 }
 
 function renderActiveTab() {
@@ -711,26 +967,6 @@ els.btnSave.addEventListener('click', function () {
     });
 });
 
-// ── confirm modal (replaces window.confirm to match the app's own look) ──
-function confirmModal(message) {
-  return new Promise(function (resolve) {
-    els.confirmModalMessage.textContent = message;
-    els.confirmModal.hidden = false;
-
-    function onCancel() { finish(false); }
-    function onConfirm() { finish(true); }
-    function finish(result) {
-      els.confirmModal.hidden = true;
-      els.confirmModalCancel.removeEventListener('click', onCancel);
-      els.confirmModalConfirm.removeEventListener('click', onConfirm);
-      resolve(result);
-    }
-
-    els.confirmModalCancel.addEventListener('click', onCancel);
-    els.confirmModalConfirm.addEventListener('click', onConfirm);
-  });
-}
-
 async function handleDeleteClick(id) {
   if (state.deletingId) return;
   var ok = await confirmModal('Excluir este treino? Essa ação não pode ser desfeita.');
@@ -751,22 +987,6 @@ async function handleDeleteClick(id) {
       renderPainel();
     });
 }
-
-function makeToaster(el) {
-  var handle = null;
-  return function (msg) {
-    clearTimeout(handle);
-    el.textContent = msg;
-    el.hidden = false;
-    handle = setTimeout(function () { el.hidden = true; }, 4000);
-  };
-}
-
-var showToast = makeToaster(els.toast);
-var showGoalToast = makeToaster(els.goalToast);
-var showWeightToast = makeToaster(els.weightToast);
-var showDocumentToast = makeToaster(els.documentToast);
-var showTargetWeightToast = makeToaster(els.targetWeightToast);
 
 // ── weight fields ──
 els.inputWeightDate.addEventListener('change', function (e) {
@@ -892,6 +1112,20 @@ async function handleDeleteDocumentClick(doc) {
       state.deletingDocumentId = null;
       renderDocuments();
     });
+}
+
+async function handleViewDocumentClick(path, linkEl) {
+  var original = linkEl.textContent;
+  linkEl.textContent = '…';
+  try {
+    var url = await documentSignedUrl(path);
+    window.open(url, '_blank', 'noopener');
+  } catch (err) {
+    console.error('Falha ao gerar link do documento', err);
+    showDocumentToast('Não foi possível abrir o documento.');
+  } finally {
+    linkEl.textContent = original;
+  }
 }
 
 // ── render: Registrar screen ──
@@ -1136,7 +1370,7 @@ els.btnSaveTargetWeight.addEventListener('click', function () {
   state.savingTargetWeight = true;
   els.btnSaveTargetWeight.disabled = true;
 
-  updateTargetWeight(kg)
+  upsertSettings({ target_weight_kg: kg })
     .then(function () {
       state.targetWeight = kg;
       renderTargetWeightProgress();
@@ -1155,19 +1389,12 @@ els.btnSaveTargetWeight.addEventListener('click', function () {
 // Simple SVG line chart of the weight trend. `var()` colors are set via the
 // `style` attribute (not presentation attributes) so they resolve like any
 // other CSS and repaint automatically when the dark-mode media query flips.
-function renderWeightChart() {
-  var wrap = els.weightChartWrap;
-  if (state.weightsLoading || state.weightsLoadError) {
-    wrap.innerHTML = '';
-    return;
-  }
-
-  var asc = state.weights.slice().sort(function (a, b) {
+function buildWeightChartHTML(weights) {
+  var asc = weights.slice().sort(function (a, b) {
     return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
   });
   if (asc.length < 2) {
-    wrap.innerHTML = '<p class="empty-state">Registre pelo menos 2 pesos para ver o gráfico.</p>';
-    return;
+    return '<p class="empty-state">Registre pelo menos 2 pesos para ver o gráfico.</p>';
   }
 
   var recent = asc.slice(-WEIGHT_CHART_MAX_POINTS);
@@ -1190,8 +1417,7 @@ function renderWeightChart() {
   var first = recent[0];
   var lastWeight = recent[n - 1];
 
-  wrap.innerHTML =
-    '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" class="weight-chart">' +
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" class="weight-chart">' +
     '<path d="' + pathD + '" fill="none" style="stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round" />' +
     '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="3.5" style="fill:var(--accent)" />' +
     '</svg>' +
@@ -1199,6 +1425,15 @@ function renderWeightChart() {
     '<span>' + fmtDayLabel(first.date) + ' · ' + fmtWeight(first.weight_kg) + ' kg</span>' +
     '<span class="chart-caption-current">' + fmtDayLabel(lastWeight.date) + ' · ' + fmtWeight(lastWeight.weight_kg) + ' kg</span>' +
     '</div>';
+}
+
+function renderWeightChart() {
+  var wrap = els.weightChartWrap;
+  if (state.weightsLoading || state.weightsLoadError) {
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.innerHTML = buildWeightChartHTML(state.weights);
 }
 
 // ── render: Peso screen ──
@@ -1313,13 +1548,19 @@ function renderDocuments() {
       '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
       '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
       '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
-      '<a class="record-dur doc-view-link" href="' + documentPublicUrl(doc.file_path) + '" target="_blank" rel="noopener">Ver</a>' +
+      '<a class="record-dur doc-view-link" href="#" data-path="' + doc.file_path + '">Ver</a>' +
       '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir documento">' +
       DELETE_ICON_SVG +
       '</button>' +
       '</div>';
   }).join('');
 
+  els.documentsList.querySelectorAll('.doc-view-link').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      handleViewDocumentClick(link.dataset.path, link);
+    });
+  });
   els.documentsList.querySelectorAll('.record-delete').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var doc = state.documents.find(function (d) { return d.id === Number(btn.dataset.id); });
@@ -1344,7 +1585,7 @@ els.btnSaveGoal.addEventListener('click', function () {
   state.savingGoal = true;
   els.btnSaveGoal.disabled = true;
 
-  updateSettings(val)
+  upsertSettings({ monthly_goal: val })
     .then(function () {
       state.monthlyGoal = val;
       renderPainel();
@@ -1378,61 +1619,385 @@ els.btnExportWeights.addEventListener('click', function () {
   downloadCSV('pandafit-pesos.csv', ['Data', 'Peso (kg)'], rows);
 });
 
-// ── init ──
-els.inputDate.value = state.dateVal;
-els.inputDate.max = todayISO();
-els.inputWeightDate.value = state.weightDateVal;
-els.inputWeightDate.max = todayISO();
-startTimerLoop();
-renderRegistrar();
-setTab('painel');
+// ── admin: Usuários ──
+els.roleOptions.querySelectorAll('.role-option').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    state.newUserRole = btn.dataset.role;
+    els.roleOptions.querySelectorAll('.role-option').forEach(function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+  });
+});
 
-fetchWorkouts()
-  .then(function (rows) {
-    state.workouts = rows;
-    state.loading = false;
-    updateLocalSuggestions();
-  })
-  .catch(function (err) {
-    console.error('Falha ao carregar treinos', err);
-    state.loading = false;
-    state.loadError = true;
-  })
-  .finally(renderActiveTab);
+function loadUsers() {
+  state.usersLoading = true;
+  state.usersLoadError = false;
+  renderUsers();
+  callAdminUsers('list', {})
+    .then(function (body) {
+      state.users = body.usuarios;
+      state.usersLoading = false;
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar usuários', err);
+      state.usersLoading = false;
+      state.usersLoadError = true;
+    })
+    .finally(renderUsers);
+}
 
-fetchSettings()
-  .then(function (row) {
-    state.monthlyGoal = row.monthly_goal;
-    state.targetWeight = row.target_weight_kg;
-  })
-  .catch(function (err) {
-    console.error('Falha ao carregar meta', err);
-  })
-  .finally(renderActiveTab);
+els.btnCreateUser.addEventListener('click', function () {
+  if (state.creatingUser) return;
 
-fetchWeights()
-  .then(function (rows) {
-    state.weights = rows;
-    state.weightsLoading = false;
-  })
-  .catch(function (err) {
-    console.error('Falha ao carregar pesos', err);
-    state.weightsLoading = false;
-    state.weightsLoadError = true;
-  })
-  .finally(renderActiveTab);
+  var nome = els.inputUserNome.value.trim();
+  var email = els.inputUserEmail.value.trim();
+  var password = els.inputUserPassword.value;
+  var role = state.newUserRole;
 
-fetchDocuments()
-  .then(function (rows) {
-    state.documents = rows;
-    state.documentsLoading = false;
-  })
-  .catch(function (err) {
-    console.error('Falha ao carregar documentos', err);
-    state.documentsLoading = false;
-    state.documentsLoadError = true;
-  })
-  .finally(renderActiveTab);
+  if (!email || !email.includes('@')) {
+    showUserFormToast('Informe um e-mail válido.');
+    return;
+  }
+  if (!password || password.length < 6) {
+    showUserFormToast('A senha precisa ter pelo menos 6 caracteres.');
+    return;
+  }
+
+  state.creatingUser = true;
+  els.btnCreateUser.disabled = true;
+
+  callAdminUsers('invite', { nome: nome, email: email, password: password, role: role })
+    .then(function (body) {
+      showUserFormToast(
+        (body.contaExistente ? 'Conta existente vinculada ao PandaFit como ' : 'Usuário cadastrado como ')
+        + roleLabel(role) + '.'
+      );
+      els.inputUserNome.value = '';
+      els.inputUserEmail.value = '';
+      els.inputUserPassword.value = '';
+      loadUsers();
+    })
+    .catch(function (err) {
+      console.error('Falha ao cadastrar usuário', err);
+      showUserFormToast(err.message || 'Não foi possível cadastrar. Tente de novo.');
+    })
+    .finally(function () {
+      state.creatingUser = false;
+      els.btnCreateUser.disabled = false;
+    });
+});
+
+function renderUsers() {
+  els.usersCountNote.textContent = state.users.length + (state.users.length === 1 ? ' usuário' : ' usuários');
+
+  if (state.usersLoading) {
+    els.usersList.innerHTML = '<p class="empty-state">Carregando usuários…</p>';
+    return;
+  }
+  if (state.usersLoadError) {
+    els.usersList.innerHTML = '<p class="empty-state">Não foi possível carregar os usuários. Recarregue a página.</p>';
+    return;
+  }
+  if (state.users.length === 0) {
+    els.usersList.innerHTML = '<p class="empty-state">Nenhum usuário cadastrado ainda.</p>';
+    return;
+  }
+
+  els.usersList.innerHTML = state.users.map(function (u) {
+    var isSelf = u.id === currentUserId();
+    return '<div class="user-row">' +
+      '<div class="user-info">' +
+      '<span class="user-name">' + (u.nome || u.email) + (isSelf ? ' (você)' : '') + '</span>' +
+      '<span class="user-email">' + u.email + '</span>' +
+      '</div>' +
+      '<select class="user-role-select" data-id="' + u.id + '" ' + (isSelf ? 'disabled' : '') + '>' +
+      '<option value="usuario"' + (u.role === 'usuario' ? ' selected' : '') + '>Usuário</option>' +
+      '<option value="medico"' + (u.role === 'medico' ? ' selected' : '') + '>Médico</option>' +
+      '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>Admin</option>' +
+      '</select>' +
+      '<button type="button" class="record-delete" data-id="' + u.id + '" aria-label="Revogar acesso" ' + (isSelf ? 'disabled' : '') + '>' +
+      DELETE_ICON_SVG +
+      '</button>' +
+      '</div>';
+  }).join('');
+
+  els.usersList.querySelectorAll('.user-role-select').forEach(function (select) {
+    select.addEventListener('change', function () {
+      var userId = select.dataset.id;
+      var role = select.value;
+      select.disabled = true;
+      callAdminUsers('update_role', { userId: userId, role: role })
+        .then(function () {
+          showUserFormToast('Papel atualizado.');
+          loadUsers();
+        })
+        .catch(function (err) {
+          console.error('Falha ao atualizar papel', err);
+          showUserFormToast(err.message || 'Não foi possível atualizar. Tente de novo.');
+          loadUsers();
+        });
+    });
+  });
+
+  els.usersList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var userId = btn.dataset.id;
+      var u = state.users.find(function (x) { return x.id === userId; });
+      confirmModal('Revogar o acesso de ' + (u ? (u.nome || u.email) : 'este usuário') + ' ao PandaFit?')
+        .then(function (ok) {
+          if (!ok) return;
+          return callAdminUsers('revoke', { userId: userId });
+        })
+        .then(function (result) {
+          if (result) loadUsers();
+        })
+        .catch(function (err) {
+          console.error('Falha ao revogar acesso', err);
+          showUserFormToast(err.message || 'Não foi possível revogar. Tente de novo.');
+        });
+    });
+  });
+}
+
+// ── medico: Pacientes ──
+function loadPatients() {
+  state.patientsLoading = true;
+  state.patientsLoadError = false;
+  renderPatientsList();
+  supabase
+    .from('pandafit_usuarios')
+    .select('id, email, nome')
+    .eq('role', 'usuario')
+    .then(function (res) {
+      if (res.error) throw res.error;
+      state.patients = res.data;
+      state.patientsLoading = false;
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar pacientes', err);
+      state.patientsLoading = false;
+      state.patientsLoadError = true;
+    })
+    .finally(renderPatientsList);
+}
+
+function renderPatientsList() {
+  els.patientsCountNote.textContent = state.patients.length + (state.patients.length === 1 ? ' paciente' : ' pacientes');
+
+  if (state.patientsLoading) {
+    els.patientsList.innerHTML = '<p class="empty-state">Carregando pacientes…</p>';
+    return;
+  }
+  if (state.patientsLoadError) {
+    els.patientsList.innerHTML = '<p class="empty-state">Não foi possível carregar os pacientes. Recarregue a página.</p>';
+    return;
+  }
+  if (state.patients.length === 0) {
+    els.patientsList.innerHTML = '<p class="empty-state">Nenhum paciente cadastrado ainda.</p>';
+    return;
+  }
+
+  els.patientsList.innerHTML = state.patients.map(function (p) {
+    return '<button type="button" class="patient-row" data-id="' + p.id + '">' +
+      '<span class="user-info"><span class="user-name">' + (p.nome || p.email) + '</span>' +
+      '<span class="user-email">' + p.email + '</span></span>' +
+      '<span class="patient-row-arrow">›</span>' +
+      '</button>';
+  }).join('');
+
+  els.patientsList.querySelectorAll('.patient-row').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var patient = state.patients.find(function (p) { return p.id === btn.dataset.id; });
+      if (patient) openPatientDetail(patient);
+    });
+  });
+}
+
+function openPatientDetail(patient) {
+  state.selectedPatient = patient;
+  els.pacientesTitle.textContent = patient.nome || patient.email;
+  els.pacientesListView.hidden = true;
+  els.pacientesDetailView.hidden = false;
+  loadPatientDetail(patient.id);
+}
+
+els.btnBackToPatients.addEventListener('click', function () {
+  state.selectedPatient = null;
+  els.pacientesListView.hidden = false;
+  els.pacientesDetailView.hidden = true;
+});
+
+function loadPatientDetail(patientId) {
+  els.patientDocumentsList.innerHTML = '<p class="empty-state">Carregando…</p>';
+  els.patientWeightsList.innerHTML = '<p class="empty-state">Carregando…</p>';
+  els.patientWorkoutsList.innerHTML = '<p class="empty-state">Carregando…</p>';
+  els.patientWeightChartWrap.innerHTML = '';
+  els.patientDocsNote.textContent = '';
+  els.patientWeightsNote.textContent = '';
+  els.patientWorkoutsNote.textContent = '';
+
+  Promise.all([
+    fetchDocuments(patientId).catch(function () { return null; }),
+    fetchWeights(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
+    fetchWorkouts(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
+  ]).then(function (results) {
+    renderPatientDocuments(results[0]);
+    renderPatientWeights(results[1]);
+    renderPatientWorkouts(results[2]);
+  });
+}
+
+function renderPatientDocuments(documents) {
+  if (documents == null) {
+    els.patientDocumentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os documentos.</p>';
+    return;
+  }
+  els.patientDocsNote.textContent = documents.length + (documents.length === 1 ? ' documento' : ' documentos');
+  if (documents.length === 0) {
+    els.patientDocumentsList.innerHTML = '<p class="empty-state">Nenhum documento enviado.</p>';
+    return;
+  }
+  els.patientDocumentsList.innerHTML = documents.map(function (doc) {
+    return '<div class="record-row">' +
+      '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
+      '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
+      '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
+      '<a class="record-dur doc-view-link" href="#" data-path="' + doc.file_path + '">Ver</a>' +
+      '</div>';
+  }).join('');
+  els.patientDocumentsList.querySelectorAll('.doc-view-link').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      handleViewDocumentClick(link.dataset.path, link);
+    });
+  });
+}
+
+function renderPatientWeights(weights) {
+  if (weights == null) {
+    els.patientWeightsList.innerHTML = '<p class="empty-state">Não foi possível carregar o peso.</p>';
+    els.patientWeightChartWrap.innerHTML = '';
+    return;
+  }
+  els.patientWeightChartWrap.innerHTML = buildWeightChartHTML(weights);
+  els.patientWeightsNote.textContent = weights.length + (weights.length === 1 ? ' registro' : ' registros');
+  if (weights.length === 0) {
+    els.patientWeightsList.innerHTML = '<p class="empty-state">Nenhum peso registrado.</p>';
+    return;
+  }
+  els.patientWeightsList.innerHTML = weights.map(function (w, i) {
+    var prev = weights[i + 1];
+    var trendClass = '';
+    var deltaLabel = '—';
+    if (prev) {
+      var diff = w.weight_kg - prev.weight_kg;
+      if (diff > 0.05) { trendClass = 'weight-up'; deltaLabel = '▲ ' + fmtWeight(diff); }
+      else if (diff < -0.05) { trendClass = 'weight-down'; deltaLabel = '▼ ' + fmtWeight(Math.abs(diff)); }
+      else { deltaLabel = '= 0,0'; }
+    }
+    return '<div class="record-row">' +
+      '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
+      '<span class="weight-value">' + fmtWeight(w.weight_kg) + ' kg</span>' +
+      '<span class="weight-delta ' + trendClass + '">' + deltaLabel + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function renderPatientWorkouts(workouts) {
+  if (workouts == null) {
+    els.patientWorkoutsList.innerHTML = '<p class="empty-state">Não foi possível carregar os treinos.</p>';
+    return;
+  }
+  els.patientWorkoutsNote.textContent = workouts.length + (workouts.length === 1 ? ' treino' : ' treinos');
+  if (workouts.length === 0) {
+    els.patientWorkoutsList.innerHTML = '<p class="empty-state">Nenhum treino registrado.</p>';
+    return;
+  }
+  els.patientWorkoutsList.innerHTML = workouts.map(function (w) {
+    return '<div class="record-row">' +
+      '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
+      '<span class="record-mid"><span class="record-type">' + w.type + '</span>' +
+      '<span class="record-local">' + (w.local || 'Sem local') + '</span></span>' +
+      '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+// ── init (own tracking data — usuario and admin roles) ──
+function startOwnData() {
+  var userId = currentUserId();
+
+  els.inputDate.value = state.dateVal;
+  els.inputDate.max = todayISO();
+  els.inputWeightDate.value = state.weightDateVal;
+  els.inputWeightDate.max = todayISO();
+  startTimerLoop();
+  renderRegistrar();
+  renderActiveTab();
+
+  fetchWorkouts(userId)
+    .then(function (rows) {
+      state.workouts = rows;
+      state.loading = false;
+      updateLocalSuggestions();
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar treinos', err);
+      state.loading = false;
+      state.loadError = true;
+    })
+    .finally(renderActiveTab);
+
+  fetchSettings(userId)
+    .then(function (row) {
+      state.monthlyGoal = row ? row.monthly_goal : DEFAULT_MONTHLY_GOAL;
+      state.targetWeight = row ? row.target_weight_kg : null;
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar meta', err);
+    })
+    .finally(renderActiveTab);
+
+  fetchWeights(userId)
+    .then(function (rows) {
+      state.weights = rows;
+      state.weightsLoading = false;
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar pesos', err);
+      state.weightsLoading = false;
+      state.weightsLoadError = true;
+    })
+    .finally(renderActiveTab);
+
+  fetchDocuments(userId)
+    .then(function (rows) {
+      state.documents = rows;
+      state.documentsLoading = false;
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar documentos', err);
+      state.documentsLoading = false;
+      state.documentsLoadError = true;
+    })
+    .finally(renderActiveTab);
+}
+
+// ── boot: check session, show login or app shell ──
+supabase.auth.getSession().then(function (res) {
+  if (res.data.session) {
+    handleSignedIn(res.data.session);
+  } else {
+    showLoginScreen();
+  }
+});
+
+supabase.auth.onAuthStateChange(function (event) {
+  if (event === 'SIGNED_OUT') {
+    resetAppState();
+    showLoginScreen();
+  }
+});
 
 // ── PWA: service worker (app-shell cache for offline/instalação) ──
 if ('serviceWorker' in navigator) {
