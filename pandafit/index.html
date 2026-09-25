@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=15" />
+<link rel="stylesheet" href="assets/styles.css?v=16" />
 </head>
 <body>
 
@@ -64,12 +64,20 @@
     </div>
   </main>
 
-  <!-- ───────── Conta (avatar + sair), visível após login ───────── -->
-  <button type="button" class="account-btn" id="btn-account" hidden aria-label="Conta">
-    <span id="account-initial"></span>
-  </button>
-
   <div id="app-shell" hidden>
+
+    <!-- ───────── Barra de topo (marca do app + conta) ───────── -->
+    <header class="app-topbar">
+      <div class="app-topbar-brand">
+        <svg class="app-topbar-mark" width="16" height="16" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+          <path d="M4 21h6.5l2.5-9 5 19 4-15 2.5 5H36" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>PandaFit</span>
+      </div>
+      <button type="button" class="account-btn" id="btn-account" aria-label="Conta">
+        <span id="account-initial"></span>
+      </button>
+    </header>
 
     <!-- ───────── Painel do mês ───────── -->
     <main class="screen" id="screen-painel" data-screen="painel">
@@ -242,6 +250,7 @@
     <!-- ───────── Meta ───────── -->
     <main class="screen" id="screen-meta" data-screen="meta" hidden>
       <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
         <h1 class="title">Meta</h1>
       </div>
 
@@ -300,18 +309,13 @@
           </div>
         </div>
 
-        <div class="section account-section">
-          <div class="section-title">Conta</div>
-          <p class="account-email" id="meta-account-email"></p>
-          <button type="button" class="export-btn" id="btn-logout-meta">Sair</button>
-        </div>
-
       </div>
     </main>
 
     <!-- ───────── Documentos ───────── -->
     <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
       <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
         <h1 class="title">Documentos</h1>
       </div>
 
@@ -347,9 +351,44 @@
       </div>
     </main>
 
+    <!-- ───────── Configurações ───────── -->
+    <main class="screen" id="screen-config" data-screen="config" hidden>
+      <div class="screen-head">
+        <h1 class="title">Configurações</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="section">
+          <div class="settings-list">
+            <button type="button" class="settings-row" data-open="meta">
+              <span class="settings-row-label">Meta</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="documentos">
+              <span class="settings-row-label">Documentos</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="usuarios" id="settings-row-usuarios" hidden>
+              <span class="settings-row-label">Usuários</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="section account-section">
+          <div class="section-title">Conta</div>
+          <p class="account-email" id="config-account-email"></p>
+          <button type="button" class="export-btn" id="btn-logout-config">Sair</button>
+        </div>
+
+      </div>
+    </main>
+
     <!-- ───────── Usuários (admin) ───────── -->
     <main class="screen" id="screen-usuarios" data-screen="usuarios" hidden>
       <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
         <h1 class="title">Usuários</h1>
       </div>
 
@@ -411,9 +450,6 @@
             <p class="empty-state">Carregando pacientes…</p>
           </div>
         </div>
-        <div class="section account-section">
-          <button type="button" class="export-btn" id="btn-logout-pacientes">Sair</button>
-        </div>
       </div>
 
       <div class="screen-body" id="pacientes-detail-view" hidden>
@@ -460,17 +496,9 @@
         <span class="tab-mark"></span>
         <span>Registrar</span>
       </button>
-      <button type="button" class="tab-btn" data-tab="meta">
+      <button type="button" class="tab-btn" data-tab="config">
         <span class="tab-mark"></span>
-        <span>Meta</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="documentos">
-        <span class="tab-mark"></span>
-        <span>Documentos</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="usuarios" id="tab-btn-usuarios" hidden>
-        <span class="tab-mark"></span>
-        <span>Usuários</span>
+        <span>Config.</span>
       </button>
     </nav>
 
@@ -491,6 +519,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=15"></script>
+<script type="module" src="assets/app.js?v=16"></script>
 </body>
 </html>

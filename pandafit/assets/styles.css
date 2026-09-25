@@ -120,11 +120,40 @@ html, body {
 }
 
 .screen-head {
-  padding: max(20px, env(safe-area-inset-top)) 22px 12px;
+  padding: 18px 22px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex-shrink: 0;
+}
+
+/* ── app topbar: persistent brand + account, gives the app a real "chrome" ── */
+.app-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(12px, env(safe-area-inset-top)) 18px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-app);
+  flex-shrink: 0;
+}
+
+.app-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+}
+
+.app-topbar-mark {
+  color: var(--accent);
+  flex: none;
+}
+
+.app-topbar-brand span {
+  font: 600 12px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .eyebrow {
@@ -629,7 +658,8 @@ html, body {
 .record-edit,
 .record-delete,
 .account-btn,
-.patient-row {
+.patient-row,
+.settings-row {
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 .btn:active,
@@ -644,7 +674,8 @@ html, body {
 .record-edit:active,
 .record-delete:active,
 .account-btn:active,
-.patient-row:active {
+.patient-row:active,
+.settings-row:active {
   transform: scale(0.97);
 }
 
@@ -829,7 +860,7 @@ input[type="file"]::file-selector-button {
   bottom: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   background: var(--bg-app);
   border-top: 1px solid var(--line);
   padding: 10px 0 calc(8px + env(safe-area-inset-bottom));
@@ -1154,12 +1185,9 @@ input[type="file"]::file-selector-button {
 
 /* ── account button (avatar + sair), fixed top-right once logged in ── */
 .account-btn {
-  position: absolute;
-  top: max(14px, env(safe-area-inset-top));
-  right: 16px;
-  z-index: 20;
-  width: 34px;
-  height: 34px;
+  flex: none;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 1px solid var(--line);
   appearance: none;
@@ -1170,8 +1198,7 @@ input[type="file"]::file-selector-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 600 13px/1 "Barlow Condensed", sans-serif;
-  box-shadow: var(--card-shadow);
+  font: 600 12px/1 "Barlow Condensed", sans-serif;
 }
 @media (hover: hover) {
   .account-btn:hover { background: var(--accent-hover); }
@@ -1246,7 +1273,8 @@ input[type="file"]::file-selector-button {
 }
 
 /* ── médico: Pacientes ── */
-.patient-row {
+.patient-row,
+.settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1262,16 +1290,23 @@ input[type="file"]::file-selector-button {
   text-align: left;
   color: var(--ink);
 }
-.patient-row:first-child { border-top: 0; }
+.patient-row:first-child,
+.settings-row:first-child { border-top: 0; }
 
-.patient-row-arrow {
+.settings-row-label {
+  font: 500 15px/1.2 "Barlow", sans-serif;
+}
+
+.patient-row-arrow,
+.settings-row-arrow {
   font: 400 18px/1 "Barlow", sans-serif;
   color: var(--faint);
   flex: none;
 }
 
 @media (hover: hover) {
-  .patient-row:hover { background: var(--hover-tint); }
+  .patient-row:hover,
+  .settings-row:hover { background: var(--hover-tint); }
 }
 
 .back-link {

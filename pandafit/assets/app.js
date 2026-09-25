@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=15';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=16';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -378,16 +378,16 @@ var els = {
 
   appShell: $('#app-shell'),
   tabbar: $('#tabbar'),
-  tabBtnUsuarios: $('#tab-btn-usuarios'),
   btnAccount: $('#btn-account'),
   accountInitial: $('#account-initial'),
-  metaAccountEmail: $('#meta-account-email'),
-  btnLogoutMeta: $('#btn-logout-meta'),
-  btnLogoutPacientes: $('#btn-logout-pacientes'),
+  configAccountEmail: $('#config-account-email'),
+  btnLogoutConfig: $('#btn-logout-config'),
+  settingsRowUsuarios: $('#settings-row-usuarios'),
 
   screens: {
     painel: $('#screen-painel'),
     registrar: $('#screen-registrar'),
+    config: $('#screen-config'),
     meta: $('#screen-meta'),
     documentos: $('#screen-documentos'),
     usuarios: $('#screen-usuarios'),
@@ -552,8 +552,7 @@ async function confirmLogout() {
 }
 
 els.btnAccount.addEventListener('click', confirmLogout);
-els.btnLogoutMeta.addEventListener('click', confirmLogout);
-els.btnLogoutPacientes.addEventListener('click', confirmLogout);
+els.btnLogoutConfig.addEventListener('click', confirmLogout);
 
 function showLoginScreen(errorMessage) {
   els.appShell.hidden = true;
@@ -642,10 +641,10 @@ function showAppShell() {
   els.btnAccount.hidden = false;
   var label = (state.profile.nome || state.profile.email || '?').trim();
   els.accountInitial.textContent = label.charAt(0).toUpperCase();
-  els.metaAccountEmail.textContent = state.profile.email + ' · ' + roleLabel(state.profile.role);
+  els.configAccountEmail.textContent = state.profile.email + ' · ' + roleLabel(state.profile.role);
 
   var role = state.profile.role;
-  els.tabBtnUsuarios.hidden = role !== 'admin';
+  els.settingsRowUsuarios.hidden = role !== 'admin';
   els.tabbar.hidden = role === 'medico';
 
   if (role === 'medico') {
@@ -668,13 +667,19 @@ document.querySelectorAll('.tab-btn').forEach(function (btn) {
   btn.addEventListener('click', function () { setTab(btn.dataset.tab); });
 });
 
+// Meta/Documentos/Usuários são sub-telas de Configurações (abertas por um
+// settings-row, não por um botão próprio na tabbar) — a aba "Config."
+// continua marcada como ativa enquanto qualquer uma delas está aberta.
+var CONFIG_SUB_SCREENS = ['config', 'meta', 'documentos', 'usuarios'];
+
 function setTab(tab) {
   state.tab = tab;
   Object.keys(els.screens).forEach(function (key) {
     els.screens[key].hidden = key !== tab;
   });
+  var tabbarKey = CONFIG_SUB_SCREENS.indexOf(tab) >= 0 ? 'config' : tab;
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
-    btn.classList.toggle('active', btn.dataset.tab === tab);
+    btn.classList.toggle('active', btn.dataset.tab === tabbarKey);
   });
   if (tab === 'painel') renderPainel();
   if (tab === 'meta') renderMeta();
@@ -682,6 +687,13 @@ function setTab(tab) {
   if (tab === 'documentos') renderDocuments();
   if (tab === 'usuarios') { renderUsers(); loadUsers(); }
 }
+
+document.querySelectorAll('.settings-row').forEach(function (btn) {
+  btn.addEventListener('click', function () { setTab(btn.dataset.open); });
+});
+document.querySelectorAll('[data-back]').forEach(function (btn) {
+  btn.addEventListener('click', function () { setTab(btn.dataset.back); });
+});
 
 function renderActiveTab() {
   if (state.tab === 'painel') renderPainel();

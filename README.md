@@ -165,7 +165,11 @@ neutros quentes (`#fbf8f4`/`#efeae2`), cartões com cantos retos, marcas "+"
 nos vértices e leve elevação (`box-shadow`) — estilo ticket/recibo, com
 modo escuro automático (ver abaixo), transição suave ao trocar de aba e
 feedback tátil (`:active { transform: scale(...) }`) em todo alvo de
-toque.
+toque. Uma barra de topo fixa (marca "PandaFit" + avatar da conta) fica
+sempre visível acima do conteúdo em todas as telas, dando ao app uma
+identidade de "cabeçalho" persistente em vez de cada tela abrir direto no
+título grande — sem ela, no topo sobrava um espaço vazio do tamanho da
+barra de status antes de qualquer conteúdo aparecer.
 
 ### Autenticação e papéis
 
@@ -182,12 +186,13 @@ essa tabela via a função `pandafit_current_role()` (`security definer`,
 nenhuma política libera nada — uma conta autenticada de *outro* app deste
 mesmo projeto nunca enxerga dado nenhum do PandaFit.
 
-- **usuario**: acesso só às próprias linhas (`user_id = auth.uid()`) —
-  Painel/Registrar/Meta/Documentos, exatamente como descrito abaixo.
+- **usuario**: acesso só às próprias linhas (`user_id = auth.uid()`) — a
+  tabbar mostra **Painel · Registrar · Config.** (3 abas — Meta e
+  Documentos moraram dentro de Configurações, ver abaixo).
 - **admin**: mesmo acesso de um usuario às próprias telas (o admin também
-  treina), mais uma aba **Usuários** — cadastrar (nome, e-mail, senha
-  inicial, papel usuario/médico), trocar o papel de alguém ou revogar o
-  acesso ao PandaFit. Tudo isso chama a edge function
+  treina), mais um item **Usuários** dentro de Configurações — cadastrar
+  (nome, e-mail, senha inicial, papel usuario/médico), trocar o papel de
+  alguém ou revogar o acesso ao PandaFit. Tudo isso chama a edge function
   `pandafit-admin-users` (service role key, nunca exposta no cliente), que
   confirma que quem chamou é admin antes de qualquer ação. Ao convidar um
   e-mail que já tem conta neste projeto compartilhado (comum, já que é
@@ -217,9 +222,16 @@ agora que a aba guarda exame médico de verdade.
 A tela de login exibe o nome **LaVie Fit** (o app em si continua se
 chamando PandaFit em todo o resto — título da aba, ícones, nome do PWA).
 
-As quatro telas abaixo (Painel/Registrar/Meta/Documentos) são a
-experiência de quem loga como **usuario** ou **admin**; o **medico** vê a
-tela de Pacientes descrita acima em vez delas.
+Quem loga como **usuario** ou **admin** vê a tabbar com **Painel ·
+Registrar · Config.** — Meta, Documentos e (só para admin) Usuários não
+têm aba própria: são linhas dentro de **Configurações**, cada uma abrindo
+sua tela com um "‹ Configurações" para voltar. Isso existe porque a
+tabbar com uma aba por tela (Painel/Registrar/Meta/Documentos/Usuários)
+quebrava visualmente assim que o admin logava — 5 itens não cabem numa
+grade de 4 colunas e a 5ª aba ("Usuários") ficava sozinha numa segunda
+linha. Com só 3 abas fixas, a tabbar nunca quebra, seja qual for o papel.
+O **medico** não tem tabbar nem Configurações — vê só a tela de Pacientes
+descrita acima.
 
 - **Painel**: banners de lembrete no topo (só no mês atual) — "faltam X
   treinos para bater a meta deste mês" quando ainda não bateu, e "você ainda
@@ -265,13 +277,17 @@ tela de Pacientes descrita acima em vez delas.
   meta; botões para baixar todos os treinos e todos os pesos já carregados
   em CSV (ordenado por data, `,` como separador, `.` como decimal — sem
   formatação brasileira para não colidir com o separador de campo — e BOM
-  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local); seção
-  "Conta" no fim mostrando e-mail/papel logado e o botão **Sair**.
+  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local).
 - **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
   Supabase, salvo em `<user_id>/<arquivo>`; lista paginada de 5 em 5 com
   nome, tamanho, data de envio, link "Ver" (gera uma signed URL na hora do
   clique — o bucket não é público) e exclusão (remove do Storage e da
   tabela).
+- **Configurações**: tela raiz com uma linha por item (Meta, Documentos e,
+  só para admin, Usuários), cada uma abrindo a tela correspondente; embaixo,
+  a seção "Conta" mostra e-mail + papel logado e o botão **Sair** (o mesmo
+  avatar da barra de topo também abre a confirmação de logout, de qualquer
+  tela).
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`
@@ -281,7 +297,7 @@ excluir, `-webkit-tap-highlight-color`/`-webkit-touch-callout` desligados
 para não ficar com o realce cinza/menu de contexto do Safari, e
 `overscroll-behavior` para conter o bounce de rolagem à área de conteúdo.
 Também ganhou meta tags de "adicionar à tela de início" (ícone, título,
-barra de status). Um botão circular no canto superior direito (iniciais do
+barra de status). Um botão circular na barra de topo (iniciais do
 nome/e-mail) fica visível em qualquer tela após o login e abre a
 confirmação de logout — mesmo modal reusado para excluir registros.
 
