@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=8';
+import { supabase } from './supabaseClient.js?v=9';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -6,6 +6,7 @@ var EVOLUTION_MONTHS = 6;
 var MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 var MAX_WORKOUT_MINUTES = 720;
 var MAX_MONTH_OFFSET = 60;
+var WEIGHT_CHART_MAX_POINTS = 30;
 
 var WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -303,6 +304,7 @@ var els = {
   inputWeightValue: $('#input-weight-value'),
   btnSaveWeight: $('#btn-save-weight'),
   weightToast: $('#weight-toast'),
+  weightChartWrap: $('#weight-chart-wrap'),
   weightsList: $('#weights-list'),
   weightCountNote: $('#weight-count-note'),
   weightsPager: $('#weights-pager'),
@@ -917,10 +919,60 @@ els.btnSaveTargetWeight.addEventListener('click', function () {
     });
 });
 
+// Simple SVG line chart of the weight trend. `var()` colors are set via the
+// `style` attribute (not presentation attributes) so they resolve like any
+// other CSS and repaint automatically when the dark-mode media query flips.
+function renderWeightChart() {
+  var wrap = els.weightChartWrap;
+  if (state.weightsLoading || state.weightsLoadError) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  var asc = state.weights.slice().sort(function (a, b) {
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  });
+  if (asc.length < 2) {
+    wrap.innerHTML = '<p class="empty-state">Registre pelo menos 2 pesos para ver o gráfico.</p>';
+    return;
+  }
+
+  var recent = asc.slice(-WEIGHT_CHART_MAX_POINTS);
+  var values = recent.map(function (w) { return w.weight_kg; });
+  var min = Math.min.apply(null, values);
+  var max = Math.max.apply(null, values);
+  if (min === max) { min -= 1; max += 1; }
+
+  var W = 300, H = 100, PAD = 6;
+  var n = recent.length;
+  var pts = recent.map(function (w, i) {
+    var x = n === 1 ? W / 2 : (i / (n - 1)) * (W - PAD * 2) + PAD;
+    var y = H - PAD - ((w.weight_kg - min) / (max - min)) * (H - PAD * 2);
+    return { x: x, y: y };
+  });
+  var pathD = pts.map(function (p, i) {
+    return (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1);
+  }).join(' ');
+  var last = pts[pts.length - 1];
+  var first = recent[0];
+  var lastWeight = recent[n - 1];
+
+  wrap.innerHTML =
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" class="weight-chart">' +
+    '<path d="' + pathD + '" fill="none" style="stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round" />' +
+    '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="3.5" style="fill:var(--accent)" />' +
+    '</svg>' +
+    '<div class="chart-caption">' +
+    '<span>' + fmtDayLabel(first.date) + ' · ' + fmtWeight(first.weight_kg) + ' kg</span>' +
+    '<span class="chart-caption-current">' + fmtDayLabel(lastWeight.date) + ' · ' + fmtWeight(lastWeight.weight_kg) + ' kg</span>' +
+    '</div>';
+}
+
 // ── render: Peso screen ──
 function renderWeights() {
   els.inputWeightDate.value = state.weightDateVal;
   els.inputWeightValue.value = state.weightVal;
+  renderWeightChart();
 
   if (state.weightsLoading) {
     els.weightsList.innerHTML = '<p class="empty-state">Carregando pesos…</p>';

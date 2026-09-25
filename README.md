@@ -187,9 +187,11 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   duração corrida ao salvar), com seletor do tipo de treino e campo opcional
   de local; dentro de Peso, registra data + kg (salvar no mesmo dia
   sobrescreve em vez de duplicar — `upsert` por `date`, que é `unique` na
-  tabela) e mostra o histórico com a variação em relação ao registro
-  anterior, colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`)
-  quando caiu, neutro (`=`) quando ficou igual. Ambas paginadas de 5 em 5.
+  tabela), mostra um gráfico de linha simples (SVG, sem biblioteca) com a
+  tendência dos últimos 30 pesos registrados — some se houver menos de 2
+  registros — e o histórico com a variação em relação ao registro anterior,
+  colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`) quando caiu,
+  neutro (`=`) quando ficou igual. Ambas paginadas de 5 em 5.
 - **Meta**: campo para ajustar a meta mensal (1 a 30 treinos, de qualquer
   modalidade — validado no cliente e também no banco via `check`); barra de
   progresso do mês corrente; "Evolução" com a contagem dos últimos 6 meses
