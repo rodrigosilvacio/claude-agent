@@ -192,7 +192,10 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   modalidade — validado no cliente e também no banco via `check`); barra de
   progresso do mês corrente; "Evolução" com a contagem dos últimos 6 meses
   (calculada a partir dos treinos já carregados, sem consulta extra) para
-  acompanhar a tendência mês a mês.
+  acompanhar a tendência mês a mês; meta de peso opcional (`target_weight_kg`
+  em `pandafit_settings`) — mostra "faltam X kg" comparando com o peso mais
+  recente registrado, ou "meta batida!"; deixar o campo em branco remove a
+  meta.
 - **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
   Supabase; lista paginada de 5 em 5 com nome, tamanho, data de envio, link
   "Ver" (URL pública do bucket) e exclusão (remove do Storage e da tabela).

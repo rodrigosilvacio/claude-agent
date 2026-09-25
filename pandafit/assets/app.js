@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=5';
+import { supabase } from './supabaseClient.js?v=6';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -33,6 +33,8 @@ var state = {
   deletingId: null,
   monthlyGoal: DEFAULT_MONTHLY_GOAL,
   savingGoal: false,
+  targetWeight: null,
+  savingTargetWeight: false,
   weights: [],
   weightsLoading: true,
   weightsLoadError: false,
@@ -131,7 +133,7 @@ async function deleteWorkout(id) {
 async function fetchSettings() {
   var { data, error } = await supabase
     .from('pandafit_settings')
-    .select('monthly_goal')
+    .select('monthly_goal, target_weight_kg')
     .eq('id', 1)
     .single();
   if (error) throw error;
@@ -142,6 +144,14 @@ async function updateSettings(monthlyGoal) {
   var { error } = await supabase
     .from('pandafit_settings')
     .update({ monthly_goal: monthlyGoal, updated_at: new Date().toISOString() })
+    .eq('id', 1);
+  if (error) throw error;
+}
+
+async function updateTargetWeight(kg) {
+  var { error } = await supabase
+    .from('pandafit_settings')
+    .update({ target_weight_kg: kg, updated_at: new Date().toISOString() })
     .eq('id', 1);
   if (error) throw error;
 }
@@ -271,6 +281,12 @@ var els = {
   metaProgressPct: $('#meta-progress-pct'),
   metaProgressCount: $('#meta-progress-count'),
   evolutionList: $('#evolution-list'),
+  inputTargetWeight: $('#input-target-weight'),
+  btnSaveTargetWeight: $('#btn-save-target-weight'),
+  targetWeightToast: $('#target-weight-toast'),
+  targetWeightCaption: $('#target-weight-caption'),
+  targetWeightCurrent: $('#target-weight-current'),
+  targetWeightRemaining: $('#target-weight-remaining'),
 
   inputWeightDate: $('#input-weight-date'),
   inputWeightValue: $('#input-weight-value'),
@@ -566,6 +582,7 @@ var showToast = makeToaster(els.toast);
 var showGoalToast = makeToaster(els.goalToast);
 var showWeightToast = makeToaster(els.weightToast);
 var showDocumentToast = makeToaster(els.documentToast);
+var showTargetWeightToast = makeToaster(els.targetWeightToast);
 
 // ── weight fields ──
 els.inputWeightDate.addEventListener('change', function (e) {
@@ -787,6 +804,8 @@ function renderPainel() {
 // ── render: Meta screen ──
 function renderMeta() {
   els.inputGoal.value = state.monthlyGoal;
+  els.inputTargetWeight.value = state.targetWeight != null ? fmtWeight(state.targetWeight) : '';
+  renderTargetWeightProgress();
 
   if (state.loading || state.loadError) {
     els.evolutionList.innerHTML = '';
@@ -826,6 +845,50 @@ function renderMeta() {
       '</div>';
   }).join('');
 }
+
+function renderTargetWeightProgress() {
+  var target = state.targetWeight;
+  if (!target || state.weightsLoading || state.weightsLoadError || state.weights.length === 0) {
+    els.targetWeightCaption.hidden = true;
+    return;
+  }
+  var latest = state.weights[0]; // sorted date desc
+  var diff = latest.weight_kg - target;
+  els.targetWeightCaption.hidden = false;
+  els.targetWeightCurrent.textContent = 'atual ' + fmtWeight(latest.weight_kg) + ' kg';
+  els.targetWeightRemaining.textContent = Math.abs(diff) < 0.05
+    ? 'meta batida!'
+    : 'faltam ' + fmtWeight(Math.abs(diff)) + ' kg para ' + fmtWeight(target) + ' kg';
+}
+
+els.btnSaveTargetWeight.addEventListener('click', function () {
+  if (state.savingTargetWeight) return;
+
+  var raw = String(els.inputTargetWeight.value).trim();
+  var kg = raw === '' ? null : parseFloat(raw.replace(',', '.'));
+  if (raw !== '' && (!kg || kg <= 0 || kg >= 500)) {
+    showTargetWeightToast('Informe um peso válido (entre 0 e 500 kg), ou deixe em branco para remover a meta.');
+    return;
+  }
+
+  state.savingTargetWeight = true;
+  els.btnSaveTargetWeight.disabled = true;
+
+  updateTargetWeight(kg)
+    .then(function () {
+      state.targetWeight = kg;
+      renderTargetWeightProgress();
+      showTargetWeightToast(kg ? 'Meta de peso atualizada para ' + fmtWeight(kg) + ' kg.' : 'Meta de peso removida.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar meta de peso', err);
+      showTargetWeightToast('Não foi possível salvar. Tente de novo.');
+    })
+    .finally(function () {
+      state.savingTargetWeight = false;
+      els.btnSaveTargetWeight.disabled = false;
+    });
+});
 
 // ── render: Peso screen ──
 function renderWeights() {
@@ -1002,6 +1065,7 @@ fetchWorkouts()
 fetchSettings()
   .then(function (row) {
     state.monthlyGoal = row.monthly_goal;
+    state.targetWeight = row.target_weight_kg;
   })
   .catch(function (err) {
     console.error('Falha ao carregar meta', err);

@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=5" />
+<link rel="stylesheet" href="assets/styles.css?v=6" />
 </head>
 <body>
 
@@ -206,6 +206,22 @@
         <div id="evolution-list" class="evolution-list"></div>
       </div>
 
+      <div class="ticket goal-card">
+        <span class="corner tl">+</span><span class="corner tr">+</span>
+        <span class="corner bl">+</span><span class="corner br">+</span>
+        <div class="label">Meta de peso</div>
+        <label class="field goal-field">
+          <span class="field-label">Peso-alvo em kg (opcional — em branco remove a meta)</span>
+          <input type="text" id="input-target-weight" inputmode="decimal" placeholder="Ex: 77,0" />
+        </label>
+        <div class="toast" id="target-weight-toast" hidden></div>
+        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-target-weight">Salvar meta de peso</button>
+        <div class="bar-caption target-weight-caption" id="target-weight-caption" hidden>
+          <span id="target-weight-current"></span>
+          <span id="target-weight-remaining"></span>
+        </div>
+      </div>
+
     </div>
   </main>
 
@@ -282,6 +298,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=5"></script>
+<script type="module" src="assets/app.js?v=6"></script>
 </body>
 </html>

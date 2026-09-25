@@ -678,6 +678,10 @@ input[type="file"]::file-selector-button {
   margin-bottom: 0;
 }
 
+.target-weight-caption {
+  margin-top: 14px !important;
+}
+
 /* ── evolution (Meta) ── */
 .evolution-list {
   display: flex;
