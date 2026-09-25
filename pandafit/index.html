@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=17" />
+<link rel="stylesheet" href="assets/styles.css?v=18" />
 </head>
 <body>
 
@@ -300,6 +300,74 @@
       </div>
     </main>
 
+    <!-- ───────── Modalidades ───────── -->
+    <main class="screen" id="screen-modalidades" data-screen="modalidades" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
+        <h1 class="title">Modalidades</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <div class="label">Cadastrar modalidade</div>
+          <label class="field goal-field">
+            <span class="field-label">Nome</span>
+            <input type="text" id="input-type-name" placeholder="Ex: Natação" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">Apelido (opcional)</span>
+            <input type="text" id="input-type-hint" placeholder="Ex: piscina" />
+          </label>
+          <div class="toast" id="type-form-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-type">Cadastrar</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Modalidades cadastradas</span>
+            <span class="section-note" id="types-count-note">0 modalidades</span>
+          </div>
+          <div id="types-list" class="records-list">
+            <p class="empty-state">Carregando modalidades…</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Locais ───────── -->
+    <main class="screen" id="screen-locais" data-screen="locais" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
+        <h1 class="title">Locais</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <div class="label">Cadastrar local</div>
+          <label class="field goal-field">
+            <span class="field-label">Nome</span>
+            <input type="text" id="input-location-name" placeholder="Ex: Academia Center" />
+          </label>
+          <div class="toast" id="location-form-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-location">Cadastrar</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Locais cadastrados</span>
+            <span class="section-note" id="locations-count-note">0 locais</span>
+          </div>
+          <div id="locations-list" class="records-list">
+            <p class="empty-state">Carregando locais…</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
     <!-- ───────── Documentos ───────── -->
     <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
       <div class="screen-head">
@@ -349,6 +417,14 @@
           <div class="settings-list">
             <button type="button" class="settings-row" data-open="meta">
               <span class="settings-row-label">Meta</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="modalidades">
+              <span class="settings-row-label">Modalidades</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="locais">
+              <span class="settings-row-label">Locais</span>
               <span class="settings-row-arrow">›</span>
             </button>
             <button type="button" class="settings-row" data-open="documentos">
@@ -444,6 +520,7 @@
             <span class="section-title">Documentos</span>
             <span class="section-note" id="patient-docs-note"></span>
           </div>
+          <p class="doc-summary" id="patient-docs-summary" hidden></p>
           <div id="patient-documents-list" class="records-list"></div>
         </div>
 
@@ -501,6 +578,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=17"></script>
+<script type="module" src="assets/app.js?v=18"></script>
 </body>
 </html>

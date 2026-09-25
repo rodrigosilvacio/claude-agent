@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=17';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=18';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -11,7 +11,11 @@ var WEIGHT_CHART_MAX_POINTS = 30;
 var PATIENT_RECENT_LIMIT = 20;
 var SIGNED_URL_TTL_SECONDS = 300;
 
-var WORKOUT_TYPES = [
+// Modalidades e locais eram uma lista fixa (WORKOUT_TYPES) e um histórico
+// calculado na hora — agora são catálogos por usuário (pandafit_workout_types
+// / pandafit_locations), carregados em startOwnData() e geridos em
+// Configurações > Modalidades / Locais.
+var DEFAULT_WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
   { name: 'Jiu Jitsu', hint: 'tatame' },
   { name: 'Corrida', hint: 'rua' },
@@ -33,8 +37,16 @@ var state = {
   mode: 'manual',
   running: false,
   secs: 0,
-  type: WORKOUT_TYPES[0].name,
+  type: '',
   local: '',
+  workoutTypes: [],
+  workoutTypesLoading: true,
+  creatingWorkoutType: false,
+  deletingWorkoutTypeId: null,
+  locations: [],
+  locationsLoading: true,
+  creatingLocation: false,
+  deletingLocationId: null,
   dateVal: todayISO(),
   minsVal: 60,
   workouts: [],
@@ -79,6 +91,7 @@ var state = {
   patientsLoadError: false,
   selectedPatient: null,
   patientDetail: null, // { workouts, weights, documents, loading, loadError }
+  deletingPatientDocumentId: null,
 };
 var timerHandle = null;
 
@@ -348,6 +361,99 @@ async function documentSignedUrl(path) {
   return data.signedUrl;
 }
 
+// Como o "Ver" acima, mas força o download (Content-Disposition: attachment)
+// em vez de abrir o arquivo numa aba — usado no resumo de documentos do
+// médico, onde baixar é o caso de uso principal.
+async function documentDownloadUrl(path, fileName) {
+  var { data, error } = await supabase.storage
+    .from('pandafit-documents')
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS, { download: fileName });
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+// ── modalidades (catálogo por usuário) ──
+async function fetchWorkoutTypes(userId) {
+  var { data, error } = await supabase
+    .from('pandafit_workout_types')
+    .select('id, name, hint')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+async function insertWorkoutType(name, hint) {
+  var { data, error } = await supabase
+    .from('pandafit_workout_types')
+    .insert({ user_id: currentUserId(), name: name, hint: hint || '' })
+    .select('id, name, hint')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteWorkoutType(id) {
+  var { error } = await supabase
+    .from('pandafit_workout_types')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// Conta nova (catálogo vazio) parte das 3 modalidades clássicas em vez de
+// uma tela em branco — quem preferir troca/apaga em Configurações.
+async function seedDefaultWorkoutTypes(userId) {
+  var payload = DEFAULT_WORKOUT_TYPES.map(function (t) {
+    return { user_id: userId, name: t.name, hint: t.hint };
+  });
+  var { data, error } = await supabase
+    .from('pandafit_workout_types')
+    .insert(payload)
+    .select('id, name, hint');
+  if (error) throw error;
+  return data;
+}
+
+// ── locais (catálogo por usuário) ──
+async function fetchLocations(userId) {
+  var { data, error } = await supabase
+    .from('pandafit_locations')
+    .select('id, name')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+async function insertLocation(name) {
+  var { data, error } = await supabase
+    .from('pandafit_locations')
+    .insert({ user_id: currentUserId(), name: name })
+    .select('id, name')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteLocation(id) {
+  var { error } = await supabase
+    .from('pandafit_locations')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// Registrar um treino num local ainda não catalogado o adiciona sozinho ao
+// catálogo (conveniência) — ignoreDuplicates faz isso não falhar quando o
+// local já existe.
+async function ensureLocationExists(name) {
+  var { error } = await supabase
+    .from('pandafit_locations')
+    .upsert({ user_id: currentUserId(), name: name }, { onConflict: 'user_id,name', ignoreDuplicates: true });
+  if (error) throw error;
+}
+
 // ── edge function: pandafit-admin-users (cadastro/gestão, só admin) ──
 async function callAdminUsers(action, payload) {
   var res = await fetch(SUPABASE_URL + '/functions/v1/pandafit-admin-users', {
@@ -389,6 +495,8 @@ var els = {
     registrar: $('#screen-registrar'),
     config: $('#screen-config'),
     meta: $('#screen-meta'),
+    modalidades: $('#screen-modalidades'),
+    locais: $('#screen-locais'),
     documentos: $('#screen-documentos'),
     usuarios: $('#screen-usuarios'),
     pacientes: $('#screen-pacientes'),
@@ -432,6 +540,21 @@ var els = {
   toast: $('#toast'),
   btnSave: $('#btn-save'),
   btnSaveLabel: $('#btn-save-label'),
+
+  // Modalidades (catálogo)
+  inputTypeName: $('#input-type-name'),
+  inputTypeHint: $('#input-type-hint'),
+  typeFormToast: $('#type-form-toast'),
+  btnCreateType: $('#btn-create-type'),
+  typesList: $('#types-list'),
+  typesCountNote: $('#types-count-note'),
+
+  // Locais (catálogo)
+  inputLocationName: $('#input-location-name'),
+  locationFormToast: $('#location-form-toast'),
+  btnCreateLocation: $('#btn-create-location'),
+  locationsList: $('#locations-list'),
+  locationsCountNote: $('#locations-count-note'),
 
   inputGoal: $('#input-goal'),
   btnSaveGoal: $('#btn-save-goal'),
@@ -496,6 +619,7 @@ var els = {
   patientsCountNote: $('#patients-count-note'),
   btnBackToPatients: $('#btn-back-to-patients'),
   patientDocsNote: $('#patient-docs-note'),
+  patientDocsSummary: $('#patient-docs-summary'),
   patientDocumentsList: $('#patient-documents-list'),
   patientWeightChartWrap: $('#patient-weight-chart-wrap'),
   patientWeightsNote: $('#patient-weights-note'),
@@ -541,6 +665,8 @@ var showWeightToast = makeToaster(els.weightToast);
 var showDocumentToast = makeToaster(els.documentToast);
 var showTargetWeightToast = makeToaster(els.targetWeightToast);
 var showUserFormToast = makeToaster(els.userFormToast);
+var showTypeFormToast = makeToaster(els.typeFormToast);
+var showLocationFormToast = makeToaster(els.locationFormToast);
 
 // ── auth: login, logout, role-based routing ──
 async function doLogout() {
@@ -579,6 +705,12 @@ function resetAppState() {
   state.documentsLoadError = false;
   state.monthlyGoal = DEFAULT_MONTHLY_GOAL;
   state.targetWeight = null;
+  state.workoutTypes = [];
+  state.workoutTypesLoading = true;
+  state.type = '';
+  state.locations = [];
+  state.locationsLoading = true;
+  state.local = '';
   state.users = [];
   state.usersLoading = true;
   state.patients = [];
@@ -671,7 +803,7 @@ document.querySelectorAll('.tab-btn').forEach(function (btn) {
 // Meta/Documentos/Usuários são sub-telas de Configurações (abertas por um
 // settings-row, não por um botão próprio na tabbar) — a aba "Config."
 // continua marcada como ativa enquanto qualquer uma delas está aberta.
-var CONFIG_SUB_SCREENS = ['config', 'meta', 'documentos', 'usuarios'];
+var CONFIG_SUB_SCREENS = ['config', 'meta', 'modalidades', 'locais', 'documentos', 'usuarios'];
 
 function setTab(tab) {
   state.tab = tab;
@@ -684,6 +816,8 @@ function setTab(tab) {
   });
   if (tab === 'painel') renderPainel();
   if (tab === 'meta') renderMeta();
+  if (tab === 'modalidades') renderWorkoutTypes();
+  if (tab === 'locais') renderLocations();
   if (tab === 'registrar') setRegistrarSection(state.registrarSection);
   if (tab === 'documentos') renderDocuments();
   if (tab === 'usuarios') { renderUsers(); loadUsers(); }
@@ -699,6 +833,8 @@ document.querySelectorAll('[data-back]').forEach(function (btn) {
 function renderActiveTab() {
   if (state.tab === 'painel') renderPainel();
   if (state.tab === 'meta') renderMeta();
+  if (state.tab === 'modalidades') renderWorkoutTypes();
+  if (state.tab === 'locais') renderLocations();
   if (state.tab === 'registrar' && state.registrarSection === 'peso') renderWeights();
   if (state.tab === 'documentos') renderDocuments();
 }
@@ -751,7 +887,7 @@ function cancelEditWorkout() {
   state.editingWorkoutId = null;
   state.dateVal = todayISO();
   state.minsVal = 60;
-  state.type = WORKOUT_TYPES[0].name;
+  state.type = state.workoutTypes.length ? state.workoutTypes[0].name : '';
   state.local = '';
   renderRegistrar();
   updateEditUI();
@@ -895,7 +1031,13 @@ els.inputLocal.addEventListener('input', function (e) {
 
 // ── workout type picker ──
 function renderTypeOptions() {
-  els.typeOptions.innerHTML = WORKOUT_TYPES.map(function (t) {
+  if (state.workoutTypes.length === 0) {
+    els.typeOptions.innerHTML = '<p class="empty-state">' +
+      (state.workoutTypesLoading ? 'Carregando modalidades…' : 'Nenhuma modalidade cadastrada. Adicione em Configurações › Modalidades.') +
+      '</p>';
+    return;
+  }
+  els.typeOptions.innerHTML = state.workoutTypes.map(function (t) {
     var active = t.name === state.type;
     return '<button type="button" class="type-option' + (active ? ' active' : '') + '" data-type="' + t.name + '">' +
       '<span class="type-mark"></span>' +
@@ -911,18 +1053,11 @@ function renderTypeOptions() {
   });
 }
 
-// Suggests locals already used, most recent first, via the input's <datalist>.
+// Sugestões de local via <datalist>, alimentadas pelo catálogo em
+// Configurações > Locais (não mais calculadas a partir do histórico).
 function updateLocalSuggestions() {
-  var seen = {};
-  var locals = [];
-  state.workouts.forEach(function (w) {
-    if (w.local && !seen[w.local]) {
-      seen[w.local] = true;
-      locals.push(w.local);
-    }
-  });
-  els.localSuggestions.innerHTML = locals.map(function (loc) {
-    return '<option value="' + loc.replace(/"/g, '&quot;') + '"></option>';
+  els.localSuggestions.innerHTML = state.locations.map(function (loc) {
+    return '<option value="' + loc.name.replace(/"/g, '&quot;') + '"></option>';
   }).join('');
 }
 
@@ -937,9 +1072,15 @@ function liveMinutes() {
 els.btnSave.addEventListener('click', function () {
   if (state.saving) return;
 
+  if (!state.type) {
+    showToast('Cadastre uma modalidade em Configurações › Modalidades antes de registrar.');
+    return;
+  }
+
   var min = liveMinutes();
   var dateISO = state.mode === 'timer' ? todayISO() : clampDateToToday(state.dateVal || todayISO());
   var local = state.local.trim();
+  var isNewLocal = local && !state.locations.some(function (l) { return l.name === local; });
   var wasTimer = state.mode === 'timer';
   var editingId = state.editingWorkoutId;
 
@@ -969,6 +1110,20 @@ els.btnSave.addEventListener('click', function () {
       }
       updateLocalSuggestions();
       renderPainel();
+
+      // Local digitado que ainda não estava no catálogo entra sozinho —
+      // conveniência: quem só digita continua funcionando, e o catálogo em
+      // Configurações fica sempre em dia pra quem quiser revisar/apagar.
+      if (isNewLocal) {
+        ensureLocationExists(local)
+          .then(function () { return fetchLocations(currentUserId()); })
+          .then(function (rows) {
+            state.locations = rows;
+            updateLocalSuggestions();
+            renderLocations();
+          })
+          .catch(function (err) { console.error('Falha ao salvar local no catálogo', err); });
+      }
     })
     .catch(function (err) {
       console.error('Falha ao salvar treino', err);
@@ -1243,19 +1398,32 @@ function renderPainel() {
   els.goalMeta.textContent = 'meta ' + goal + (goal === 1 ? ' treino/mês' : ' treinos/mês');
   els.sessionCountNote.textContent = count + ' neste mês';
 
-  // breakdown by type
+  // breakdown by type — só as modalidades usadas no mês (não o catálogo
+  // inteiro, que pode crescer bastante e não teria nada a mostrar aqui).
   var totalMinutes = monthWorkouts.reduce(function (a, w) { return a + w.minutes; }, 0);
-  els.splitsList.innerHTML = WORKOUT_TYPES.map(function (t) {
-    var min = monthWorkouts.filter(function (w) { return w.type === t.name; })
-      .reduce(function (a, w) { return a + w.minutes; }, 0);
-    var pct = totalMinutes ? Math.round((min / totalMinutes) * 100) : 0;
-    return '<div class="split-row">' +
-      '<div class="split-top"><span class="split-name">' + t.name + '</span>' +
-      '<span class="split-value">' + fmtDuration(min) + '</span></div>' +
-      '<div class="split-bar"><div class="split-bar-fill" style="width:' + pct + '%"></div>' +
-      '<span class="split-pct">' + pct + '%</span></div>' +
-      '</div>';
-  }).join('');
+  var typesInMonth = [];
+  var seenTypes = {};
+  monthWorkouts.forEach(function (w) {
+    if (!seenTypes[w.type]) { seenTypes[w.type] = true; typesInMonth.push(w.type); }
+  });
+  var catalogOrder = state.workoutTypes.map(function (t) { return t.name; });
+  typesInMonth.sort(function (a, b) { return catalogOrder.indexOf(a) - catalogOrder.indexOf(b); });
+
+  if (typesInMonth.length === 0) {
+    els.splitsList.innerHTML = '<p class="empty-state">Nenhum treino neste mês ainda.</p>';
+  } else {
+    els.splitsList.innerHTML = typesInMonth.map(function (typeName) {
+      var min = monthWorkouts.filter(function (w) { return w.type === typeName; })
+        .reduce(function (a, w) { return a + w.minutes; }, 0);
+      var pct = totalMinutes ? Math.round((min / totalMinutes) * 100) : 0;
+      return '<div class="split-row">' +
+        '<div class="split-top"><span class="split-name">' + typeName + '</span>' +
+        '<span class="split-value">' + fmtDuration(min) + '</span></div>' +
+        '<div class="split-bar"><div class="split-bar-fill" style="width:' + pct + '%"></div>' +
+        '<span class="split-pct">' + pct + '%</span></div>' +
+        '</div>';
+    }).join('');
+  }
 
   // recent records (this month, most recent first), paginated 5 at a time
   if (monthWorkouts.length === 0) {
@@ -1632,6 +1800,185 @@ els.btnExportWeights.addEventListener('click', function () {
   downloadCSV('pandafit-pesos.csv', ['Data', 'Peso (kg)'], rows);
 });
 
+// ── Modalidades (catálogo) ──
+els.btnCreateType.addEventListener('click', function () {
+  if (state.creatingWorkoutType) return;
+
+  var name = els.inputTypeName.value.trim();
+  var hint = els.inputTypeHint.value.trim();
+  if (!name) {
+    showTypeFormToast('Informe um nome para a modalidade.');
+    return;
+  }
+  if (state.workoutTypes.some(function (t) { return t.name.toLowerCase() === name.toLowerCase(); })) {
+    showTypeFormToast('Essa modalidade já está cadastrada.');
+    return;
+  }
+
+  state.creatingWorkoutType = true;
+  els.btnCreateType.disabled = true;
+
+  insertWorkoutType(name, hint)
+    .then(function (row) {
+      state.workoutTypes.push(row);
+      if (!state.type) state.type = row.name;
+      els.inputTypeName.value = '';
+      els.inputTypeHint.value = '';
+      showTypeFormToast('Modalidade cadastrada.');
+      renderWorkoutTypes();
+      renderTypeOptions();
+    })
+    .catch(function (err) {
+      console.error('Falha ao cadastrar modalidade', err);
+      showTypeFormToast('Não foi possível cadastrar. Tente de novo.');
+    })
+    .finally(function () {
+      state.creatingWorkoutType = false;
+      els.btnCreateType.disabled = false;
+    });
+});
+
+function renderWorkoutTypes() {
+  els.typesCountNote.textContent = state.workoutTypes.length + (state.workoutTypes.length === 1 ? ' modalidade' : ' modalidades');
+
+  if (state.workoutTypesLoading) {
+    els.typesList.innerHTML = '<p class="empty-state">Carregando modalidades…</p>';
+    return;
+  }
+  if (state.workoutTypes.length === 0) {
+    els.typesList.innerHTML = '<p class="empty-state">Nenhuma modalidade cadastrada ainda.</p>';
+    return;
+  }
+
+  els.typesList.innerHTML = state.workoutTypes.map(function (t) {
+    return '<div class="user-row">' +
+      '<div class="user-info">' +
+      '<span class="user-name">' + t.name + '</span>' +
+      (t.hint ? '<span class="user-email">' + t.hint + '</span>' : '') +
+      '</div>' +
+      '<button type="button" class="record-delete" data-id="' + t.id + '" aria-label="Excluir modalidade">' +
+      DELETE_ICON_SVG +
+      '</button>' +
+      '</div>';
+  }).join('');
+
+  els.typesList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var t = state.workoutTypes.find(function (x) { return x.id === Number(btn.dataset.id); });
+      if (t) handleDeleteWorkoutTypeClick(t);
+    });
+  });
+}
+
+async function handleDeleteWorkoutTypeClick(t) {
+  if (state.deletingWorkoutTypeId) return;
+  var ok = await confirmModal('Excluir a modalidade "' + t.name + '"? Treinos já registrados com ela não são afetados.');
+  if (!ok) return;
+
+  state.deletingWorkoutTypeId = t.id;
+  deleteWorkoutType(t.id)
+    .then(function () {
+      state.workoutTypes = state.workoutTypes.filter(function (x) { return x.id !== t.id; });
+      if (state.type === t.name) state.type = state.workoutTypes.length ? state.workoutTypes[0].name : '';
+      renderTypeOptions();
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir modalidade', err);
+      showTypeFormToast('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingWorkoutTypeId = null;
+      renderWorkoutTypes();
+    });
+}
+
+// ── Locais (catálogo) ──
+els.btnCreateLocation.addEventListener('click', function () {
+  if (state.creatingLocation) return;
+
+  var name = els.inputLocationName.value.trim();
+  if (!name) {
+    showLocationFormToast('Informe um nome para o local.');
+    return;
+  }
+  if (state.locations.some(function (l) { return l.name.toLowerCase() === name.toLowerCase(); })) {
+    showLocationFormToast('Esse local já está cadastrado.');
+    return;
+  }
+
+  state.creatingLocation = true;
+  els.btnCreateLocation.disabled = true;
+
+  insertLocation(name)
+    .then(function (row) {
+      state.locations.push(row);
+      els.inputLocationName.value = '';
+      showLocationFormToast('Local cadastrado.');
+      renderLocations();
+      updateLocalSuggestions();
+    })
+    .catch(function (err) {
+      console.error('Falha ao cadastrar local', err);
+      showLocationFormToast('Não foi possível cadastrar. Tente de novo.');
+    })
+    .finally(function () {
+      state.creatingLocation = false;
+      els.btnCreateLocation.disabled = false;
+    });
+});
+
+function renderLocations() {
+  els.locationsCountNote.textContent = state.locations.length + (state.locations.length === 1 ? ' local' : ' locais');
+
+  if (state.locationsLoading) {
+    els.locationsList.innerHTML = '<p class="empty-state">Carregando locais…</p>';
+    return;
+  }
+  if (state.locations.length === 0) {
+    els.locationsList.innerHTML = '<p class="empty-state">Nenhum local cadastrado ainda.</p>';
+    return;
+  }
+
+  els.locationsList.innerHTML = state.locations.map(function (l) {
+    return '<div class="user-row">' +
+      '<div class="user-info">' +
+      '<span class="user-name">' + l.name + '</span>' +
+      '</div>' +
+      '<button type="button" class="record-delete" data-id="' + l.id + '" aria-label="Excluir local">' +
+      DELETE_ICON_SVG +
+      '</button>' +
+      '</div>';
+  }).join('');
+
+  els.locationsList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var l = state.locations.find(function (x) { return x.id === Number(btn.dataset.id); });
+      if (l) handleDeleteLocationClick(l);
+    });
+  });
+}
+
+async function handleDeleteLocationClick(l) {
+  if (state.deletingLocationId) return;
+  var ok = await confirmModal('Excluir o local "' + l.name + '"? Treinos já registrados com ele não são afetados.');
+  if (!ok) return;
+
+  state.deletingLocationId = l.id;
+  deleteLocation(l.id)
+    .then(function () {
+      state.locations = state.locations.filter(function (x) { return x.id !== l.id; });
+      updateLocalSuggestions();
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir local', err);
+      showLocationFormToast('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingLocationId = null;
+      renderLocations();
+    });
+}
+
 // ── admin: Usuários ──
 els.roleOptions.querySelectorAll('.role-option').forEach(function (btn) {
   btn.addEventListener('click', function () {
@@ -1854,6 +2201,7 @@ function loadPatientDetail(patientId) {
     fetchWeights(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
     fetchWorkouts(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
   ]).then(function (results) {
+    state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2] };
     renderPatientDocuments(results[0]);
     renderPatientWeights(results[1]);
     renderPatientWorkouts(results[2]);
@@ -1862,20 +2210,33 @@ function loadPatientDetail(patientId) {
 
 function renderPatientDocuments(documents) {
   if (documents == null) {
+    els.patientDocsSummary.hidden = true;
     els.patientDocumentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os documentos.</p>';
     return;
   }
   els.patientDocsNote.textContent = documents.length + (documents.length === 1 ? ' documento' : ' documentos');
   if (documents.length === 0) {
+    els.patientDocsSummary.hidden = true;
     els.patientDocumentsList.innerHTML = '<p class="empty-state">Nenhum documento enviado.</p>';
     return;
   }
+
+  // Resumo: total de espaço ocupado + data do envio mais recente (a lista
+  // já vem ordenada por uploaded_at desc — ver fetchDocuments).
+  var totalBytes = documents.reduce(function (a, d) { return a + d.file_size; }, 0);
+  els.patientDocsSummary.hidden = false;
+  els.patientDocsSummary.textContent = fmtFileSize(totalBytes) + ' ao todo · último envio em ' + fmtDayLabel(documents[0].uploaded_at.slice(0, 10));
+
   els.patientDocumentsList.innerHTML = documents.map(function (doc) {
-    return '<div class="record-row">' +
+    return '<div class="record-row has-edit">' +
       '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
       '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
       '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
       '<a class="record-dur doc-view-link" href="#" data-path="' + doc.file_path + '">Ver</a>' +
+      '<a class="record-dur doc-download-link" href="#" data-path="' + doc.file_path + '" data-name="' + doc.file_name.replace(/"/g, '&quot;') + '">Baixar</a>' +
+      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir documento">' +
+      DELETE_ICON_SVG +
+      '</button>' +
       '</div>';
   }).join('');
   els.patientDocumentsList.querySelectorAll('.doc-view-link').forEach(function (link) {
@@ -1884,6 +2245,53 @@ function renderPatientDocuments(documents) {
       handleViewDocumentClick(link.dataset.path, link);
     });
   });
+  els.patientDocumentsList.querySelectorAll('.doc-download-link').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      handleDownloadDocumentClick(link.dataset.path, link.dataset.name, link);
+    });
+  });
+  els.patientDocumentsList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var doc = documents.find(function (d) { return d.id === Number(btn.dataset.id); });
+      if (doc) handleDeletePatientDocumentClick(doc);
+    });
+  });
+}
+
+async function handleDownloadDocumentClick(path, fileName, linkEl) {
+  var original = linkEl.textContent;
+  linkEl.textContent = '…';
+  try {
+    var url = await documentDownloadUrl(path, fileName);
+    window.open(url, '_blank', 'noopener');
+  } catch (err) {
+    console.error('Falha ao gerar link de download', err);
+    showDocumentToast('Não foi possível baixar o documento.');
+  } finally {
+    linkEl.textContent = original;
+  }
+}
+
+async function handleDeletePatientDocumentClick(doc) {
+  if (state.deletingPatientDocumentId) return;
+  var ok = await confirmModal('Excluir "' + doc.file_name + '" do paciente? Essa ação não pode ser desfeita.');
+  if (!ok) return;
+
+  state.deletingPatientDocumentId = doc.id;
+  deleteDocument(doc)
+    .then(function () {
+      var remaining = state.patientDetail.documents.filter(function (d) { return d.id !== doc.id; });
+      state.patientDetail.documents = remaining;
+      renderPatientDocuments(remaining);
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir documento do paciente', err);
+      showDocumentToast('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingPatientDocumentId = null;
+    });
 }
 
 function renderPatientWeights(weights) {
@@ -1994,6 +2402,34 @@ function startOwnData() {
       state.documentsLoadError = true;
     })
     .finally(renderActiveTab);
+
+  // Conta nova (sem nenhuma modalidade ainda) recebe as 3 clássicas de
+  // largada — ver seedDefaultWorkoutTypes().
+  fetchWorkoutTypes(userId)
+    .then(function (rows) { return rows.length > 0 ? rows : seedDefaultWorkoutTypes(userId); })
+    .then(function (rows) {
+      state.workoutTypes = rows;
+      if (!state.type && rows.length) state.type = rows[0].name;
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar modalidades', err);
+    })
+    .finally(function () {
+      state.workoutTypesLoading = false;
+      renderRegistrar();
+      renderActiveTab();
+    });
+
+  fetchLocations(userId)
+    .then(function (rows) { state.locations = rows; })
+    .catch(function (err) {
+      console.error('Falha ao carregar locais', err);
+    })
+    .finally(function () {
+      state.locationsLoading = false;
+      updateLocalSuggestions();
+      renderActiveTab();
+    });
 }
 
 // ── boot: check session, show login or app shell ──

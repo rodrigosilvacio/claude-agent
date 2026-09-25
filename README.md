@@ -208,10 +208,14 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   conta pode logar em outro app. Revogar remove só a linha de
   `pandafit_usuarios` (nunca a conta em `auth.users`, pelo mesmo motivo).
 - **medico**: sem tabbar — cai direto numa tela **Pacientes**, lista de
-  contas com `role = 'usuario'`; ao selecionar uma, vê (somente leitura,
-  sem editar/excluir) os documentos enviados, o gráfico de tendência de
-  peso, o histórico de peso e os treinos mais recentes daquele paciente. É
-  a tela pedida para o médico acompanhar o que o usuário envia.
+  contas com `role = 'usuario'`; ao selecionar uma, vê o gráfico de
+  tendência de peso, o histórico de peso e os treinos mais recentes
+  daquele paciente (somente leitura, sem editar/excluir) e a seção
+  **Documentos**, com um resumo (espaço total ocupado + data do envio mais
+  recente), link **Baixar** (signed URL com download forçado, em vez de só
+  abrir numa aba) além do **Ver**, e exclusão — o único ponto onde o médico
+  pode apagar algo do paciente, pra tirar um exame enviado errado ou já
+  obsoleto (ver `0053_pandafit_medico_pode_excluir_documentos.sql`).
 
 O primeiro admin (`rodrigosilvapmp@hotmail.com`) foi cadastrado direto via
 SQL (`0049_pandafit_bootstrap_admin.sql`) reaproveitando uma conta que já
@@ -221,10 +225,13 @@ autenticação foi migrado para essa conta.
 
 Documentos: o bucket `pandafit-documents` **não é mais público** — cada
 arquivo vive em `<user_id>/<arquivo>` e as políticas de Storage restringem
-`select`/`insert`/`delete` à própria pasta (médico tem `select` em todas).
-O link "Ver" gera uma signed URL (`createSignedUrl`, expira em 5 minutos)
-na hora do clique em vez de expor uma URL pública permanente — importante
-agora que a aba guarda exame médico de verdade.
+`insert` à própria pasta e `select`/`delete` à própria pasta **ou** ao
+médico (que enxerga e pode excluir o documento de qualquer paciente, mas
+nunca insere um). O link "Ver" gera uma signed URL (`createSignedUrl`,
+expira em 5 minutos) na hora do clique em vez de expor uma URL pública
+permanente — importante agora que a aba guarda exame médico de verdade; o
+"Baixar" do médico usa a mesma signed URL com a opção `download`, que força
+o navegador a salvar o arquivo em vez de só abri-lo numa aba.
 
 A tela de login exibe o nome **LaVie Fit** (o app em si continua se
 chamando PandaFit em todo o resto — título da aba, ícones, nome do PWA).
@@ -249,16 +256,18 @@ descrita acima.
   para navegar entre meses (a seta `›` fica desabilitada no mês atual — não
   dá pra ver o futuro); cartão de total de treinos no mês (contagem, não
   duração) com
-  barra de progresso até a meta mensal; divisão do tempo por tipo de treino
-  (Musculação, Jiu Jitsu, Corrida); lista dos registros do mês (dia, tipo,
+  barra de progresso até a meta mensal; divisão do tempo por modalidade
+  (só as usadas no mês — não o catálogo inteiro, ver Modalidades abaixo);
+  lista dos registros do mês (dia, tipo,
   local, duração), paginada de 5 em 5, com botão de editar (lápis) e de
   excluir (confirmação antes de apagar) em cada linha — tudo recalculado
   para o mês selecionado.
 - **Registrar**: alterna entre **Treino** e **Peso** por uma aba superior;
   dentro de Treino, alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
-  duração corrida ao salvar), com seletor do tipo de treino e campo opcional
-  de local; dentro de Peso, registra data + kg (salvar no mesmo dia
+  duração corrida ao salvar), com seletor do tipo de treino (vem do catálogo
+  de Modalidades — ver abaixo) e campo de local com autocomplete (vem do
+  catálogo de Locais); dentro de Peso, registra data + kg (salvar no mesmo dia
   sobrescreve em vez de duplicar — `upsert` por `date`, que é `unique` na
   tabela), mostra um gráfico de linha simples (SVG, sem biblioteca) com a
   tendência dos últimos 30 pesos registrados — some se houver menos de 2
@@ -290,11 +299,25 @@ descrita acima.
   nome, tamanho, data de envio, link "Ver" (gera uma signed URL na hora do
   clique — o bucket não é público) e exclusão (remove do Storage e da
   tabela).
-- **Configurações**: tela raiz com uma linha por item (Meta, Documentos e,
-  só para admin, Usuários), cada uma abrindo a tela correspondente; embaixo,
-  a seção "Conta" mostra e-mail + papel logado e o botão **Sair** (o mesmo
-  avatar da barra de topo também abre a confirmação de logout, de qualquer
-  tela).
+- **Modalidades** e **Locais**: catálogos por usuário (`pandafit_workout_types`
+  e `pandafit_locations`) — tudo que é "cadastrável" no PandaFit mora em
+  Configurações, não mais numa lista fixa no código. Modalidades tem nome +
+  apelido opcional (ex: "Natação" / "piscina") e alimenta os botões de tipo
+  em Registrar; Locais tem só nome e alimenta o autocomplete do campo Local.
+  Excluir um item do catálogo não apaga treinos já registrados com ele (o
+  texto fica salvo solto na linha do treino). Uma conta nova recebe as 3
+  modalidades clássicas (Musculação/Jiu Jitsu/Corrida) de largada; contas
+  que já tinham treinos registrados antes dessa mudança tiveram seu
+  histórico migrado direto para os novos catálogos
+  (`0051_pandafit_workout_types_and_locations.sql`). Digitar um local novo
+  direto em Registrar (sem passar por Configurações primeiro) também
+  cadastra ele sozinho no catálogo — conveniência que substitui o
+  autocomplete antigo (calculado na hora a partir do histórico de treinos).
+- **Configurações**: tela raiz com uma linha por item (Meta, Modalidades,
+  Locais, Documentos e, só para admin, Usuários), cada uma abrindo a tela
+  correspondente; embaixo, a seção "Conta" mostra e-mail + papel logado e o
+  botão **Sair** (o mesmo avatar da barra de topo também abre a confirmação
+  de logout, de qualquer tela).
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`

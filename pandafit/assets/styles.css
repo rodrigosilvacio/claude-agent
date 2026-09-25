@@ -356,6 +356,12 @@ html, body {
   color: var(--muted);
 }
 
+.doc-summary {
+  margin: -2px 0 8px;
+  font: 400 12px/1.4 "Inter", sans-serif;
+  color: var(--muted);
+}
+
 /* ── splits (breakdown by type) ── */
 .splits-list {
   display: flex;
@@ -1055,7 +1061,8 @@ input[type="file"]::file-selector-button {
 .weight-delta.weight-down { background: var(--good-bg); color: var(--good); }
 
 /* ── documents ── */
-.doc-view-link {
+.doc-view-link,
+.doc-download-link {
   text-decoration: none;
   display: inline-block;
 }
