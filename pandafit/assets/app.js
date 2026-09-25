@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=6';
+import { supabase } from './supabaseClient.js?v=7';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;

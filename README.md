@@ -210,6 +210,14 @@ para não ficar com o realce cinza/menu de contexto do Safari, e
 Também ganhou meta tags de "adicionar à tela de início" (ícone, título,
 barra de status).
 
+Suporta modo escuro automático via `@media (prefers-color-scheme: dark)`:
+todas as cores do app são tokens (`--ink`, `--muted`, `--accent`,
+`--bg-app`, `--line`, `--track`, `--bad`/`--good` para os indicadores de
+peso e o botão de exclusão, etc.) definidos em `:root` e redefinidos dentro
+do media query — segue a preferência do sistema operacional/navegador, sem
+alternância manual. `color-scheme: light dark` também é declarado para que
+controles nativos (date picker, seletor de arquivo) sigam o tema.
+
 ### Hospedagem (GitHub Pages) e cache
 
 Mesmo padrão do Reports Panel (ver seção abaixo): `styles.css` e `app.js`
