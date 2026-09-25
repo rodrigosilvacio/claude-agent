@@ -2,6 +2,14 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8" />
+<!-- Fixa a URL-base da página em /pandafit/ para que os caminhos relativos
+     (assets/styles.css, assets/app.js, manifest.json, sw.js) resolvam certo
+     mesmo quando a página é aberta sem a barra final (".../pandafit" em vez
+     de ".../pandafit/") — alguns hosts (ex: Vercel) não redirecionam esse
+     caso automaticamente como o GitHub Pages faz, e sem isso o navegador
+     resolve os caminhos relativos a partir da raiz do domínio, não desta
+     pasta, e nada carrega. -->
+<base href="/pandafit/" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>PandaFit · Registro de treinos</title>
 <meta name="theme-color" content="#fbf8f4" media="(prefers-color-scheme: light)" />

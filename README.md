@@ -326,6 +326,15 @@ entrado no ar). **Sempre que alterar `app.js`, `styles.css` ou
 `supabaseClient.js`, incremente esse número nos três lugares — e também em
 `CACHE_NAME`/`APP_SHELL` dentro de `sw.js` (ver seção PWA acima).**
 
+**`<base href="/pandafit/">`**: o app também é servido via Vercel a partir
+da raiz deste repositório (ex: `erpconnect.vercel.app/pandafit`), e esse
+host — ao contrário do GitHub Pages — não redireciona `.../pandafit` (sem
+barra final) para `.../pandafit/`. Sem a barra, o navegador resolve os
+caminhos relativos (`assets/styles.css`, `assets/app.js`, `manifest.json`,
+`sw.js`) a partir da raiz do domínio em vez desta pasta, e nada carrega — a
+tela de login aparecia sem nenhum CSS/JS aplicado. A tag `<base>` no
+`<head>` fixa a URL-base da página independente de como ela foi aberta.
+
 ## Painel de Reports (`/reports`)
 
 Painel interno para centralizar dashboards em HTML gerados pelo Claude:
