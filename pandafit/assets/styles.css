@@ -815,6 +815,28 @@ input[type="file"]::file-selector-button {
   font-weight: 600;
 }
 
+.export-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.export-btn {
+  flex: 1;
+  min-height: 44px;
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  font: 600 12px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+@media (hover: hover) {
+  .export-btn:hover { background: var(--hover-tint); }
+}
+
 /* ── evolution (Meta) ── */
 .evolution-list {
   display: flex;

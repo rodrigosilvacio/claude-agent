@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=11';
+import { supabase } from './supabaseClient.js?v=12';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -88,6 +88,27 @@ function fmtDayLabel(iso) {
 
 function fmtWeight(kg) {
   return (Math.round(kg * 10) / 10).toFixed(1).replace('.', ',');
+}
+
+function csvEscape(value) {
+  var s = value == null ? '' : String(value);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// A leading BOM helps Excel auto-detect UTF-8, so accented characters in
+// tipo/local (Musculação, Jiu Jitsu…) don't come out garbled.
+function downloadCSV(filename, header, rows) {
+  var lines = [header.map(csvEscape).join(',')];
+  rows.forEach(function (row) { lines.push(row.map(csvEscape).join(',')); });
+  var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function fmtFileSize(bytes) {
@@ -347,6 +368,8 @@ var els = {
   metaProgressCount: $('#meta-progress-count'),
   metaStreakNote: $('#meta-streak-note'),
   evolutionList: $('#evolution-list'),
+  btnExportWorkouts: $('#btn-export-workouts'),
+  btnExportWeights: $('#btn-export-weights'),
   inputTargetWeight: $('#input-target-weight'),
   btnSaveTargetWeight: $('#btn-save-target-weight'),
   targetWeightToast: $('#target-weight-toast'),
@@ -1285,6 +1308,23 @@ els.btnSaveGoal.addEventListener('click', function () {
       state.savingGoal = false;
       els.btnSaveGoal.disabled = false;
     });
+});
+
+// ── export CSV ──
+els.btnExportWorkouts.addEventListener('click', function () {
+  var sorted = state.workouts.slice().sort(function (a, b) {
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  });
+  var rows = sorted.map(function (w) { return [w.date, w.type, w.minutes, w.local || '']; });
+  downloadCSV('pandafit-treinos.csv', ['Data', 'Tipo', 'Duração (min)', 'Local'], rows);
+});
+
+els.btnExportWeights.addEventListener('click', function () {
+  var sorted = state.weights.slice().sort(function (a, b) {
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  });
+  var rows = sorted.map(function (w) { return [w.date, w.weight_kg]; });
+  downloadCSV('pandafit-pesos.csv', ['Data', 'Peso (kg)'], rows);
 });
 
 // ── init ──

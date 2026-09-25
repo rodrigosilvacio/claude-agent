@@ -209,7 +209,10 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   meta de peso opcional (`target_weight_kg`
   em `pandafit_settings`) — mostra "faltam X kg" comparando com o peso mais
   recente registrado, ou "meta batida!"; deixar o campo em branco remove a
-  meta.
+  meta; botões para baixar todos os treinos e todos os pesos já carregados
+  em CSV (ordenado por data, `,` como separador, `.` como decimal — sem
+  formatação brasileira para não colidir com o separador de campo — e BOM
+  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local).
 - **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
   Supabase; lista paginada de 5 em 5 com nome, tamanho, data de envio, link
   "Ver" (URL pública do bucket) e exclusão (remove do Storage e da tabela).
