@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=19" />
+<link rel="stylesheet" href="assets/styles.css?v=20" />
 </head>
 <body>
 
@@ -186,6 +186,15 @@
           <input type="text" id="input-local" placeholder="Academia, CT, parque…" list="local-suggestions" />
           <datalist id="local-suggestions"></datalist>
         </label>
+
+        <div class="section">
+          <div class="exercises-head">
+            <span class="field-label">Exercícios (opcional)</span>
+            <button type="button" class="add-exercise-btn" id="btn-add-exercise">+ Adicionar exercício</button>
+          </div>
+          <div id="exercises-list"></div>
+          <datalist id="exercise-suggestions"></datalist>
+        </div>
       </div>
 
       <div class="save-bar" id="save-bar-treino">
@@ -368,6 +377,38 @@
       </div>
     </main>
 
+    <!-- ───────── Exercícios ───────── -->
+    <main class="screen" id="screen-exercicios" data-screen="exercicios" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
+        <h1 class="title">Exercícios</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <div class="label">Cadastrar exercício</div>
+          <label class="field goal-field">
+            <span class="field-label">Nome</span>
+            <input type="text" id="input-exercise-name" placeholder="Ex: Supino reto" />
+          </label>
+          <div class="toast" id="exercise-form-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-exercise">Cadastrar</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Exercícios cadastrados</span>
+            <span class="section-note" id="exercises-count-note">0 exercícios</span>
+          </div>
+          <div id="exercises-catalog-list" class="records-list">
+            <p class="empty-state">Carregando exercícios…</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
     <!-- ───────── Documentos ───────── -->
     <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
       <div class="screen-head">
@@ -425,6 +466,10 @@
             </button>
             <button type="button" class="settings-row" data-open="locais">
               <span class="settings-row-label">Locais</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="exercicios">
+              <span class="settings-row-label">Exercícios</span>
               <span class="settings-row-arrow">›</span>
             </button>
             <button type="button" class="settings-row" data-open="documentos">
@@ -578,6 +623,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=19"></script>
+<script type="module" src="assets/app.js?v=20"></script>
 </body>
 </html>
