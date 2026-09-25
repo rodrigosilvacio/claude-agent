@@ -373,6 +373,50 @@ html, body {
 }
 
 /* ── splits (breakdown by type) ── */
+/* ── calendário (heatmap mensal) ── */
+.cal-weekdays,
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+
+.cal-weekdays {
+  margin-bottom: 6px;
+}
+.cal-weekdays span {
+  text-align: center;
+  font: 600 10px/1 "Inter", sans-serif;
+  color: var(--faint);
+}
+
+.cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font: 500 11px/1 "Inter", sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--line-soft);
+}
+
+.cal-cell.cal-level-1 {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}
+
+.cal-cell.cal-level-2 {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.cal-cell.cal-today {
+  box-shadow: 0 0 0 1.5px var(--accent) inset;
+}
+
 .splits-list {
   display: flex;
   flex-direction: column;

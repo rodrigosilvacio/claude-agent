@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=21';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=22';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -671,6 +671,7 @@ var els = {
   goalPct: $('#goal-pct'),
   goalMeta: $('#goal-meta'),
   splitsList: $('#splits-list'),
+  calendarHeatmap: $('#calendar-heatmap'),
   recordsList: $('#records-list'),
   sessionCountNote: $('#session-count-note'),
   recordsPager: $('#records-pager'),
@@ -1681,6 +1682,47 @@ function renderReminders() {
 }
 
 // ── render: Painel screen ──
+// Grade mensal estilo GitHub — mostra de relance em quais dias houve
+// treino, sem exigir clique ou navegação extra. 3 níveis (0/1/2+ treinos
+// naquele dia) usando os mesmos tons de accent já usados no resto do app,
+// em vez de uma paleta nova só pra isso.
+var WEEKDAY_LABELS_PT = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+
+function buildCalendarHeatmapHTML(monthWorkouts, viewDate) {
+  var year = viewDate.getFullYear();
+  var month = viewDate.getMonth();
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  var firstWeekday = new Date(year, month, 1).getDay();
+  var today = todayISO();
+
+  var countByDay = {};
+  monthWorkouts.forEach(function (w) {
+    var day = parseInt(w.date.slice(8, 10), 10);
+    countByDay[day] = (countByDay[day] || 0) + 1;
+  });
+
+  var cells = [];
+  for (var i = 0; i < firstWeekday; i++) {
+    cells.push('<span class="cal-cell cal-empty" aria-hidden="true"></span>');
+  }
+  for (var d = 1; d <= daysInMonth; d++) {
+    var dateStr = year + '-' + pad(month + 1) + '-' + pad(d);
+    var count = countByDay[d] || 0;
+    var level = count === 0 ? 0 : count === 1 ? 1 : 2;
+    var label = fmtDayLabel(dateStr) + (count ? ' · ' + count + (count === 1 ? ' treino' : ' treinos') : ' · sem treino');
+    cells.push(
+      '<span class="cal-cell cal-level-' + level + (dateStr === today ? ' cal-today' : '') + '" title="' + label + '">' +
+      d +
+      '</span>'
+    );
+  }
+
+  return (
+    '<div class="cal-weekdays">' + WEEKDAY_LABELS_PT.map(function (l) { return '<span>' + l + '</span>'; }).join('') + '</div>' +
+    '<div class="cal-grid">' + cells.join('') + '</div>'
+  );
+}
+
 function renderPainel() {
   renderReminders();
   var viewDate = viewedMonthDate();
@@ -1691,12 +1733,14 @@ function renderPainel() {
   if (state.loading) {
     els.recordsList.innerHTML = '<p class="empty-state">Carregando treinos…</p>';
     els.splitsList.innerHTML = '';
+    els.calendarHeatmap.innerHTML = '';
     return;
   }
 
   if (state.loadError) {
     els.recordsList.innerHTML = '<p class="empty-state">Não foi possível carregar os treinos. Recarregue a página.</p>';
     els.splitsList.innerHTML = '';
+    els.calendarHeatmap.innerHTML = '';
     return;
   }
 
@@ -1705,6 +1749,8 @@ function renderPainel() {
     var d = parseISO(w.date);
     return d >= range.start && d <= range.end;
   });
+
+  els.calendarHeatmap.innerHTML = buildCalendarHeatmapHTML(monthWorkouts, viewDate);
 
   var goal = state.monthlyGoal;
   var count = monthWorkouts.length;

@@ -253,7 +253,11 @@ descrita acima.
   para navegar entre meses (a seta `›` fica desabilitada no mês atual — não
   dá pra ver o futuro); cartão de total de treinos no mês (contagem, não
   duração) com
-  barra de progresso até a meta mensal; divisão do tempo por modalidade
+  barra de progresso até a meta mensal; **calendário** em grade estilo
+  GitHub (um quadrado por dia do mês, 3 níveis — sem treino, 1 treino, 2+
+  treinos — nos mesmos tons de azul do resto do app, com o dia de hoje
+  marcado por um contorno) pra ver o padrão de consistência de relance,
+  sem precisar ler a lista de registros; divisão do tempo por modalidade
   (só as usadas no mês — não o catálogo inteiro, ver Modalidades abaixo);
   lista dos registros do mês (dia, tipo,
   local, duração), paginada de 5 em 5, com botão de editar (lápis) e de
