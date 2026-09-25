@@ -151,6 +151,28 @@ html, body {
   letter-spacing: -0.015em;
 }
 
+.title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.edit-cancel-link {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  color: var(--accent-text);
+  flex: none;
+}
+
 .screen-body {
   flex: 1;
   overflow: auto;
@@ -326,6 +348,9 @@ html, body {
   border-top: 1px solid var(--line-soft);
 }
 .record-row:first-child { border-top: 0; }
+.record-row.has-edit {
+  grid-template-columns: 46px 1fr auto auto auto;
+}
 
 .record-day {
   font: 600 15px/1 "Barlow Condensed", sans-serif;
@@ -385,6 +410,26 @@ html, body {
 .record-delete:active { color: var(--bad); }
 @media (hover: hover) {
   .record-delete:hover { color: var(--bad); }
+}
+
+.record-edit {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  background: transparent;
+  width: 40px;
+  height: 40px;
+  margin: -8px -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  flex-shrink: 0;
+}
+.record-edit:active { color: var(--accent); }
+@media (hover: hover) {
+  .record-edit:hover { color: var(--accent); }
 }
 
 /* ── pagination ── */

@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=9" />
+<link rel="stylesheet" href="assets/styles.css?v=10" />
 </head>
 <body>
 
@@ -77,7 +77,10 @@
   <!-- ───────── Registrar (treino + peso) ───────── -->
   <main class="screen" id="screen-registrar" data-screen="registrar" hidden>
     <div class="screen-head">
-      <h1 class="title" id="registrar-title">Registrar treino</h1>
+      <div class="title-row">
+        <h1 class="title" id="registrar-title">Registrar treino</h1>
+        <button type="button" class="edit-cancel-link" id="btn-cancel-edit" hidden>Cancelar edição</button>
+      </div>
       <div class="section-tabs">
         <button type="button" class="section-tab" data-section="treino">Treino</button>
         <button type="button" class="section-tab" data-section="peso">Peso</button>
@@ -87,7 +90,7 @@
     <!-- ── seção Treino ── -->
     <div class="screen-body" id="section-treino">
 
-      <div class="mode-tabs">
+      <div class="mode-tabs" id="mode-tabs">
         <button type="button" class="mode-tab" data-mode="manual">Manual</button>
         <button type="button" class="mode-tab" data-mode="timer">Cronômetro</button>
       </div>
@@ -134,7 +137,7 @@
       <button type="button" class="btn btn-save" id="btn-save">
         <span class="corner tl">+</span><span class="corner tr">+</span>
         <span class="corner bl">+</span><span class="corner br">+</span>
-        Salvar treino
+        <span id="btn-save-label">Salvar treino</span>
       </button>
     </div>
 
@@ -154,7 +157,9 @@
           <input type="text" id="input-weight-value" inputmode="decimal" placeholder="Ex: 78,4" />
         </label>
         <div class="toast" id="weight-toast" hidden></div>
-        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">Salvar peso</button>
+        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">
+          <span id="btn-save-weight-label">Salvar peso</span>
+        </button>
       </div>
 
       <div class="section">
@@ -310,6 +315,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=9"></script>
+<script type="module" src="assets/app.js?v=10"></script>
 </body>
 </html>

@@ -179,8 +179,9 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   futuro); cartão de total de treinos no mês (contagem, não duração) com
   barra de progresso até a meta mensal; divisão do tempo por tipo de treino
   (Musculação, Jiu Jitsu, Corrida); lista dos registros do mês (dia, tipo,
-  local, duração), paginada de 5 em 5, com botão de excluir (confirmação
-  antes de apagar) em cada linha — tudo recalculado para o mês selecionado.
+  local, duração), paginada de 5 em 5, com botão de editar (lápis) e de
+  excluir (confirmação antes de apagar) em cada linha — tudo recalculado
+  para o mês selecionado.
 - **Registrar**: alterna entre **Treino** e **Peso** por uma aba superior;
   dentro de Treino, alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
@@ -191,7 +192,12 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   tendência dos últimos 30 pesos registrados — some se houver menos de 2
   registros — e o histórico com a variação em relação ao registro anterior,
   colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`) quando caiu,
-  neutro (`=`) quando ficou igual. Ambas paginadas de 5 em 5.
+  neutro (`=`) quando ficou igual. Ambas paginadas de 5 em 5, com edição
+  (lápis) além da exclusão em cada linha: clicar em editar preenche o
+  formulário com os dados do registro, troca "Registrar" por "Editar" no
+  título e no botão de salvar, mostra um link "Cancelar edição" e, no caso
+  de um treino, esconde a alternância Manual/Cronômetro (edição é sempre
+  manual); salvar faz `update` por `id` em vez de criar um novo registro.
 - **Meta**: campo para ajustar a meta mensal (1 a 30 treinos, de qualquer
   modalidade — validado no cliente e também no banco via `check`); barra de
   progresso do mês corrente; "Evolução" com a contagem dos últimos 6 meses

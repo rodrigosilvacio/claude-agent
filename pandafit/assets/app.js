@@ -16,6 +16,9 @@ var WORKOUT_TYPES = [
 
 var MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+var DELETE_ICON_SVG = '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var EDIT_ICON_SVG = '<svg width="15" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.3 2.3a1 1 0 011.4 0l1 1a1 1 0 010 1.4l-7.6 7.6-3 .7.7-3 7.5-7.7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+
 // ── state ──
 var state = {
   tab: 'painel',
@@ -33,6 +36,7 @@ var state = {
   saving: false,
   recordsPage: 0,
   deletingId: null,
+  editingWorkoutId: null,
   painelMonthOffset: 0,
   monthlyGoal: DEFAULT_MONTHLY_GOAL,
   savingGoal: false,
@@ -46,6 +50,7 @@ var state = {
   savingWeight: false,
   weightsPage: 0,
   deletingWeightId: null,
+  editingWeightId: null,
   documents: [],
   documentsLoading: true,
   documentsLoadError: false,
@@ -132,6 +137,17 @@ async function insertWorkout(row) {
   return data;
 }
 
+async function updateWorkout(id, patch) {
+  var { data, error } = await supabase
+    .from('pandafit_workouts')
+    .update(patch)
+    .eq('id', id)
+    .select('id, date, type, minutes, local')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 async function deleteWorkout(id) {
   var { error } = await supabase
     .from('pandafit_workouts')
@@ -182,6 +198,17 @@ async function upsertWeight(row) {
   var { data, error } = await supabase
     .from('pandafit_weights')
     .upsert(row, { onConflict: 'date' })
+    .select('id, date, weight_kg')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function updateWeight(id, patch) {
+  var { data, error } = await supabase
+    .from('pandafit_weights')
+    .update(patch)
+    .eq('id', id)
     .select('id, date, weight_kg')
     .single();
   if (error) throw error;
@@ -267,7 +294,9 @@ var els = {
   pagerNote: $('#pager-note'),
 
   modeTabs: document.querySelectorAll('.mode-tab'),
+  modeTabsWrap: $('#mode-tabs'),
   registrarTitle: $('#registrar-title'),
+  btnCancelEdit: $('#btn-cancel-edit'),
   sectionTreino: $('#section-treino'),
   sectionPeso: $('#section-peso'),
   saveBarTreino: $('#save-bar-treino'),
@@ -285,6 +314,7 @@ var els = {
   localSuggestions: $('#local-suggestions'),
   toast: $('#toast'),
   btnSave: $('#btn-save'),
+  btnSaveLabel: $('#btn-save-label'),
 
   inputGoal: $('#input-goal'),
   btnSaveGoal: $('#btn-save-goal'),
@@ -303,6 +333,7 @@ var els = {
   inputWeightDate: $('#input-weight-date'),
   inputWeightValue: $('#input-weight-value'),
   btnSaveWeight: $('#btn-save-weight'),
+  btnSaveWeightLabel: $('#btn-save-weight-label'),
   weightToast: $('#weight-toast'),
   weightChartWrap: $('#weight-chart-wrap'),
   weightsList: $('#weights-list'),
@@ -363,9 +394,74 @@ function setRegistrarSection(section) {
   els.sectionTreino.hidden = section !== 'treino';
   els.sectionPeso.hidden = section !== 'peso';
   els.saveBarTreino.hidden = section !== 'treino';
-  els.registrarTitle.textContent = section === 'treino' ? 'Registrar treino' : 'Registrar peso';
+  updateEditUI();
   if (section === 'peso') renderWeights();
 }
+
+// ── editing an existing workout/weight instead of only insert/delete ──
+function updateEditUI() {
+  var editingTreino = state.editingWorkoutId != null;
+  var editingPeso = state.editingWeightId != null;
+  var editingCurrent = (state.registrarSection === 'treino' && editingTreino) ||
+    (state.registrarSection === 'peso' && editingPeso);
+
+  els.btnCancelEdit.hidden = !editingCurrent;
+  els.registrarTitle.textContent = state.registrarSection === 'treino'
+    ? (editingTreino ? 'Editar treino' : 'Registrar treino')
+    : (editingPeso ? 'Editar peso' : 'Registrar peso');
+  els.modeTabsWrap.hidden = editingTreino;
+  els.btnSaveLabel.textContent = editingTreino ? 'Salvar alterações' : 'Salvar treino';
+  els.btnSaveWeightLabel.textContent = editingPeso ? 'Salvar alterações' : 'Salvar peso';
+}
+
+function startEditWorkout(w) {
+  state.editingWorkoutId = w.id;
+  state.editingWeightId = null;
+  state.mode = 'manual';
+  stopTimer();
+  state.dateVal = w.date;
+  state.minsVal = w.minutes;
+  state.type = w.type;
+  state.local = w.local || '';
+  state.registrarSection = 'treino';
+  setTab('registrar');
+  renderRegistrar();
+  updateEditUI();
+}
+
+function cancelEditWorkout() {
+  state.editingWorkoutId = null;
+  state.dateVal = todayISO();
+  state.minsVal = 60;
+  state.type = WORKOUT_TYPES[0].name;
+  state.local = '';
+  renderRegistrar();
+  updateEditUI();
+}
+
+function startEditWeight(w) {
+  state.editingWeightId = w.id;
+  state.editingWorkoutId = null;
+  state.weightDateVal = w.date;
+  state.weightVal = fmtWeight(w.weight_kg);
+  state.registrarSection = 'peso';
+  setTab('registrar');
+  renderWeights();
+  updateEditUI();
+}
+
+function cancelEditWeight() {
+  state.editingWeightId = null;
+  state.weightDateVal = todayISO();
+  state.weightVal = '';
+  renderWeights();
+  updateEditUI();
+}
+
+els.btnCancelEdit.addEventListener('click', function () {
+  if (state.registrarSection === 'treino') cancelEditWorkout();
+  else cancelEditWeight();
+});
 
 document.querySelectorAll('.section-tab').forEach(function (btn) {
   btn.addEventListener('click', function () { setRegistrarSection(btn.dataset.section); });
@@ -527,23 +623,34 @@ els.btnSave.addEventListener('click', function () {
   var dateISO = state.mode === 'timer' ? todayISO() : clampDateToToday(state.dateVal || todayISO());
   var local = state.local.trim();
   var wasTimer = state.mode === 'timer';
+  var editingId = state.editingWorkoutId;
 
   state.saving = true;
   els.btnSave.disabled = true;
 
-  insertWorkout({ date: dateISO, type: state.type, minutes: min, local: local })
-    .then(function (row) {
-      state.workouts.unshift(row);
-      state.recordsPage = 0;
-      updateLocalSuggestions();
+  var patch = { date: dateISO, type: state.type, minutes: min, local: local };
+  var op = editingId != null ? updateWorkout(editingId, patch) : insertWorkout(patch);
 
-      if (wasTimer) {
-        state.secs = 0;
-        state.running = false;
-        updateTimerControls();
-        updateClock();
+  op
+    .then(function (row) {
+      if (editingId != null) {
+        state.workouts = state.workouts.map(function (w) { return w.id === row.id ? row : w; });
+        state.editingWorkoutId = null;
+        updateEditUI();
+        showToast('Treino atualizado.');
+      } else {
+        state.workouts.unshift(row);
+        state.recordsPage = 0;
+        if (wasTimer) {
+          state.secs = 0;
+          state.running = false;
+          updateTimerControls();
+          updateClock();
+        }
+        showToast(state.type + ' de ' + fmtDuration(min) + ' registrado. Boa!');
       }
-      showToast(state.type + ' de ' + fmtDuration(min) + ' registrado. Boa!');
+      updateLocalSuggestions();
+      renderPainel();
     })
     .catch(function (err) {
       console.error('Falha ao salvar treino', err);
@@ -584,6 +691,7 @@ async function handleDeleteClick(id) {
   deleteWorkout(id)
     .then(function () {
       state.workouts = state.workouts.filter(function (w) { return w.id !== id; });
+      if (state.editingWorkoutId === id) cancelEditWorkout();
     })
     .catch(function (err) {
       console.error('Falha ao excluir treino', err);
@@ -628,18 +736,29 @@ els.btnSaveWeight.addEventListener('click', function () {
     showWeightToast('Informe um peso válido (entre 0 e 500 kg).');
     return;
   }
+  var editingId = state.editingWeightId;
 
   state.savingWeight = true;
   els.btnSaveWeight.disabled = true;
 
-  upsertWeight({ date: dateISO, weight_kg: weight })
+  var op = editingId != null
+    ? updateWeight(editingId, { date: dateISO, weight_kg: weight })
+    : upsertWeight({ date: dateISO, weight_kg: weight });
+
+  op
     .then(function (row) {
-      state.weights = state.weights.filter(function (w) { return w.date !== row.date; });
+      state.weights = state.weights.filter(function (w) { return w.id !== row.id && w.date !== row.date; });
       state.weights.push(row);
       state.weights.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
       state.weightsPage = 0;
+      if (editingId != null) {
+        state.editingWeightId = null;
+        updateEditUI();
+        showWeightToast('Peso atualizado.');
+      } else {
+        showWeightToast('Peso de ' + fmtWeight(row.weight_kg) + ' kg registrado em ' + fmtDayLabel(row.date) + '.');
+      }
       renderWeights();
-      showWeightToast('Peso de ' + fmtWeight(row.weight_kg) + ' kg registrado em ' + fmtDayLabel(row.date) + '.');
     })
     .catch(function (err) {
       console.error('Falha ao salvar peso', err);
@@ -660,6 +779,7 @@ async function handleDeleteWeightClick(id) {
   deleteWeight(id)
     .then(function () {
       state.weights = state.weights.filter(function (w) { return w.id !== id; });
+      if (state.editingWeightId === id) cancelEditWeight();
     })
     .catch(function (err) {
       console.error('Falha ao excluir peso', err);
@@ -806,17 +926,26 @@ function renderPainel() {
     var pageItems = monthWorkouts.slice(start, start + RECORDS_PAGE_SIZE);
 
     els.recordsList.innerHTML = pageItems.map(function (w) {
-      return '<div class="record-row">' +
+      return '<div class="record-row has-edit">' +
         '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
         '<span class="record-mid"><span class="record-type">' + w.type + '</span>' +
         '<span class="record-local">' + (w.local || 'Sem local') + '</span></span>' +
         '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
+        '<button type="button" class="record-edit" data-id="' + w.id + '" aria-label="Editar treino">' +
+        EDIT_ICON_SVG +
+        '</button>' +
         '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir treino">' +
-        '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+        DELETE_ICON_SVG +
         '</button>' +
         '</div>';
     }).join('');
 
+    els.recordsList.querySelectorAll('.record-edit').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var w = state.workouts.find(function (x) { return x.id === Number(btn.dataset.id); });
+        if (w) startEditWorkout(w);
+      });
+    });
     els.recordsList.querySelectorAll('.record-delete').forEach(function (btn) {
       btn.addEventListener('click', function () {
         handleDeleteClick(Number(btn.dataset.id));
@@ -1013,16 +1142,25 @@ function renderWeights() {
       else if (diff < -0.05) { trendClass = 'weight-down'; deltaLabel = '▼ ' + fmtWeight(Math.abs(diff)); }
       else { deltaLabel = '= 0,0'; }
     }
-    return '<div class="record-row">' +
+    return '<div class="record-row has-edit">' +
       '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
       '<span class="weight-value">' + fmtWeight(w.weight_kg) + ' kg</span>' +
       '<span class="weight-delta ' + trendClass + '">' + deltaLabel + '</span>' +
+      '<button type="button" class="record-edit" data-id="' + w.id + '" aria-label="Editar peso">' +
+      EDIT_ICON_SVG +
+      '</button>' +
       '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir peso">' +
-      '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      DELETE_ICON_SVG +
       '</button>' +
       '</div>';
   }).join('');
 
+  els.weightsList.querySelectorAll('.record-edit').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var w = state.weights.find(function (x) { return x.id === Number(btn.dataset.id); });
+      if (w) startEditWeight(w);
+    });
+  });
   els.weightsList.querySelectorAll('.record-delete').forEach(function (btn) {
     btn.addEventListener('click', function () {
       handleDeleteWeightClick(Number(btn.dataset.id));
@@ -1073,7 +1211,7 @@ function renderDocuments() {
       '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
       '<a class="record-dur doc-view-link" href="' + documentPublicUrl(doc.file_path) + '" target="_blank" rel="noopener">Ver</a>' +
       '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir documento">' +
-      '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      DELETE_ICON_SVG +
       '</button>' +
       '</div>';
   }).join('');
