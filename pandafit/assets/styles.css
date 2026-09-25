@@ -805,6 +805,16 @@ input[type="file"]::file-selector-button {
   margin-top: 14px !important;
 }
 
+.streak-note {
+  margin-top: 10px;
+  font: 500 12px/1.4 "Barlow", sans-serif;
+  color: var(--muted);
+}
+.streak-note.is-active {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
 /* ── evolution (Meta) ── */
 .evolution-list {
   display: flex;

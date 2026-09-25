@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=9';
+import { supabase } from './supabaseClient.js?v=11';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -6,6 +6,7 @@ var EVOLUTION_MONTHS = 6;
 var MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 var MAX_WORKOUT_MINUTES = 720;
 var MAX_MONTH_OFFSET = 60;
+var MAX_STREAK_LOOKBACK = 240;
 var WEIGHT_CHART_MAX_POINTS = 30;
 
 var WORKOUT_TYPES = [
@@ -108,6 +109,28 @@ function monthRange(date) {
 function viewedMonthDate() {
   var now = new Date();
   return new Date(now.getFullYear(), now.getMonth() - state.painelMonthOffset, 1);
+}
+
+// Consecutive months, counting back from the current one, where the
+// workout count met or exceeded the monthly goal. Breaks at the first
+// (most recent) month that fell short — including the current month if
+// it hasn't hit the goal yet.
+function computeGoalStreak() {
+  var goal = state.monthlyGoal;
+  if (!goal) return 0;
+  var now = new Date();
+  var streak = 0;
+  for (var i = 0; i < MAX_STREAK_LOOKBACK; i++) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var range = monthRange(d);
+    var count = state.workouts.filter(function (w) {
+      var wd = parseISO(w.date);
+      return wd >= range.start && wd <= range.end;
+    }).length;
+    if (count < goal) break;
+    streak++;
+  }
+  return streak;
 }
 
 function parseISO(iso) {
@@ -322,6 +345,7 @@ var els = {
   metaProgressBar: $('#meta-progress-bar'),
   metaProgressPct: $('#meta-progress-pct'),
   metaProgressCount: $('#meta-progress-count'),
+  metaStreakNote: $('#meta-streak-note'),
   evolutionList: $('#evolution-list'),
   inputTargetWeight: $('#input-target-weight'),
   btnSaveTargetWeight: $('#btn-save-target-weight'),
@@ -982,6 +1006,12 @@ function renderMeta() {
   els.metaProgressBar.style.width = pct + '%';
   els.metaProgressPct.textContent = pct + '% da meta';
   els.metaProgressCount.textContent = monthCount + ' de ' + goal + (goal === 1 ? ' treino' : ' treinos');
+
+  var streak = computeGoalStreak();
+  els.metaStreakNote.classList.toggle('is-active', streak > 0);
+  els.metaStreakNote.textContent = streak > 0
+    ? streak + (streak === 1 ? ' mês seguido batendo a meta' : ' meses seguidos batendo a meta')
+    : 'Ainda sem sequência — bata a meta este mês para começar.';
 
   var months = [];
   for (var i = EVOLUTION_MONTHS - 1; i >= 0; i--) {

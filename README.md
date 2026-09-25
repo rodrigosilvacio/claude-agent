@@ -200,9 +200,13 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   manual); salvar faz `update` por `id` em vez de criar um novo registro.
 - **Meta**: campo para ajustar a meta mensal (1 a 30 treinos, de qualquer
   modalidade — validado no cliente e também no banco via `check`); barra de
-  progresso do mês corrente; "Evolução" com a contagem dos últimos 6 meses
-  (calculada a partir dos treinos já carregados, sem consulta extra) para
-  acompanhar a tendência mês a mês; meta de peso opcional (`target_weight_kg`
+  progresso do mês corrente; sequência (streak) de meses seguidos batendo a
+  meta, contando a partir do mês atual para trás e parando no primeiro mês
+  (incluindo o atual, se ainda não bateu) que ficou abaixo — calculada a
+  partir dos treinos já carregados, sem consulta extra; "Evolução" com a
+  contagem dos últimos 6 meses (calculada a partir dos treinos já
+  carregados, sem consulta extra) para acompanhar a tendência mês a mês;
+  meta de peso opcional (`target_weight_kg`
   em `pandafit_settings`) — mostra "faltam X kg" comparando com o peso mais
   recente registrado, ou "meta batida!"; deixar o campo em branco remove a
   meta.
