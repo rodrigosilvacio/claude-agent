@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=19';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=20';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -47,6 +47,12 @@ var state = {
   locationsLoading: true,
   creatingLocation: false,
   deletingLocationId: null,
+  exerciseCatalog: [],
+  exerciseCatalogLoading: true,
+  creatingExercise: false,
+  deletingExerciseId: null,
+  workoutExercises: [], // rascunho de exercícios/séries do treino em edição/registro
+  workoutSets: {}, // { [workout_id]: [{ name, sets: [{reps, weight}] }] }
   dateVal: todayISO(),
   minsVal: 60,
   workouts: [],
@@ -122,6 +128,26 @@ function fmtDayLabel(iso) {
 
 function fmtWeight(kg) {
   return (Math.round(kg * 10) / 10).toFixed(1).replace('.', ',');
+}
+
+// Resumo compacto pra caber numa linha do record-row: "Supino 3×10 @ 40kg"
+// quando é 1 exercício, ou os nomes quando são vários.
+function fmtExercisesSummary(exercises) {
+  if (!exercises || exercises.length === 0) return '';
+  if (exercises.length === 1) {
+    return exercises[0].name + ' ' + fmtSetsSummary(exercises[0].sets);
+  }
+  var names = exercises.map(function (e) { return e.name; });
+  return names.length > 2 ? names.slice(0, 2).join(', ') + ' +' + (names.length - 2) : names.join(', ');
+}
+
+function fmtSetsSummary(sets) {
+  var first = sets[0];
+  var allSame = sets.every(function (s) { return s.reps === first.reps && s.weight === first.weight; });
+  if (allSame) {
+    return sets.length + '×' + first.reps + (first.weight != null ? ' @ ' + fmtWeight(first.weight) + 'kg' : '');
+  }
+  return sets.length + (sets.length === 1 ? ' série' : ' séries');
 }
 
 function csvEscape(value) {
@@ -454,6 +480,105 @@ async function ensureLocationExists(name) {
   if (error) throw error;
 }
 
+// ── exercícios (catálogo por usuário) ──
+async function fetchExercises(userId) {
+  var { data, error } = await supabase
+    .from('pandafit_exercises')
+    .select('id, name')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+async function insertExercise(name) {
+  var { data, error } = await supabase
+    .from('pandafit_exercises')
+    .insert({ user_id: currentUserId(), name: name })
+    .select('id, name')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteExercise(id) {
+  var { error } = await supabase
+    .from('pandafit_exercises')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// Mesma conveniência do local: usar um exercício novo direto em Registrar
+// já cadastra ele no catálogo, sem precisar passar por Configurações antes.
+async function ensureExerciseExists(name) {
+  var { error } = await supabase
+    .from('pandafit_exercises')
+    .upsert({ user_id: currentUserId(), name: name }, { onConflict: 'user_id,name', ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+// ── séries por treino ──
+// Uma linha por série (workout_id, exercise_name, set_number, reps,
+// weight_kg). Buscadas em lote pra todos os treinos do usuário de uma vez
+// (como fetchWorkouts) e agrupadas aqui em { [workout_id]: [exercícios] },
+// cada exercício já com suas séries na ordem certa.
+async function fetchWorkoutSets(userId) {
+  var { data, error } = await supabase
+    .from('pandafit_workout_sets')
+    .select('id, workout_id, exercise_name, set_number, reps, weight_kg')
+    .eq('user_id', userId)
+    .order('workout_id', { ascending: true })
+    .order('exercise_name', { ascending: true })
+    .order('set_number', { ascending: true });
+  if (error) throw error;
+  return groupSetsByWorkout(data);
+}
+
+function groupSetsByWorkout(rows) {
+  var byWorkout = {};
+  rows.forEach(function (row) {
+    var exercises = byWorkout[row.workout_id] || (byWorkout[row.workout_id] = []);
+    var exercise = exercises[exercises.length - 1];
+    if (!exercise || exercise.name !== row.exercise_name) {
+      exercise = { name: row.exercise_name, sets: [] };
+      exercises.push(exercise);
+    }
+    exercise.sets.push({ reps: row.reps, weight: row.weight_kg });
+  });
+  return byWorkout;
+}
+
+// Substitui todas as séries de um treino pelas atuais — mais simples do que
+// diferenciar quais séries mudaram, e o volume de linhas por treino é
+// pequeno o bastante pra isso não pesar.
+async function saveWorkoutSets(workoutId, exercises) {
+  var { error: deleteError } = await supabase
+    .from('pandafit_workout_sets')
+    .delete()
+    .eq('workout_id', workoutId);
+  if (deleteError) throw deleteError;
+
+  var rows = [];
+  var userId = currentUserId();
+  exercises.forEach(function (exercise) {
+    exercise.sets.forEach(function (set, i) {
+      rows.push({
+        workout_id: workoutId,
+        user_id: userId,
+        exercise_name: exercise.name,
+        set_number: i + 1,
+        reps: set.reps,
+        weight_kg: set.weight == null || set.weight === '' ? null : set.weight,
+      });
+    });
+  });
+  if (rows.length === 0) return;
+
+  var { error: insertError } = await supabase.from('pandafit_workout_sets').insert(rows);
+  if (insertError) throw insertError;
+}
+
 // ── edge function: pandafit-admin-users (cadastro/gestão, só admin) ──
 async function callAdminUsers(action, payload) {
   var res = await fetch(SUPABASE_URL + '/functions/v1/pandafit-admin-users', {
@@ -497,6 +622,7 @@ var els = {
     meta: $('#screen-meta'),
     modalidades: $('#screen-modalidades'),
     locais: $('#screen-locais'),
+    exercicios: $('#screen-exercicios'),
     documentos: $('#screen-documentos'),
     usuarios: $('#screen-usuarios'),
     pacientes: $('#screen-pacientes'),
@@ -537,6 +663,9 @@ var els = {
   typeOptions: $('#type-options'),
   inputLocal: $('#input-local'),
   localSuggestions: $('#local-suggestions'),
+  exercisesList: $('#exercises-list'),
+  btnAddExercise: $('#btn-add-exercise'),
+  exerciseSuggestions: $('#exercise-suggestions'),
   toast: $('#toast'),
   btnSave: $('#btn-save'),
   btnSaveLabel: $('#btn-save-label'),
@@ -555,6 +684,12 @@ var els = {
   btnCreateLocation: $('#btn-create-location'),
   locationsList: $('#locations-list'),
   locationsCountNote: $('#locations-count-note'),
+
+  inputExerciseCatalogName: $('#input-exercise-name'),
+  exerciseFormToast: $('#exercise-form-toast'),
+  btnCreateExercise: $('#btn-create-exercise'),
+  exercisesCatalogList: $('#exercises-catalog-list'),
+  exercisesCountNote: $('#exercises-count-note'),
 
   inputGoal: $('#input-goal'),
   btnSaveGoal: $('#btn-save-goal'),
@@ -667,6 +802,7 @@ var showTargetWeightToast = makeToaster(els.targetWeightToast);
 var showUserFormToast = makeToaster(els.userFormToast);
 var showTypeFormToast = makeToaster(els.typeFormToast);
 var showLocationFormToast = makeToaster(els.locationFormToast);
+var showExerciseFormToast = makeToaster(els.exerciseFormToast);
 
 // ── auth: login, logout, role-based routing ──
 async function doLogout() {
@@ -711,6 +847,10 @@ function resetAppState() {
   state.locations = [];
   state.locationsLoading = true;
   state.local = '';
+  state.exerciseCatalog = [];
+  state.exerciseCatalogLoading = true;
+  state.workoutExercises = [];
+  state.workoutSets = {};
   state.users = [];
   state.usersLoading = true;
   state.patients = [];
@@ -803,7 +943,7 @@ document.querySelectorAll('.tab-btn').forEach(function (btn) {
 // Meta/Documentos/Usuários são sub-telas de Configurações (abertas por um
 // settings-row, não por um botão próprio na tabbar) — a aba "Config."
 // continua marcada como ativa enquanto qualquer uma delas está aberta.
-var CONFIG_SUB_SCREENS = ['config', 'meta', 'modalidades', 'locais', 'documentos', 'usuarios'];
+var CONFIG_SUB_SCREENS = ['config', 'meta', 'modalidades', 'locais', 'exercicios', 'documentos', 'usuarios'];
 
 function setTab(tab) {
   state.tab = tab;
@@ -818,6 +958,7 @@ function setTab(tab) {
   if (tab === 'meta') renderMeta();
   if (tab === 'modalidades') renderWorkoutTypes();
   if (tab === 'locais') renderLocations();
+  if (tab === 'exercicios') renderExerciseCatalog();
   if (tab === 'registrar') setRegistrarSection(state.registrarSection);
   if (tab === 'documentos') renderDocuments();
   if (tab === 'usuarios') { renderUsers(); loadUsers(); }
@@ -835,6 +976,7 @@ function renderActiveTab() {
   if (state.tab === 'meta') renderMeta();
   if (state.tab === 'modalidades') renderWorkoutTypes();
   if (state.tab === 'locais') renderLocations();
+  if (state.tab === 'exercicios') renderExerciseCatalog();
   if (state.tab === 'registrar' && state.registrarSection === 'peso') renderWeights();
   if (state.tab === 'documentos') renderDocuments();
 }
@@ -877,6 +1019,7 @@ function startEditWorkout(w) {
   state.minsVal = w.minutes;
   state.type = w.type;
   state.local = w.local || '';
+  state.workoutExercises = cloneWorkoutExercises(state.workoutSets[w.id] || []);
   state.registrarSection = 'treino';
   setTab('registrar');
   renderRegistrar();
@@ -889,8 +1032,16 @@ function cancelEditWorkout() {
   state.minsVal = 60;
   state.type = state.workoutTypes.length ? state.workoutTypes[0].name : '';
   state.local = '';
+  state.workoutExercises = [];
   renderRegistrar();
   updateEditUI();
+}
+
+// Cópia profunda pra editar sem mutar o cache de state.workoutSets até salvar.
+function cloneWorkoutExercises(exercises) {
+  return exercises.map(function (ex) {
+    return { name: ex.name, sets: ex.sets.map(function (s) { return { reps: s.reps, weight: s.weight }; }) };
+  });
 }
 
 function startEditWeight(w) {
@@ -1061,6 +1212,110 @@ function updateLocalSuggestions() {
   }).join('');
 }
 
+// ── exercícios/séries do treino em edição (rascunho em state.workoutExercises) ──
+function updateExerciseSuggestions() {
+  els.exerciseSuggestions.innerHTML = state.exerciseCatalog.map(function (ex) {
+    return '<option value="' + ex.name.replace(/"/g, '&quot;') + '"></option>';
+  }).join('');
+}
+
+function addExercise() {
+  state.workoutExercises.push({ name: '', sets: [{ reps: '', weight: '' }] });
+  renderExercisesEditor();
+}
+
+function removeExercise(exerciseIndex) {
+  state.workoutExercises.splice(exerciseIndex, 1);
+  renderExercisesEditor();
+}
+
+function addSet(exerciseIndex) {
+  state.workoutExercises[exerciseIndex].sets.push({ reps: '', weight: '' });
+  renderExercisesEditor();
+}
+
+function removeSet(exerciseIndex, setIndex) {
+  var exercise = state.workoutExercises[exerciseIndex];
+  exercise.sets.splice(setIndex, 1);
+  if (exercise.sets.length === 0) state.workoutExercises.splice(exerciseIndex, 1);
+  renderExercisesEditor();
+}
+
+// Reconstrói o HTML só quando a estrutura muda (adicionar/remover exercício
+// ou série) — digitar num campo não passa por aqui (ver o listener de
+// "input" abaixo), senão o cursor pularia do campo a cada tecla.
+function renderExercisesEditor() {
+  if (state.workoutExercises.length === 0) {
+    els.exercisesList.innerHTML = '<p class="empty-state">Nenhum exercício adicionado — a duração já é suficiente pra registrar o treino.</p>';
+    return;
+  }
+  els.exercisesList.innerHTML = state.workoutExercises.map(function (exercise, ei) {
+    var setsHtml = exercise.sets.map(function (set, si) {
+      return '<div class="set-row">' +
+        '<span class="set-num">' + (si + 1) + '</span>' +
+        '<input type="number" inputmode="numeric" min="1" class="set-reps" placeholder="Reps" value="' +
+        (set.reps === '' || set.reps == null ? '' : set.reps) + '" data-exercise="' + ei + '" data-set="' + si + '" data-field="reps" />' +
+        '<span class="set-x">×</span>' +
+        '<input type="text" inputmode="decimal" class="set-weight" placeholder="kg" value="' +
+        (set.weight === '' || set.weight == null ? '' : set.weight) + '" data-exercise="' + ei + '" data-set="' + si + '" data-field="weight" />' +
+        '<button type="button" class="set-remove" data-exercise="' + ei + '" data-set="' + si + '" aria-label="Remover série">' + DELETE_ICON_SVG + '</button>' +
+        '</div>';
+    }).join('');
+    return '<div class="exercise-card">' +
+      '<div class="exercise-card-head">' +
+      '<input type="text" class="exercise-name-input" placeholder="Nome do exercício" list="exercise-suggestions" value="' +
+      (exercise.name || '').replace(/"/g, '&quot;') + '" data-exercise="' + ei + '" data-field="name" />' +
+      '<button type="button" class="record-delete exercise-remove" data-exercise="' + ei + '" aria-label="Remover exercício">' + DELETE_ICON_SVG + '</button>' +
+      '</div>' +
+      setsHtml +
+      '<button type="button" class="add-set-btn" data-exercise="' + ei + '">+ Série</button>' +
+      '</div>';
+  }).join('');
+}
+
+els.exercisesList.addEventListener('input', function (e) {
+  var t = e.target;
+  if (t.dataset.exercise == null) return;
+  var ei = Number(t.dataset.exercise);
+  if (t.dataset.field === 'name') {
+    state.workoutExercises[ei].name = t.value;
+  } else if (t.dataset.field === 'reps' || t.dataset.field === 'weight') {
+    state.workoutExercises[ei].sets[Number(t.dataset.set)][t.dataset.field] = t.value;
+  }
+});
+
+els.exercisesList.addEventListener('click', function (e) {
+  var btn = e.target.closest('button');
+  if (!btn || btn.dataset.exercise == null) return;
+  var ei = Number(btn.dataset.exercise);
+  if (btn.classList.contains('exercise-remove')) removeExercise(ei);
+  else if (btn.classList.contains('add-set-btn')) addSet(ei);
+  else if (btn.classList.contains('set-remove')) removeSet(ei, Number(btn.dataset.set));
+});
+
+els.btnAddExercise.addEventListener('click', addExercise);
+
+// Monta o payload pro saveWorkoutSets: descarta exercícios sem nome e
+// séries sem repetições válidas — não bloqueia o salvamento do treino,
+// só ignora o que ficou incompleto no rascunho.
+function collectValidExercises() {
+  return state.workoutExercises
+    .map(function (ex) {
+      var name = (ex.name || '').trim();
+      var sets = ex.sets
+        .map(function (s) {
+          var reps = parseInt(s.reps, 10);
+          var weight = s.weight === '' || s.weight == null ? null : parseFloat(String(s.weight).replace(',', '.'));
+          if (!reps || reps < 1) return null;
+          return { reps: reps, weight: weight != null && !isNaN(weight) && weight >= 0 ? weight : null };
+        })
+        .filter(Boolean);
+      if (!name || sets.length === 0) return null;
+      return { name: name, sets: sets };
+    })
+    .filter(Boolean);
+}
+
 // ── save ──
 function liveMinutes() {
   if (state.mode === 'timer') {
@@ -1081,6 +1336,10 @@ els.btnSave.addEventListener('click', function () {
   var dateISO = state.mode === 'timer' ? todayISO() : clampDateToToday(state.dateVal || todayISO());
   var local = state.local.trim();
   var isNewLocal = local && !state.locations.some(function (l) { return l.name === local; });
+  var exercisesToSave = collectValidExercises();
+  var newExerciseNames = exercisesToSave
+    .map(function (ex) { return ex.name; })
+    .filter(function (name) { return !state.exerciseCatalog.some(function (e) { return e.name === name; }); });
   var wasTimer = state.mode === 'timer';
   var editingId = state.editingWorkoutId;
 
@@ -1088,10 +1347,14 @@ els.btnSave.addEventListener('click', function () {
   els.btnSave.disabled = true;
 
   var patch = { date: dateISO, type: state.type, minutes: min, local: local };
-  var op = editingId != null ? updateWorkout(editingId, patch) : insertWorkout(patch);
+  var op = (editingId != null ? updateWorkout(editingId, patch) : insertWorkout(patch))
+    .then(function (row) {
+      return saveWorkoutSets(row.id, exercisesToSave).then(function () { return row; });
+    });
 
   op
     .then(function (row) {
+      state.workoutSets[row.id] = exercisesToSave;
       if (editingId != null) {
         state.workouts = state.workouts.map(function (w) { return w.id === row.id ? row : w; });
         state.editingWorkoutId = null;
@@ -1124,6 +1387,17 @@ els.btnSave.addEventListener('click', function () {
           })
           .catch(function (err) { console.error('Falha ao salvar local no catálogo', err); });
       }
+
+      // Mesma conveniência pros nomes de exercício digitados nesse treino.
+      newExerciseNames.forEach(function (name) {
+        ensureExerciseExists(name)
+          .then(function () { return fetchExercises(currentUserId()); })
+          .then(function (rows) {
+            state.exerciseCatalog = rows;
+            updateExerciseSuggestions();
+          })
+          .catch(function (err) { console.error('Falha ao salvar exercício no catálogo', err); });
+      });
     })
     .catch(function (err) {
       console.error('Falha ao salvar treino', err);
@@ -1144,6 +1418,7 @@ async function handleDeleteClick(id) {
   deleteWorkout(id)
     .then(function () {
       state.workouts = state.workouts.filter(function (w) { return w.id !== id; });
+      delete state.workoutSets[id];
       if (state.editingWorkoutId === id) cancelEditWorkout();
     })
     .catch(function (err) {
@@ -1311,6 +1586,7 @@ function renderRegistrar() {
   updateTimerControls();
   updateClock();
   renderTypeOptions();
+  renderExercisesEditor();
 }
 
 // ── reminder banners (shown on Painel when the app opens) ──
@@ -1439,10 +1715,13 @@ function renderPainel() {
     var pageItems = monthWorkouts.slice(start, start + RECORDS_PAGE_SIZE);
 
     els.recordsList.innerHTML = pageItems.map(function (w) {
+      var exercisesSummary = fmtExercisesSummary(state.workoutSets[w.id]);
       return '<div class="record-row has-edit">' +
         '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
         '<span class="record-mid"><span class="record-type">' + w.type + '</span>' +
-        '<span class="record-local">' + (w.local || 'Sem local') + '</span></span>' +
+        '<span class="record-local">' + (w.local || 'Sem local') + '</span>' +
+        (exercisesSummary ? '<span class="record-exercises">' + exercisesSummary + '</span>' : '') +
+        '</span>' +
         '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
         '<button type="button" class="record-edit" data-id="' + w.id + '" aria-label="Editar treino">' +
         EDIT_ICON_SVG +
@@ -1979,6 +2258,92 @@ async function handleDeleteLocationClick(l) {
     });
 }
 
+els.btnCreateExercise.addEventListener('click', function () {
+  if (state.creatingExercise) return;
+
+  var name = els.inputExerciseCatalogName.value.trim();
+  if (!name) {
+    showExerciseFormToast('Informe um nome para o exercício.');
+    return;
+  }
+  if (state.exerciseCatalog.some(function (e) { return e.name.toLowerCase() === name.toLowerCase(); })) {
+    showExerciseFormToast('Esse exercício já está cadastrado.');
+    return;
+  }
+
+  state.creatingExercise = true;
+  els.btnCreateExercise.disabled = true;
+
+  insertExercise(name)
+    .then(function (row) {
+      state.exerciseCatalog.push(row);
+      els.inputExerciseCatalogName.value = '';
+      showExerciseFormToast('Exercício cadastrado.');
+      renderExerciseCatalog();
+      updateExerciseSuggestions();
+    })
+    .catch(function (err) {
+      console.error('Falha ao cadastrar exercício', err);
+      showExerciseFormToast('Não foi possível cadastrar. Tente de novo.');
+    })
+    .finally(function () {
+      state.creatingExercise = false;
+      els.btnCreateExercise.disabled = false;
+    });
+});
+
+function renderExerciseCatalog() {
+  els.exercisesCountNote.textContent = state.exerciseCatalog.length + (state.exerciseCatalog.length === 1 ? ' exercício' : ' exercícios');
+
+  if (state.exerciseCatalogLoading) {
+    els.exercisesCatalogList.innerHTML = '<p class="empty-state">Carregando exercícios…</p>';
+    return;
+  }
+  if (state.exerciseCatalog.length === 0) {
+    els.exercisesCatalogList.innerHTML = '<p class="empty-state">Nenhum exercício cadastrado ainda.</p>';
+    return;
+  }
+
+  els.exercisesCatalogList.innerHTML = state.exerciseCatalog.map(function (ex) {
+    return '<div class="user-row">' +
+      '<div class="user-info">' +
+      '<span class="user-name">' + ex.name + '</span>' +
+      '</div>' +
+      '<button type="button" class="record-delete" data-id="' + ex.id + '" aria-label="Excluir exercício">' +
+      DELETE_ICON_SVG +
+      '</button>' +
+      '</div>';
+  }).join('');
+
+  els.exercisesCatalogList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ex = state.exerciseCatalog.find(function (x) { return x.id === Number(btn.dataset.id); });
+      if (ex) handleDeleteExerciseClick(ex);
+    });
+  });
+}
+
+async function handleDeleteExerciseClick(ex) {
+  if (state.deletingExerciseId) return;
+  var ok = await confirmModal('Excluir o exercício "' + ex.name + '"? Séries já registradas com ele não são afetadas.');
+  if (!ok) return;
+
+  state.deletingExerciseId = ex.id;
+  deleteExercise(ex.id)
+    .then(function () {
+      state.exerciseCatalog = state.exerciseCatalog.filter(function (x) { return x.id !== ex.id; });
+      updateExerciseSuggestions();
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir exercício', err);
+      showExerciseFormToast('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingExerciseId = null;
+      renderExerciseCatalog();
+    });
+}
+
 // ── admin: Usuários ──
 els.roleOptions.querySelectorAll('.role-option').forEach(function (btn) {
   btn.addEventListener('click', function () {
@@ -2200,11 +2565,12 @@ function loadPatientDetail(patientId) {
     fetchDocuments(patientId).catch(function () { return null; }),
     fetchWeights(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
     fetchWorkouts(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
+    fetchWorkoutSets(patientId).catch(function () { return {}; }),
   ]).then(function (results) {
-    state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2] };
+    state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2], sets: results[3] };
     renderPatientDocuments(results[0]);
     renderPatientWeights(results[1]);
-    renderPatientWorkouts(results[2]);
+    renderPatientWorkouts(results[2], results[3]);
   });
 }
 
@@ -2324,7 +2690,7 @@ function renderPatientWeights(weights) {
   }).join('');
 }
 
-function renderPatientWorkouts(workouts) {
+function renderPatientWorkouts(workouts, sets) {
   if (workouts == null) {
     els.patientWorkoutsList.innerHTML = '<p class="empty-state">Não foi possível carregar os treinos.</p>';
     return;
@@ -2335,10 +2701,13 @@ function renderPatientWorkouts(workouts) {
     return;
   }
   els.patientWorkoutsList.innerHTML = workouts.map(function (w) {
+    var exercisesSummary = fmtExercisesSummary(sets && sets[w.id]);
     return '<div class="record-row">' +
       '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
       '<span class="record-mid"><span class="record-type">' + w.type + '</span>' +
-      '<span class="record-local">' + (w.local || 'Sem local') + '</span></span>' +
+      '<span class="record-local">' + (w.local || 'Sem local') + '</span>' +
+      (exercisesSummary ? '<span class="record-exercises">' + exercisesSummary + '</span>' : '') +
+      '</span>' +
       '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
       '</div>';
   }).join('');
@@ -2366,6 +2735,13 @@ function startOwnData() {
       console.error('Falha ao carregar treinos', err);
       state.loading = false;
       state.loadError = true;
+    })
+    .finally(renderActiveTab);
+
+  fetchWorkoutSets(userId)
+    .then(function (byWorkout) { state.workoutSets = byWorkout; })
+    .catch(function (err) {
+      console.error('Falha ao carregar séries', err);
     })
     .finally(renderActiveTab);
 
@@ -2428,6 +2804,17 @@ function startOwnData() {
     .finally(function () {
       state.locationsLoading = false;
       updateLocalSuggestions();
+      renderActiveTab();
+    });
+
+  fetchExercises(userId)
+    .then(function (rows) { state.exerciseCatalog = rows; })
+    .catch(function (err) {
+      console.error('Falha ao carregar exercícios', err);
+    })
+    .finally(function () {
+      state.exerciseCatalogLoading = false;
+      updateExerciseSuggestions();
       renderActiveTab();
     });
 }

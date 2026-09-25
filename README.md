@@ -263,8 +263,9 @@ descrita acima.
   dentro de Treino, alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
   duração corrida ao salvar), com seletor do tipo de treino (vem do catálogo
-  de Modalidades — ver abaixo) e campo de local com autocomplete (vem do
-  catálogo de Locais); dentro de Peso, registra data + kg (salvar no mesmo dia
+  de Modalidades — ver abaixo), campo de local com autocomplete (vem do
+  catálogo de Locais) e uma seção opcional de **Exercícios** — ver abaixo;
+  dentro de Peso, registra data + kg (salvar no mesmo dia
   sobrescreve em vez de duplicar — `upsert` por `date`, que é `unique` na
   tabela), mostra um gráfico de linha simples (SVG, sem biblioteca) com a
   tendência dos últimos 30 pesos registrados — some se houver menos de 2
@@ -310,11 +311,24 @@ descrita acima.
   direto em Registrar (sem passar por Configurações primeiro) também
   cadastra ele sozinho no catálogo — conveniência que substitui o
   autocomplete antigo (calculado na hora a partir do histórico de treinos).
+- **Exercícios e séries**: o salto de "app de duração" pra tracker de treino
+  de força de verdade — dentro de Registrar > Treino, uma seção opcional
+  deixa adicionar um ou mais exercícios (nome com autocomplete do catálogo
+  de **Exercícios**, mesmo padrão de Modalidades/Locais), cada um com N
+  séries de repetições x carga (ex: 3 séries de 10 reps a 40kg). Nenhum
+  exercício é obrigatório — duração sozinha continua sendo o suficiente pra
+  registrar qualquer treino. As séries ficam em `pandafit_workout_sets`
+  (uma linha por série, `on delete cascade` do treino) e aparecem resumidas
+  no registro do Painel (ex: "Supino reto 3×10 @ 40kg") e na visão do
+  médico, que só lê. Editar um treino recarrega os exercícios/séries já
+  salvos no formulário; salvar substitui todas as séries daquele treino
+  pelas atuais, em vez de tentar diferenciar o que mudou
+  (`0054_pandafit_exercicios_e_series.sql`).
 - **Configurações**: tela raiz com uma linha por item (Meta, Modalidades,
-  Locais, Documentos e, só para admin, Usuários), cada uma abrindo a tela
-  correspondente; embaixo, a seção "Conta" mostra e-mail + papel logado e o
-  botão **Sair** (o mesmo avatar da barra de topo também abre a confirmação
-  de logout, de qualquer tela).
+  Locais, Exercícios, Documentos e, só para admin, Usuários), cada uma
+  abrindo a tela correspondente; embaixo, a seção "Conta" mostra e-mail +
+  papel logado e o botão **Sair** (o mesmo avatar da barra de topo também
+  abre a confirmação de logout, de qualquer tela).
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`
