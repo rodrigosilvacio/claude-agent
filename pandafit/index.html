@@ -12,8 +12,8 @@
 <base href="/pandafit/" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>PandaFit · Registro de treinos</title>
-<meta name="theme-color" content="#fbf8f4" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#1c1712" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="PandaFit" />
@@ -23,8 +23,8 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=16" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/styles.css?v=17" />
 </head>
 <body>
 
@@ -43,22 +43,22 @@
         <p class="login-subtitle">Treinos, peso e exames em um só lugar.</p>
       </div>
 
-      <form class="login-form" id="login-form" novalidate>
-        <label class="field">
-          <span class="field-label">E-mail</span>
-          <input type="email" id="login-email" inputmode="email" autocomplete="username" required />
-        </label>
-        <label class="field">
-          <span class="field-label">Senha</span>
-          <input type="password" id="login-password" autocomplete="current-password" required />
-        </label>
-        <div class="toast toast-error" id="login-error" hidden></div>
-        <button type="submit" class="btn btn-save login-submit" id="btn-login">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
-          <span id="btn-login-label">Entrar</span>
-        </button>
-      </form>
+      <div class="login-card">
+        <form class="login-form" id="login-form" novalidate>
+          <label class="field">
+            <span class="field-label">E-mail</span>
+            <input type="email" id="login-email" inputmode="email" autocomplete="username" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Senha</span>
+            <input type="password" id="login-password" autocomplete="current-password" required />
+          </label>
+          <div class="toast toast-error" id="login-error" hidden></div>
+          <button type="submit" class="btn btn-save login-submit" id="btn-login">
+            <span id="btn-login-label">Entrar</span>
+          </button>
+        </form>
+      </div>
 
       <p class="login-footnote">Acesso só por convite — fale com o administrador se precisar de uma conta.</p>
     </div>
@@ -95,8 +95,6 @@
         <div id="reminder-banners" class="reminder-banners" hidden></div>
 
         <div class="ticket total-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Treinos no mês</div>
           <div class="total-row">
             <span class="total-hours" id="month-count">0</span>
@@ -156,8 +154,6 @@
         </div>
 
         <div class="ticket timer-card" id="timer-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="timer-status">
             <span class="dot" id="timer-dot"></span>
             <span id="timer-run-label">Pausado</span>
@@ -195,8 +191,6 @@
       <div class="save-bar" id="save-bar-treino">
         <div class="toast" id="toast" hidden></div>
         <button type="button" class="btn btn-save" id="btn-save">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <span id="btn-save-label">Salvar treino</span>
         </button>
       </div>
@@ -205,8 +199,6 @@
       <div class="screen-body" id="section-peso" hidden>
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Registrar peso</div>
           <label class="field goal-field">
             <span class="field-label">Data</span>
@@ -257,8 +249,6 @@
       <div class="screen-body">
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Meta mensal</div>
           <label class="field goal-field">
             <span class="field-label">Treinos por mês (1 a 30)</span>
@@ -286,8 +276,6 @@
         </div>
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Meta de peso</div>
           <label class="field goal-field">
             <span class="field-label">Peso-alvo em kg (opcional — em branco remove a meta)</span>
@@ -322,8 +310,6 @@
       <div class="screen-body">
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Enviar exame</div>
           <label class="field goal-field">
             <span class="field-label">Arquivo (PDF, JPG ou PNG — até 10MB)</span>
@@ -395,8 +381,6 @@
       <div class="screen-body">
 
         <div class="ticket goal-card">
-          <span class="corner tl">+</span><span class="corner tr">+</span>
-          <span class="corner bl">+</span><span class="corner br">+</span>
           <div class="label">Cadastrar usuário</div>
           <label class="field goal-field">
             <span class="field-label">Nome</span>
@@ -507,8 +491,6 @@
   <!-- ───────── Confirm modal ───────── -->
   <div class="modal-overlay" id="confirm-modal" hidden>
     <div class="modal-card">
-      <span class="corner tl">+</span><span class="corner tr">+</span>
-      <span class="corner bl">+</span><span class="corner br">+</span>
       <p class="modal-message" id="confirm-modal-message"></p>
       <div class="modal-actions">
         <button type="button" class="modal-btn modal-btn-cancel" id="confirm-modal-cancel">Cancelar</button>
@@ -519,6 +501,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=16"></script>
+<script type="module" src="assets/app.js?v=17"></script>
 </body>
 </html>

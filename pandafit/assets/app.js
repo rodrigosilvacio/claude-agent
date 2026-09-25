@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=16';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=17';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -505,9 +505,10 @@ var els = {
 };
 
 // ── confirm modal (replaces window.confirm to match the app's own look) ──
-function confirmModal(message) {
+function confirmModal(message, confirmLabel) {
   return new Promise(function (resolve) {
     els.confirmModalMessage.textContent = message;
+    els.confirmModalConfirm.textContent = confirmLabel || 'Excluir';
     els.confirmModal.hidden = false;
 
     function onCancel() { finish(false); }
@@ -547,7 +548,7 @@ async function doLogout() {
 }
 
 async function confirmLogout() {
-  var ok = await confirmModal('Sair da conta?');
+  var ok = await confirmModal('Sair da conta?', 'Sair');
   if (ok) doLogout();
 }
 

@@ -160,16 +160,23 @@ Storage `pandafit-documents`, no Supabase (`ClaudeProjects`) — cada linha
 pertence a um `user_id` e os dados persistem no banco, disponíveis em
 qualquer dispositivo em que a mesma conta faça login.
 
-Visual em Barlow / Barlow Condensed, paleta terracota `#b6633f` sobre
-neutros quentes (`#fbf8f4`/`#efeae2`), cartões com cantos retos, marcas "+"
-nos vértices e leve elevação (`box-shadow`) — estilo ticket/recibo, com
-modo escuro automático (ver abaixo), transição suave ao trocar de aba e
-feedback tátil (`:active { transform: scale(...) }`) em todo alvo de
+Visual corporativo: fonte única Inter (400 a 800), paleta azul/slate
+(`#2563eb` de destaque sobre neutros frios `#ffffff`/`#f8fafc`, com
+equivalente em azul `#3b82f6` sobre slate `#0f172a`/`#1e293b` no modo
+escuro), cantos suavemente arredondados (`--radius-sm/md/lg`: 6/10/14px)
+em cartões, botões, campos e badges, e leve elevação (`box-shadow`) —
+substituiu o visual anterior em Barlow/Barlow Condensed com paleta
+terracota, cantos retos e marcas "+" nos vértices (estilo ticket/recibo).
+Mantém modo escuro automático (ver abaixo), transição suave ao trocar de
+aba e feedback tátil (`:active { transform: scale(...) }`) em todo alvo de
 toque. Uma barra de topo fixa (marca "PandaFit" + avatar da conta) fica
 sempre visível acima do conteúdo em todas as telas, dando ao app uma
 identidade de "cabeçalho" persistente em vez de cada tela abrir direto no
 título grande — sem ela, no topo sobrava um espaço vazio do tamanho da
-barra de status antes de qualquer conteúdo aparecer.
+barra de status antes de qualquer conteúdo aparecer. A tela de login
+("LaVie Fit") segue o mesmo padrão: formulário dentro de um cartão com
+borda e sombra centralizado sobre o fundo da página, em vez de campos
+soltos direto na tela.
 
 ### Autenticação e papéis
 
