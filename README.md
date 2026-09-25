@@ -359,11 +359,22 @@ existia via meta tags para iOS. `sw.js` faz cache básico do app shell
 (`index.html`, `manifest.json`, `styles.css`, `app.js`,
 `supabaseClient.js`, ícones) — estratégia cache-first com atualização em
 segundo plano (stale-while-revalidate), então o app abre mesmo sem
-internet (a UI carrega do cache; os dados do Supabase, esses sim, exigem
-rede). O service worker só intercepta pedidos same-origin — chamadas ao
+internet. O service worker só intercepta pedidos same-origin — chamadas ao
 Supabase e ao esm.sh (import do `supabase-js`) são cross-origin e vão
 direto pra rede, nunca ficam em cache, então os dados nunca aparecem
 desatualizados por causa disso.
+
+Separado do service worker, os **dados** (treinos, pesos, meta e os
+catálogos de modalidades/locais/exercícios) têm seu próprio cache de
+leitura em `localStorage`, namespaced por `user_id`: toda vez que um
+desses carrega com sucesso, a resposta é salva; no próximo boot, o cache
+aparece na tela na hora enquanto a rede responde em paralelo, e se a rede
+falhar (sem internet mesmo) o app continua mostrando os dados salvos em
+vez de uma tela de erro, com um aviso "Sem conexão — mostrando dados
+salvos no aparelho" no topo. Documentos ficam de fora desse cache de
+propósito — o nome de um arquivo pode ser sensível (ex: resultado de
+exame) e não devia ficar gravado fora do Supabase. É só leitura: criar,
+editar ou excluir continua exigindo rede, e o cache é limpo no logout.
 
 **Atenção**: como o service worker cacheia os arquivos versionados
 (`?v=N`), sempre que incrementar essa versão em `styles.css`/`app.js`/

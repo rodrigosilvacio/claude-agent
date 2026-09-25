@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=20';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=21';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -31,6 +31,7 @@ var state = {
   session: null,
   profile: null, // { id, email, nome, role }
   loginLoading: false,
+  offlineMode: false,
 
   tab: 'painel',
   registrarSection: 'treino',
@@ -221,6 +222,38 @@ function parseISO(iso) {
 
 function currentUserId() {
   return state.session && state.session.user && state.session.user.id;
+}
+
+// ── cache de leitura offline (localStorage, por usuário) ──
+// Só pra treinos/pesos/meta/catálogos — nunca documentos, cujo nome do
+// arquivo pode ser sensível (ex: resultado de exame) e não deveria ficar
+// gravado fora do Supabase. Falha de storage (modo privado, cota cheia)
+// degrada em silêncio: é só uma conveniência, não a fonte de verdade.
+var CACHE_PREFIX = 'pandafit_cache_';
+
+function cacheGet(userId, key) {
+  try {
+    var raw = localStorage.getItem(CACHE_PREFIX + userId + '_' + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function cacheSet(userId, key, value) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + userId + '_' + key, JSON.stringify(value));
+  } catch (err) {
+    // ignorado de propósito — ver comentário acima
+  }
+}
+
+var CACHE_KEYS = ['workouts', 'weights', 'settings', 'workoutTypes', 'locations', 'exerciseCatalog', 'workoutSets'];
+
+function clearUserCache(userId) {
+  CACHE_KEYS.forEach(function (key) {
+    try { localStorage.removeItem(CACHE_PREFIX + userId + '_' + key); } catch (err) { /* ignorado */ }
+  });
 }
 
 // ── Supabase persistence (all scoped to a user_id — either the caller's own,
@@ -611,6 +644,7 @@ var els = {
   tabbar: $('#tabbar'),
   btnAccount: $('#btn-account'),
   accountInitial: $('#account-initial'),
+  offlineBanner: $('#offline-banner'),
   configAccountEmail: $('#config-account-email'),
   btnLogoutConfig: $('#btn-logout-config'),
   settingsRowUsuarios: $('#settings-row-usuarios'),
@@ -806,7 +840,9 @@ var showExerciseFormToast = makeToaster(els.exerciseFormToast);
 
 // ── auth: login, logout, role-based routing ──
 async function doLogout() {
+  var userId = currentUserId();
   await supabase.auth.signOut();
+  if (userId) clearUserCache(userId);
 }
 
 async function confirmLogout() {
@@ -830,6 +866,8 @@ function showLoginScreen(errorMessage) {
 function resetAppState() {
   state.session = null;
   state.profile = null;
+  state.offlineMode = false;
+  offlineResources = {};
   state.workouts = [];
   state.loading = true;
   state.loadError = false;
@@ -971,7 +1009,12 @@ document.querySelectorAll('[data-back]').forEach(function (btn) {
   btn.addEventListener('click', function () { setTab(btn.dataset.back); });
 });
 
+function renderOfflineBanner() {
+  els.offlineBanner.hidden = !state.offlineMode;
+}
+
 function renderActiveTab() {
+  renderOfflineBanner();
   if (state.tab === 'painel') renderPainel();
   if (state.tab === 'meta') renderMeta();
   if (state.tab === 'modalidades') renderWorkoutTypes();
@@ -2713,6 +2756,53 @@ function renderPatientWorkouts(workouts, sets) {
   }).join('');
 }
 
+// Mostra o cache local na hora (se houver) enquanto a rede responde. Se a
+// rede falhar e havia cache, mantém os dados antigos na tela com um aviso
+// de "offline" em vez de zerar tudo com a mensagem de erro genérica — só
+// aciona onLoadError quando não havia nada em cache pra cair de volta.
+//
+// offlineResources rastreia QUAIS dos ~7 recursos (treinos, pesos, meta...)
+// estão hoje servidos do cache por falha de rede — o banner de "offline"
+// reflete se esse conjunto está vazio ou não, em vez de uma única flag
+// booleana que 7 fetches concorrentes ficariam pisando um no do outro.
+var offlineResources = {};
+
+function recomputeOfflineMode() {
+  state.offlineMode = Object.keys(offlineResources).length > 0;
+}
+
+function loadWithCache(userId, cacheKey, fetchPromise, applyRows, opts) {
+  opts = opts || {};
+  var cached = cacheGet(userId, cacheKey);
+  function renderExtra() {
+    renderActiveTab();
+    if (opts.afterRender) opts.afterRender();
+  }
+
+  if (cached != null) {
+    applyRows(cached);
+    renderExtra();
+  }
+
+  return fetchPromise
+    .then(function (rows) {
+      delete offlineResources[cacheKey];
+      recomputeOfflineMode();
+      applyRows(rows);
+      cacheSet(userId, cacheKey, rows);
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar ' + cacheKey, err);
+      if (cached != null) {
+        offlineResources[cacheKey] = true;
+        recomputeOfflineMode();
+      } else if (opts.onLoadError) {
+        opts.onLoadError();
+      }
+    })
+    .finally(renderExtra);
+}
+
 // ── init (own tracking data — usuario and admin roles) ──
 function startOwnData() {
   var userId = currentUserId();
@@ -2725,47 +2815,22 @@ function startOwnData() {
   renderRegistrar();
   renderActiveTab();
 
-  fetchWorkouts(userId)
-    .then(function (rows) {
-      state.workouts = rows;
-      state.loading = false;
-      updateLocalSuggestions();
-    })
-    .catch(function (err) {
-      console.error('Falha ao carregar treinos', err);
-      state.loading = false;
-      state.loadError = true;
-    })
-    .finally(renderActiveTab);
+  loadWithCache(userId, 'workouts', fetchWorkouts(userId),
+    function (rows) { state.workouts = rows; state.loading = false; updateLocalSuggestions(); },
+    { onLoadError: function () { state.loading = false; state.loadError = true; }, afterRender: updateLocalSuggestions });
 
-  fetchWorkoutSets(userId)
-    .then(function (byWorkout) { state.workoutSets = byWorkout; })
-    .catch(function (err) {
-      console.error('Falha ao carregar séries', err);
-    })
-    .finally(renderActiveTab);
+  loadWithCache(userId, 'workoutSets', fetchWorkoutSets(userId),
+    function (byWorkout) { state.workoutSets = byWorkout; });
 
-  fetchSettings(userId)
-    .then(function (row) {
+  loadWithCache(userId, 'settings', fetchSettings(userId),
+    function (row) {
       state.monthlyGoal = row ? row.monthly_goal : DEFAULT_MONTHLY_GOAL;
       state.targetWeight = row ? row.target_weight_kg : null;
-    })
-    .catch(function (err) {
-      console.error('Falha ao carregar meta', err);
-    })
-    .finally(renderActiveTab);
+    });
 
-  fetchWeights(userId)
-    .then(function (rows) {
-      state.weights = rows;
-      state.weightsLoading = false;
-    })
-    .catch(function (err) {
-      console.error('Falha ao carregar pesos', err);
-      state.weightsLoading = false;
-      state.weightsLoadError = true;
-    })
-    .finally(renderActiveTab);
+  loadWithCache(userId, 'weights', fetchWeights(userId),
+    function (rows) { state.weights = rows; state.weightsLoading = false; },
+    { onLoadError: function () { state.weightsLoading = false; state.weightsLoadError = true; } });
 
   fetchDocuments(userId)
     .then(function (rows) {
@@ -2780,43 +2845,24 @@ function startOwnData() {
     .finally(renderActiveTab);
 
   // Conta nova (sem nenhuma modalidade ainda) recebe as 3 clássicas de
-  // largada — ver seedDefaultWorkoutTypes().
-  fetchWorkoutTypes(userId)
-    .then(function (rows) { return rows.length > 0 ? rows : seedDefaultWorkoutTypes(userId); })
-    .then(function (rows) {
+  // largada — ver seedDefaultWorkoutTypes(). Só roda de fato quando a rede
+  // responde vazio, nunca a partir do cache offline.
+  loadWithCache(userId, 'workoutTypes',
+    fetchWorkoutTypes(userId).then(function (rows) { return rows.length > 0 ? rows : seedDefaultWorkoutTypes(userId); }),
+    function (rows) {
+      state.workoutTypesLoading = false;
       state.workoutTypes = rows;
       if (!state.type && rows.length) state.type = rows[0].name;
-    })
-    .catch(function (err) {
-      console.error('Falha ao carregar modalidades', err);
-    })
-    .finally(function () {
-      state.workoutTypesLoading = false;
-      renderRegistrar();
-      renderActiveTab();
-    });
+    },
+    { onLoadError: function () { state.workoutTypesLoading = false; }, afterRender: renderRegistrar });
 
-  fetchLocations(userId)
-    .then(function (rows) { state.locations = rows; })
-    .catch(function (err) {
-      console.error('Falha ao carregar locais', err);
-    })
-    .finally(function () {
-      state.locationsLoading = false;
-      updateLocalSuggestions();
-      renderActiveTab();
-    });
+  loadWithCache(userId, 'locations', fetchLocations(userId),
+    function (rows) { state.locationsLoading = false; state.locations = rows; },
+    { onLoadError: function () { state.locationsLoading = false; }, afterRender: updateLocalSuggestions });
 
-  fetchExercises(userId)
-    .then(function (rows) { state.exerciseCatalog = rows; })
-    .catch(function (err) {
-      console.error('Falha ao carregar exercícios', err);
-    })
-    .finally(function () {
-      state.exerciseCatalogLoading = false;
-      updateExerciseSuggestions();
-      renderActiveTab();
-    });
+  loadWithCache(userId, 'exerciseCatalog', fetchExercises(userId),
+    function (rows) { state.exerciseCatalogLoading = false; state.exerciseCatalog = rows; },
+    { onLoadError: function () { state.exerciseCatalogLoading = false; }, afterRender: updateExerciseSuggestions });
 }
 
 // ── boot: check session, show login or app shell ──
