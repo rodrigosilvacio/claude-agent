@@ -349,14 +349,16 @@ html, body {
 }
 
 /* ── mode tabs (registrar) ── */
-.mode-tabs {
+.mode-tabs,
+.section-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   border: 1px solid var(--line);
   margin-top: 10px;
 }
 
-.mode-tab {
+.mode-tab,
+.section-tab {
   appearance: none;
   border: 0;
   cursor: pointer;
@@ -370,7 +372,8 @@ html, body {
   color: var(--muted);
 }
 
-.mode-tab.active {
+.mode-tab.active,
+.section-tab.active {
   background: var(--accent);
   color: var(--bg-app);
 }
@@ -501,6 +504,28 @@ input[type="number"] {
 .mins-input {
   font: 600 22px/1.2 "Barlow Condensed", sans-serif !important;
   font-variant-numeric: tabular-nums;
+}
+
+input[type="file"] {
+  border: 1px solid var(--line);
+  padding: 8px;
+  font: 400 13px/1.3 "Barlow", sans-serif;
+  color: var(--muted);
+  width: 100%;
+  min-height: 44px;
+  background: transparent;
+}
+input[type="file"]::file-selector-button {
+  appearance: none;
+  border: 0;
+  background: var(--accent);
+  color: var(--bg-app);
+  font: 600 11px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 12px;
+  margin-right: 10px;
+  cursor: pointer;
 }
 
 /* ── workout type picker ── */
@@ -717,3 +742,9 @@ input[type="number"] {
 }
 .weight-delta.weight-up { background: #fbeceb; color: #b3423f; }
 .weight-delta.weight-down { background: #eaf5ee; color: #3f7d52; }
+
+/* ── documents ── */
+.doc-view-link {
+  text-decoration: none;
+  display: inline-block;
+}

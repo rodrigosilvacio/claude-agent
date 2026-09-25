@@ -1,8 +1,9 @@
-import { supabase } from './supabaseClient.js?v=1';
+import { supabase } from './supabaseClient.js?v=2';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
 var EVOLUTION_MONTHS = 6;
+var MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 var WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -15,6 +16,7 @@ var MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 
 // ── state ──
 var state = {
   tab: 'painel',
+  registrarSection: 'treino',
   mode: 'manual',
   running: false,
   secs: 0,
@@ -38,6 +40,12 @@ var state = {
   savingWeight: false,
   weightsPage: 0,
   deletingWeightId: null,
+  documents: [],
+  documentsLoading: true,
+  documentsLoadError: false,
+  uploadingDocument: false,
+  documentsPage: 0,
+  deletingDocumentId: null,
 };
 var timerHandle = null;
 
@@ -61,6 +69,12 @@ function fmtDayLabel(iso) {
 
 function fmtWeight(kg) {
   return (Math.round(kg * 10) / 10).toFixed(1).replace('.', ',');
+}
+
+function fmtFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB';
 }
 
 // First day 00:00 .. last day 23:59:59 of the calendar month containing `date`.
@@ -154,6 +168,50 @@ async function deleteWeight(id) {
   if (error) throw error;
 }
 
+async function fetchDocuments() {
+  var { data, error } = await supabase
+    .from('pandafit_documents')
+    .select('id, file_name, file_path, file_type, file_size, uploaded_at')
+    .order('uploaded_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return data;
+}
+
+async function uploadDocument(file) {
+  var path = Date.now() + '-' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var { error: uploadError } = await supabase.storage
+    .from('pandafit-documents')
+    .upload(path, file);
+  if (uploadError) throw uploadError;
+
+  var { data, error } = await supabase
+    .from('pandafit_documents')
+    .insert({
+      file_name: file.name,
+      file_path: path,
+      file_type: file.type || 'application/octet-stream',
+      file_size: file.size,
+    })
+    .select('id, file_name, file_path, file_type, file_size, uploaded_at')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteDocument(doc) {
+  await supabase.storage.from('pandafit-documents').remove([doc.file_path]);
+  var { error } = await supabase
+    .from('pandafit_documents')
+    .delete()
+    .eq('id', doc.id);
+  if (error) throw error;
+}
+
+function documentPublicUrl(path) {
+  return supabase.storage.from('pandafit-documents').getPublicUrl(path).data.publicUrl;
+}
+
 // ── DOM refs ──
 var $ = function (sel) { return document.querySelector(sel); };
 
@@ -162,7 +220,7 @@ var els = {
     painel: $('#screen-painel'),
     registrar: $('#screen-registrar'),
     meta: $('#screen-meta'),
-    peso: $('#screen-peso'),
+    documentos: $('#screen-documentos'),
   },
   monthLabel: $('#month-label'),
   monthCount: $('#month-count'),
@@ -179,6 +237,10 @@ var els = {
   pagerNote: $('#pager-note'),
 
   modeTabs: document.querySelectorAll('.mode-tab'),
+  registrarTitle: $('#registrar-title'),
+  sectionTreino: $('#section-treino'),
+  sectionPeso: $('#section-peso'),
+  saveBarTreino: $('#save-bar-treino'),
   timerCard: $('#timer-card'),
   manualFields: $('#manual-fields'),
   timerDot: $('#timer-dot'),
@@ -211,6 +273,16 @@ var els = {
   weightsPagerPrev: $('#weights-pager-prev'),
   weightsPagerNext: $('#weights-pager-next'),
   weightsPagerNote: $('#weights-pager-note'),
+
+  inputDocumentFile: $('#input-document-file'),
+  btnUploadDocument: $('#btn-upload-document'),
+  documentToast: $('#document-toast'),
+  documentsList: $('#documents-list'),
+  documentCountNote: $('#document-count-note'),
+  documentsPager: $('#documents-pager'),
+  documentsPagerPrev: $('#documents-pager-prev'),
+  documentsPagerNext: $('#documents-pager-next'),
+  documentsPagerNote: $('#documents-pager-note'),
 };
 
 // ── tab bar wiring ──
@@ -228,14 +300,33 @@ function setTab(tab) {
   });
   if (tab === 'painel') renderPainel();
   if (tab === 'meta') renderMeta();
-  if (tab === 'peso') renderWeights();
+  if (tab === 'registrar') setRegistrarSection(state.registrarSection);
+  if (tab === 'documentos') renderDocuments();
 }
 
 function renderActiveTab() {
   if (state.tab === 'painel') renderPainel();
   if (state.tab === 'meta') renderMeta();
-  if (state.tab === 'peso') renderWeights();
+  if (state.tab === 'registrar' && state.registrarSection === 'peso') renderWeights();
+  if (state.tab === 'documentos') renderDocuments();
 }
+
+// ── registrar: treino / peso toggle ──
+function setRegistrarSection(section) {
+  state.registrarSection = section;
+  document.querySelectorAll('.section-tab').forEach(function (btn) {
+    btn.classList.toggle('active', btn.dataset.section === section);
+  });
+  els.sectionTreino.hidden = section !== 'treino';
+  els.sectionPeso.hidden = section !== 'peso';
+  els.saveBarTreino.hidden = section !== 'treino';
+  els.registrarTitle.textContent = section === 'treino' ? 'Registrar treino' : 'Registrar peso';
+  if (section === 'peso') renderWeights();
+}
+
+document.querySelectorAll('.section-tab').forEach(function (btn) {
+  btn.addEventListener('click', function () { setRegistrarSection(btn.dataset.section); });
+});
 
 // ── records pagination ──
 els.pagerPrev.addEventListener('click', function () {
@@ -258,6 +349,17 @@ els.weightsPagerPrev.addEventListener('click', function () {
 els.weightsPagerNext.addEventListener('click', function () {
   state.weightsPage += 1;
   renderWeights();
+});
+
+els.documentsPagerPrev.addEventListener('click', function () {
+  if (state.documentsPage > 0) {
+    state.documentsPage -= 1;
+    renderDocuments();
+  }
+});
+els.documentsPagerNext.addEventListener('click', function () {
+  state.documentsPage += 1;
+  renderDocuments();
 });
 
 // ── mode tabs (Cronômetro / Manual) ──
@@ -412,6 +514,7 @@ function makeToaster(el) {
 var showToast = makeToaster(els.toast);
 var showGoalToast = makeToaster(els.goalToast);
 var showWeightToast = makeToaster(els.weightToast);
+var showDocumentToast = makeToaster(els.documentToast);
 
 // ── weight fields ──
 els.inputWeightDate.addEventListener('change', function (e) {
@@ -469,6 +572,59 @@ function handleDeleteWeightClick(id) {
     .finally(function () {
       state.deletingWeightId = null;
       renderWeights();
+    });
+}
+
+els.btnUploadDocument.addEventListener('click', function () {
+  if (state.uploadingDocument) return;
+
+  var file = els.inputDocumentFile.files && els.inputDocumentFile.files[0];
+  if (!file) {
+    showDocumentToast('Escolha um arquivo primeiro.');
+    return;
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) {
+    showDocumentToast('Arquivo maior que 10MB. Escolha um menor.');
+    return;
+  }
+
+  state.uploadingDocument = true;
+  els.btnUploadDocument.disabled = true;
+
+  uploadDocument(file)
+    .then(function (doc) {
+      state.documents.unshift(doc);
+      state.documentsPage = 0;
+      els.inputDocumentFile.value = '';
+      renderDocuments();
+      showDocumentToast(doc.file_name + ' enviado.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao enviar documento', err);
+      showDocumentToast('Não foi possível enviar. Tente de novo.');
+    })
+    .finally(function () {
+      state.uploadingDocument = false;
+      els.btnUploadDocument.disabled = false;
+    });
+});
+
+function handleDeleteDocumentClick(doc) {
+  if (state.deletingDocumentId) return;
+  if (!window.confirm('Excluir "' + doc.file_name + '"? Essa ação não pode ser desfeita.')) return;
+
+  state.deletingDocumentId = doc.id;
+  deleteDocument(doc)
+    .then(function () {
+      state.documents = state.documents.filter(function (d) { return d.id !== doc.id; });
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir documento', err);
+      window.alert('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingDocumentId = null;
+      renderDocuments();
     });
 }
 
@@ -684,6 +840,62 @@ function renderWeights() {
   els.weightsPagerNext.disabled = state.weightsPage >= pageCount - 1;
 }
 
+// ── render: Documentos screen ──
+function renderDocuments() {
+  if (state.documentsLoading) {
+    els.documentsList.innerHTML = '<p class="empty-state">Carregando documentos…</p>';
+    els.documentsPager.hidden = true;
+    return;
+  }
+
+  if (state.documentsLoadError) {
+    els.documentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os documentos. Recarregue a página.</p>';
+    els.documentsPager.hidden = true;
+    return;
+  }
+
+  var sorted = state.documents; // already sorted uploaded_at desc
+  els.documentCountNote.textContent = sorted.length + (sorted.length === 1 ? ' documento' : ' documentos');
+
+  if (sorted.length === 0) {
+    els.documentsList.innerHTML = '<p class="empty-state">Nenhum documento enviado ainda.</p>';
+    els.documentsPager.hidden = true;
+    state.documentsPage = 0;
+    return;
+  }
+
+  var pageCount = Math.ceil(sorted.length / RECORDS_PAGE_SIZE);
+  if (state.documentsPage >= pageCount) state.documentsPage = pageCount - 1;
+  if (state.documentsPage < 0) state.documentsPage = 0;
+
+  var start = state.documentsPage * RECORDS_PAGE_SIZE;
+  var pageItems = sorted.slice(start, start + RECORDS_PAGE_SIZE);
+
+  els.documentsList.innerHTML = pageItems.map(function (doc) {
+    return '<div class="record-row">' +
+      '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
+      '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
+      '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
+      '<a class="record-dur doc-view-link" href="' + documentPublicUrl(doc.file_path) + '" target="_blank" rel="noopener">Ver</a>' +
+      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir documento">' +
+      '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</button>' +
+      '</div>';
+  }).join('');
+
+  els.documentsList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var doc = state.documents.find(function (d) { return d.id === Number(btn.dataset.id); });
+      if (doc) handleDeleteDocumentClick(doc);
+    });
+  });
+
+  els.documentsPager.hidden = pageCount <= 1;
+  els.documentsPagerNote.textContent = 'Página ' + (state.documentsPage + 1) + ' de ' + pageCount;
+  els.documentsPagerPrev.disabled = state.documentsPage === 0;
+  els.documentsPagerNext.disabled = state.documentsPage >= pageCount - 1;
+}
+
 els.btnSaveGoal.addEventListener('click', function () {
   if (state.savingGoal) return;
 
@@ -749,5 +961,17 @@ fetchWeights()
     console.error('Falha ao carregar pesos', err);
     state.weightsLoading = false;
     state.weightsLoadError = true;
+  })
+  .finally(renderActiveTab);
+
+fetchDocuments()
+  .then(function (rows) {
+    state.documents = rows;
+    state.documentsLoading = false;
+  })
+  .catch(function (err) {
+    console.error('Falha ao carregar documentos', err);
+    state.documentsLoading = false;
+    state.documentsLoadError = true;
   })
   .finally(renderActiveTab);

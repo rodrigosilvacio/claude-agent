@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=1" />
+<link rel="stylesheet" href="assets/styles.css?v=2" />
 </head>
 <body>
 
@@ -69,17 +69,23 @@
     </div>
   </main>
 
-  <!-- ───────── Registrar treino ───────── -->
+  <!-- ───────── Registrar (treino + peso) ───────── -->
   <main class="screen" id="screen-registrar" data-screen="registrar" hidden>
     <div class="screen-head">
-      <h1 class="title">Registrar treino</h1>
+      <h1 class="title" id="registrar-title">Registrar treino</h1>
+      <div class="section-tabs">
+        <button type="button" class="section-tab" data-section="treino">Treino</button>
+        <button type="button" class="section-tab" data-section="peso">Peso</button>
+      </div>
+    </div>
+
+    <!-- ── seção Treino ── -->
+    <div class="screen-body" id="section-treino">
+
       <div class="mode-tabs">
         <button type="button" class="mode-tab" data-mode="manual">Manual</button>
         <button type="button" class="mode-tab" data-mode="timer">Cronômetro</button>
       </div>
-    </div>
-
-    <div class="screen-body">
 
       <div class="ticket timer-card" id="timer-card">
         <span class="corner tl">+</span><span class="corner tr">+</span>
@@ -113,17 +119,54 @@
 
       <label class="field">
         <span class="field-label">Local</span>
-        <input type="text" id="input-local" placeholder="Academia, CT, parque…" />
+        <input type="text" id="input-local" placeholder="Academia, CT, parque…" list="local-suggestions" />
+        <datalist id="local-suggestions"></datalist>
       </label>
     </div>
 
-    <div class="save-bar">
+    <div class="save-bar" id="save-bar-treino">
       <div class="toast" id="toast" hidden></div>
       <button type="button" class="btn btn-save" id="btn-save">
         <span class="corner tl">+</span><span class="corner tr">+</span>
         <span class="corner bl">+</span><span class="corner br">+</span>
         Salvar treino
       </button>
+    </div>
+
+    <!-- ── seção Peso ── -->
+    <div class="screen-body" id="section-peso" hidden>
+
+      <div class="ticket goal-card">
+        <span class="corner tl">+</span><span class="corner tr">+</span>
+        <span class="corner bl">+</span><span class="corner br">+</span>
+        <div class="label">Registrar peso</div>
+        <label class="field goal-field">
+          <span class="field-label">Data</span>
+          <input type="date" id="input-weight-date" />
+        </label>
+        <label class="field goal-field">
+          <span class="field-label">Peso (kg)</span>
+          <input type="text" id="input-weight-value" inputmode="decimal" placeholder="Ex: 78,4" />
+        </label>
+        <div class="toast" id="weight-toast" hidden></div>
+        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">Salvar peso</button>
+      </div>
+
+      <div class="section">
+        <div class="section-head-row">
+          <span class="section-title">Histórico</span>
+          <span class="section-note" id="weight-count-note">0 registros</span>
+        </div>
+        <div id="weights-list" class="records-list">
+          <p class="empty-state">Nenhum peso registrado ainda.</p>
+        </div>
+        <div id="weights-pager" class="pager" hidden>
+          <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
+          <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
+          <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
+        </div>
+      </div>
+
     </div>
   </main>
 
@@ -166,10 +209,10 @@
     </div>
   </main>
 
-  <!-- ───────── Peso ───────── -->
-  <main class="screen" id="screen-peso" data-screen="peso" hidden>
+  <!-- ───────── Documentos ───────── -->
+  <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
     <div class="screen-head">
-      <h1 class="title">Peso</h1>
+      <h1 class="title">Documentos</h1>
     </div>
 
     <div class="screen-body">
@@ -177,31 +220,27 @@
       <div class="ticket goal-card">
         <span class="corner tl">+</span><span class="corner tr">+</span>
         <span class="corner bl">+</span><span class="corner br">+</span>
-        <div class="label">Registrar peso</div>
+        <div class="label">Enviar exame</div>
         <label class="field goal-field">
-          <span class="field-label">Data</span>
-          <input type="date" id="input-weight-date" />
+          <span class="field-label">Arquivo (PDF, JPG ou PNG — até 10MB)</span>
+          <input type="file" id="input-document-file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp" />
         </label>
-        <label class="field goal-field">
-          <span class="field-label">Peso (kg)</span>
-          <input type="text" id="input-weight-value" inputmode="decimal" placeholder="Ex: 78,4" />
-        </label>
-        <div class="toast" id="weight-toast" hidden></div>
-        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">Salvar peso</button>
+        <div class="toast" id="document-toast" hidden></div>
+        <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-document">Enviar documento</button>
       </div>
 
       <div class="section">
         <div class="section-head-row">
-          <span class="section-title">Histórico</span>
-          <span class="section-note" id="weight-count-note">0 registros</span>
+          <span class="section-title">Seus documentos</span>
+          <span class="section-note" id="document-count-note">0 documentos</span>
         </div>
-        <div id="weights-list" class="records-list">
-          <p class="empty-state">Nenhum peso registrado ainda.</p>
+        <div id="documents-list" class="records-list">
+          <p class="empty-state">Nenhum documento enviado ainda.</p>
         </div>
-        <div id="weights-pager" class="pager" hidden>
-          <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
-          <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
-          <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
+        <div id="documents-pager" class="pager" hidden>
+          <button type="button" class="pager-btn" id="documents-pager-prev">‹ Anterior</button>
+          <span class="pager-note" id="documents-pager-note">Página 1 de 1</span>
+          <button type="button" class="pager-btn" id="documents-pager-next">Próxima ›</button>
         </div>
       </div>
 
@@ -222,14 +261,14 @@
       <span class="tab-mark"></span>
       <span>Meta</span>
     </button>
-    <button type="button" class="tab-btn" data-tab="peso">
+    <button type="button" class="tab-btn" data-tab="documentos">
       <span class="tab-mark"></span>
-      <span>Peso</span>
+      <span>Documentos</span>
     </button>
   </nav>
 
 </div>
 
-<script type="module" src="assets/app.js?v=1"></script>
+<script type="module" src="assets/app.js?v=2"></script>
 </body>
 </html>

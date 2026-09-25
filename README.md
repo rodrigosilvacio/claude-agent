@@ -150,20 +150,25 @@ stateless do `cep-agent`).
 
 ## PandaFit — Registro de Treinos (`/pandafit`)
 
-App de quatro telas para registrar treinos, peso e acompanhar o mês,
-mobile-first (coluna centralizada de até 460px, aba fixa no rodapé). Mesmo
-padrão do resto do repo: HTML/CSS/JS estático, sem build. Os treinos ficam
-gravados na tabela `pandafit_workouts`, a meta mensal em `pandafit_settings`
-e o peso diário em `pandafit_weights`, no Supabase (`ClaudeProjects`) — os
+App de quatro telas para registrar treinos, peso, configurar a meta e
+guardar exames, mobile-first (coluna centralizada de até 460px, aba fixa no
+rodapé: **Painel · Registrar · Meta · Documentos**). Mesmo padrão do resto
+do repo: HTML/CSS/JS estático, sem build. Os treinos ficam gravados na
+tabela `pandafit_workouts`, a meta mensal em `pandafit_settings`, o peso
+diário em `pandafit_weights` e os documentos em `pandafit_documents` +
+bucket de Storage `pandafit-documents`, no Supabase (`ClaudeProjects`) — os
 dados persistem no banco e aparecem em qualquer dispositivo/navegador, não
 só no que fez o registro.
 
 Ferramenta pessoal sem tela de login (o protótipo de design não previa
 autenticação), então a leitura, a escrita e a exclusão ficam abertas para o
 role `anon` via RLS — qualquer pessoa com a URL da página consegue ver,
-adicionar, apagar treinos/pesos e alterar a meta. Aceitável para o uso
-pretendido (uso pessoal, dado de baixo risco), mas vale lembrar caso o link
-circule.
+adicionar, apagar treinos/pesos/documentos e alterar a meta. O bucket de
+Storage também é público pelo mesmo motivo: como as tabelas já são
+totalmente abertas ao `anon`, um bucket "privado" com as mesmas políticas
+não adicionaria controle de acesso real. Aceitável para o uso pretendido
+(uso pessoal), mas vale lembrar caso o link circule — principalmente agora
+que a aba Documentos guarda exames médicos.
 
 Reproduz o protótipo de design em anexo (Barlow / Barlow Condensed, paleta
 azul-marinho `#1d2d3d` + azul acinzentado `#5980a6`, cartões com cantos retos
@@ -174,21 +179,23 @@ e marcas "+" nos vértices, estilo ticket/recibo).
   do tempo por tipo de treino (Musculação, Jiu Jitsu, Corrida); lista dos
   registros do mês (dia, tipo, local, duração), paginada de 5 em 5, com
   botão de excluir (confirmação antes de apagar) em cada linha.
-- **Registrar**: alterna entre **Manual** (aba padrão — data + duração em
+- **Registrar**: alterna entre **Treino** e **Peso** por uma aba superior;
+  dentro de Treino, alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
-  duração corrida ao salvar); seletor do tipo de treino; campo opcional de
-  local; confirmação por toast ao salvar.
+  duração corrida ao salvar), com seletor do tipo de treino e campo opcional
+  de local; dentro de Peso, registra data + kg (salvar no mesmo dia
+  sobrescreve em vez de duplicar — `upsert` por `date`, que é `unique` na
+  tabela) e mostra o histórico com a variação em relação ao registro
+  anterior, colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`)
+  quando caiu, neutro (`=`) quando ficou igual. Ambas paginadas de 5 em 5.
 - **Meta**: campo para ajustar a meta mensal (1 a 30 treinos, de qualquer
   modalidade — validado no cliente e também no banco via `check`); barra de
   progresso do mês corrente; "Evolução" com a contagem dos últimos 6 meses
   (calculada a partir dos treinos já carregados, sem consulta extra) para
   acompanhar a tendência mês a mês.
-- **Peso**: registro diário de peso (data + kg); salvar no mesmo dia
-  sobrescreve o registro em vez de duplicar (`upsert` por `date`, que é
-  `unique` na tabela). O histórico mostra a variação em relação ao registro
-  anterior, colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`)
-  quando caiu, neutro (`=`) quando ficou igual — paginado de 5 em 5, com
-  botão de excluir por linha.
+- **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
+  Supabase; lista paginada de 5 em 5 com nome, tamanho, data de envio, link
+  "Ver" (URL pública do bucket) e exclusão (remove do Storage e da tabela).
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`
