@@ -1131,7 +1131,7 @@ input[type="file"]::file-selector-button {
   .modal-btn-confirm:hover { background: var(--bad-hover); }
 }
 
-/* ── login screen ("LaVie Fit") ── */
+/* ── login screen ("PandaFit") ── */
 .screen-login {
   justify-content: center;
   align-items: center;

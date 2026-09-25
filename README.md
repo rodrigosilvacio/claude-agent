@@ -174,7 +174,7 @@ sempre visível acima do conteúdo em todas as telas, dando ao app uma
 identidade de "cabeçalho" persistente em vez de cada tela abrir direto no
 título grande — sem ela, no topo sobrava um espaço vazio do tamanho da
 barra de status antes de qualquer conteúdo aparecer. A tela de login
-("LaVie Fit") segue o mesmo padrão: formulário dentro de um cartão com
+("PandaFit") segue o mesmo padrão: formulário dentro de um cartão com
 borda e sombra centralizado sobre o fundo da página, em vez de campos
 soltos direto na tela.
 
@@ -232,9 +232,6 @@ expira em 5 minutos) na hora do clique em vez de expor uma URL pública
 permanente — importante agora que a aba guarda exame médico de verdade; o
 "Baixar" do médico usa a mesma signed URL com a opção `download`, que força
 o navegador a salvar o arquivo em vez de só abri-lo numa aba.
-
-A tela de login exibe o nome **LaVie Fit** (o app em si continua se
-chamando PandaFit em todo o resto — título da aba, ícones, nome do PWA).
 
 Quem loga como **usuario** ou **admin** vê a tabbar com **Painel ·
 Registrar · Config.** — Meta, Documentos e (só para admin) Usuários não
