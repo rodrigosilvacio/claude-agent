@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js?v=3';
+import { supabase } from './supabaseClient.js?v=5';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -260,6 +260,7 @@ var els = {
   inputMins: $('#input-mins'),
   typeOptions: $('#type-options'),
   inputLocal: $('#input-local'),
+  localSuggestions: $('#local-suggestions'),
   toast: $('#toast'),
   btnSave: $('#btn-save'),
 
@@ -291,6 +292,11 @@ var els = {
   documentsPagerPrev: $('#documents-pager-prev'),
   documentsPagerNext: $('#documents-pager-next'),
   documentsPagerNote: $('#documents-pager-note'),
+
+  confirmModal: $('#confirm-modal'),
+  confirmModalMessage: $('#confirm-modal-message'),
+  confirmModalCancel: $('#confirm-modal-cancel'),
+  confirmModalConfirm: $('#confirm-modal-confirm'),
 };
 
 // ── tab bar wiring ──
@@ -448,6 +454,21 @@ function renderTypeOptions() {
   });
 }
 
+// Suggests locals already used, most recent first, via the input's <datalist>.
+function updateLocalSuggestions() {
+  var seen = {};
+  var locals = [];
+  state.workouts.forEach(function (w) {
+    if (w.local && !seen[w.local]) {
+      seen[w.local] = true;
+      locals.push(w.local);
+    }
+  });
+  els.localSuggestions.innerHTML = locals.map(function (loc) {
+    return '<option value="' + loc.replace(/"/g, '&quot;') + '"></option>';
+  }).join('');
+}
+
 // ── save ──
 function liveMinutes() {
   if (state.mode === 'timer') {
@@ -471,6 +492,7 @@ els.btnSave.addEventListener('click', function () {
     .then(function (row) {
       state.workouts.unshift(row);
       state.recordsPage = 0;
+      updateLocalSuggestions();
 
       if (wasTimer) {
         state.secs = 0;
@@ -490,9 +512,30 @@ els.btnSave.addEventListener('click', function () {
     });
 });
 
-function handleDeleteClick(id) {
+// ── confirm modal (replaces window.confirm to match the app's own look) ──
+function confirmModal(message) {
+  return new Promise(function (resolve) {
+    els.confirmModalMessage.textContent = message;
+    els.confirmModal.hidden = false;
+
+    function onCancel() { finish(false); }
+    function onConfirm() { finish(true); }
+    function finish(result) {
+      els.confirmModal.hidden = true;
+      els.confirmModalCancel.removeEventListener('click', onCancel);
+      els.confirmModalConfirm.removeEventListener('click', onConfirm);
+      resolve(result);
+    }
+
+    els.confirmModalCancel.addEventListener('click', onCancel);
+    els.confirmModalConfirm.addEventListener('click', onConfirm);
+  });
+}
+
+async function handleDeleteClick(id) {
   if (state.deletingId) return;
-  if (!window.confirm('Excluir este treino? Essa ação não pode ser desfeita.')) return;
+  var ok = await confirmModal('Excluir este treino? Essa ação não pode ser desfeita.');
+  if (!ok) return;
 
   state.deletingId = id;
   deleteWorkout(id)
@@ -501,7 +544,7 @@ function handleDeleteClick(id) {
     })
     .catch(function (err) {
       console.error('Falha ao excluir treino', err);
-      window.alert('Não foi possível excluir. Tente de novo.');
+      showToast('Não foi possível excluir. Tente de novo.');
     })
     .finally(function () {
       state.deletingId = null;
@@ -564,9 +607,10 @@ els.btnSaveWeight.addEventListener('click', function () {
     });
 });
 
-function handleDeleteWeightClick(id) {
+async function handleDeleteWeightClick(id) {
   if (state.deletingWeightId) return;
-  if (!window.confirm('Excluir este registro de peso? Essa ação não pode ser desfeita.')) return;
+  var ok = await confirmModal('Excluir este registro de peso? Essa ação não pode ser desfeita.');
+  if (!ok) return;
 
   state.deletingWeightId = id;
   deleteWeight(id)
@@ -575,7 +619,7 @@ function handleDeleteWeightClick(id) {
     })
     .catch(function (err) {
       console.error('Falha ao excluir peso', err);
-      window.alert('Não foi possível excluir. Tente de novo.');
+      showWeightToast('Não foi possível excluir. Tente de novo.');
     })
     .finally(function () {
       state.deletingWeightId = null;
@@ -617,9 +661,10 @@ els.btnUploadDocument.addEventListener('click', function () {
     });
 });
 
-function handleDeleteDocumentClick(doc) {
+async function handleDeleteDocumentClick(doc) {
   if (state.deletingDocumentId) return;
-  if (!window.confirm('Excluir "' + doc.file_name + '"? Essa ação não pode ser desfeita.')) return;
+  var ok = await confirmModal('Excluir "' + doc.file_name + '"? Essa ação não pode ser desfeita.');
+  if (!ok) return;
 
   state.deletingDocumentId = doc.id;
   deleteDocument(doc)
@@ -628,7 +673,7 @@ function handleDeleteDocumentClick(doc) {
     })
     .catch(function (err) {
       console.error('Falha ao excluir documento', err);
-      window.alert('Não foi possível excluir. Tente de novo.');
+      showDocumentToast('Não foi possível excluir. Tente de novo.');
     })
     .finally(function () {
       state.deletingDocumentId = null;
@@ -945,6 +990,7 @@ fetchWorkouts()
   .then(function (rows) {
     state.workouts = rows;
     state.loading = false;
+    updateLocalSuggestions();
   })
   .catch(function (err) {
     console.error('Falha ao carregar treinos', err);

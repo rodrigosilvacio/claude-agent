@@ -748,3 +748,65 @@ input[type="file"]::file-selector-button {
   text-decoration: none;
   display: inline-block;
 }
+
+/* ── confirm modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  z-index: 50;
+}
+
+.modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  background: var(--bg-app);
+  border: 1px solid var(--line);
+  padding: 22px 18px 18px;
+}
+
+.modal-message {
+  margin: 0 0 18px;
+  font: 400 15px/1.5 "Barlow", sans-serif;
+  color: var(--ink);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.modal-btn {
+  flex: 1;
+  min-height: 44px;
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  font: 600 13px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.modal-btn-cancel {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+@media (hover: hover) {
+  .modal-btn-cancel:hover { background: rgba(29, 31, 32, 0.07); }
+}
+
+.modal-btn-confirm {
+  background: #b3423f;
+  color: #f2f2f3;
+}
+.modal-btn-confirm:active { background: #9c3835; }
+@media (hover: hover) {
+  .modal-btn-confirm:hover { background: #9c3835; }
+}
