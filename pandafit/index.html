@@ -4,232 +4,485 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>PandaFit · Registro de treinos</title>
-<meta name="theme-color" content="#f2f2f3" />
+<meta name="theme-color" content="#fbf8f4" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1c1712" media="(prefers-color-scheme: dark)" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="PandaFit" />
 <meta name="format-detection" content="telephone=no" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%BC%3C/text%3E%3C/svg%3E" />
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23f2f2f3'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle'%3E%F0%9F%90%BC%3C/text%3E%3C/svg%3E" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23fbf8f4'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle'%3E%F0%9F%90%BC%3C/text%3E%3C/svg%3E" />
+<link rel="manifest" href="manifest.json" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=1" />
+<link rel="stylesheet" href="assets/styles.css?v=15" />
 </head>
 <body>
 
 <div class="app">
 
-  <!-- ───────── Painel do mês ───────── -->
-  <main class="screen" id="screen-painel" data-screen="painel">
-    <div class="screen-head">
-      <div class="eyebrow" id="month-label">Mês</div>
-      <h1 class="title">Mês em movimento</h1>
-    </div>
-
-    <div class="screen-body">
-
-      <div class="ticket total-card">
-        <span class="corner tl">+</span><span class="corner tr">+</span>
-        <span class="corner bl">+</span><span class="corner br">+</span>
-        <div class="label">Treinos no mês</div>
-        <div class="total-row">
-          <span class="total-hours" id="month-count">0</span>
-          <span class="total-mins" id="month-goal-suffix">de 12</span>
+  <!-- ───────── Login ("LaVie Fit") ───────── -->
+  <main class="screen screen-login" id="screen-login">
+    <div class="login-wrap">
+      <div class="login-brand">
+        <div class="login-mark" aria-hidden="true">
+          <svg width="30" height="30" viewBox="0 0 40 40" fill="none">
+            <path d="M4 21h6.5l2.5-9 5 19 4-15 2.5 5H36" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </div>
-        <div class="bar">
-          <div class="bar-fill" id="goal-bar"></div>
-        </div>
-        <div class="bar-caption">
-          <span id="goal-pct">0% da meta</span>
-          <span id="goal-meta">meta 12 treinos/mês</span>
-        </div>
+        <h1 class="login-title">LaVie Fit</h1>
+        <p class="login-subtitle">Treinos, peso e exames em um só lugar.</p>
       </div>
 
-      <div class="section">
-        <div class="section-title">Divisão por treino</div>
-        <div id="splits-list" class="splits-list"></div>
-      </div>
+      <form class="login-form" id="login-form" novalidate>
+        <label class="field">
+          <span class="field-label">E-mail</span>
+          <input type="email" id="login-email" inputmode="email" autocomplete="username" required />
+        </label>
+        <label class="field">
+          <span class="field-label">Senha</span>
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </label>
+        <div class="toast toast-error" id="login-error" hidden></div>
+        <button type="submit" class="btn btn-save login-submit" id="btn-login">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <span id="btn-login-label">Entrar</span>
+        </button>
+      </form>
 
-      <div class="section">
-        <div class="section-head-row">
-          <span class="section-title">Registros</span>
-          <span class="section-note" id="session-count-note">0 neste mês</span>
-        </div>
-        <div id="records-list" class="records-list">
-          <p class="empty-state">Nenhum treino registrado neste mês ainda.</p>
-        </div>
-        <div id="records-pager" class="pager" hidden>
-          <button type="button" class="pager-btn" id="pager-prev">‹ Anterior</button>
-          <span class="pager-note" id="pager-note">Página 1 de 1</span>
-          <button type="button" class="pager-btn" id="pager-next">Próxima ›</button>
-        </div>
-      </div>
-
+      <p class="login-footnote">Acesso só por convite — fale com o administrador se precisar de uma conta.</p>
     </div>
   </main>
 
-  <!-- ───────── Registrar treino ───────── -->
-  <main class="screen" id="screen-registrar" data-screen="registrar" hidden>
-    <div class="screen-head">
-      <h1 class="title">Registrar treino</h1>
-      <div class="mode-tabs">
-        <button type="button" class="mode-tab" data-mode="manual">Manual</button>
-        <button type="button" class="mode-tab" data-mode="timer">Cronômetro</button>
-      </div>
-    </div>
+  <!-- ───────── Conta (avatar + sair), visível após login ───────── -->
+  <button type="button" class="account-btn" id="btn-account" hidden aria-label="Conta">
+    <span id="account-initial"></span>
+  </button>
 
-    <div class="screen-body">
+  <div id="app-shell" hidden>
 
-      <div class="ticket timer-card" id="timer-card">
-        <span class="corner tl">+</span><span class="corner tr">+</span>
-        <span class="corner bl">+</span><span class="corner br">+</span>
-        <div class="timer-status">
-          <span class="dot" id="timer-dot"></span>
-          <span id="timer-run-label">Pausado</span>
+    <!-- ───────── Painel do mês ───────── -->
+    <main class="screen" id="screen-painel" data-screen="painel">
+      <div class="screen-head">
+        <div class="month-nav">
+          <button type="button" class="month-nav-btn" id="month-prev" aria-label="Mês anterior">‹</button>
+          <div class="eyebrow" id="month-label">Mês</div>
+          <button type="button" class="month-nav-btn" id="month-next" aria-label="Próximo mês" disabled>›</button>
         </div>
-        <div class="clock" id="clock">00:00</div>
-        <div class="timer-actions">
-          <button type="button" class="btn btn-primary" id="btn-toggle-run">Iniciar</button>
-          <button type="button" class="btn btn-ghost" id="btn-reset-run">Zerar</button>
+        <h1 class="title">Mês em movimento</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div id="reminder-banners" class="reminder-banners" hidden></div>
+
+        <div class="ticket total-card">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <div class="label">Treinos no mês</div>
+          <div class="total-row">
+            <span class="total-hours" id="month-count">0</span>
+            <span class="total-mins" id="month-goal-suffix">de 12</span>
+          </div>
+          <div class="bar">
+            <div class="bar-fill" id="goal-bar"></div>
+          </div>
+          <div class="bar-caption">
+            <span id="goal-pct">0% da meta</span>
+            <span id="goal-meta">meta 12 treinos/mês</span>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Divisão por treino</div>
+          <div id="splits-list" class="splits-list"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Registros</span>
+            <span class="section-note" id="session-count-note">0 neste mês</span>
+          </div>
+          <div id="records-list" class="records-list">
+            <p class="empty-state">Nenhum treino registrado neste mês ainda.</p>
+          </div>
+          <div id="records-pager" class="pager" hidden>
+            <button type="button" class="pager-btn" id="pager-prev">‹ Anterior</button>
+            <span class="pager-note" id="pager-note">Página 1 de 1</span>
+            <button type="button" class="pager-btn" id="pager-next">Próxima ›</button>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Registrar (treino + peso) ───────── -->
+    <main class="screen" id="screen-registrar" data-screen="registrar" hidden>
+      <div class="screen-head">
+        <div class="title-row">
+          <h1 class="title" id="registrar-title">Registrar treino</h1>
+          <button type="button" class="edit-cancel-link" id="btn-cancel-edit" hidden>Cancelar edição</button>
+        </div>
+        <div class="section-tabs">
+          <button type="button" class="section-tab" data-section="treino">Treino</button>
+          <button type="button" class="section-tab" data-section="peso">Peso</button>
         </div>
       </div>
 
-      <div class="manual-fields" id="manual-fields" hidden>
+      <!-- ── seção Treino ── -->
+      <div class="screen-body" id="section-treino">
+
+        <div class="mode-tabs" id="mode-tabs">
+          <button type="button" class="mode-tab" data-mode="manual">Manual</button>
+          <button type="button" class="mode-tab" data-mode="timer">Cronômetro</button>
+        </div>
+
+        <div class="ticket timer-card" id="timer-card">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <div class="timer-status">
+            <span class="dot" id="timer-dot"></span>
+            <span id="timer-run-label">Pausado</span>
+          </div>
+          <div class="clock" id="clock">00:00</div>
+          <div class="timer-actions">
+            <button type="button" class="btn btn-primary" id="btn-toggle-run">Iniciar</button>
+            <button type="button" class="btn btn-ghost" id="btn-reset-run">Zerar</button>
+          </div>
+        </div>
+
+        <div class="manual-fields" id="manual-fields" hidden>
+          <label class="field">
+            <span class="field-label">Data</span>
+            <input type="date" id="input-date" />
+          </label>
+          <label class="field">
+            <span class="field-label">Duração (minutos)</span>
+            <input type="number" inputmode="numeric" min="1" max="720" id="input-mins" class="mins-input" />
+          </label>
+        </div>
+
+        <div class="section">
+          <span class="field-label">Tipo de treino</span>
+          <div id="type-options" class="type-options"></div>
+        </div>
+
         <label class="field">
-          <span class="field-label">Data</span>
-          <input type="date" id="input-date" />
-        </label>
-        <label class="field">
-          <span class="field-label">Duração (minutos)</span>
-          <input type="number" inputmode="numeric" min="1" id="input-mins" class="mins-input" />
+          <span class="field-label">Local</span>
+          <input type="text" id="input-local" placeholder="Academia, CT, parque…" list="local-suggestions" />
+          <datalist id="local-suggestions"></datalist>
         </label>
       </div>
 
-      <div class="section">
-        <span class="field-label">Tipo de treino</span>
-        <div id="type-options" class="type-options"></div>
+      <div class="save-bar" id="save-bar-treino">
+        <div class="toast" id="toast" hidden></div>
+        <button type="button" class="btn btn-save" id="btn-save">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <span id="btn-save-label">Salvar treino</span>
+        </button>
       </div>
 
-      <label class="field">
-        <span class="field-label">Local</span>
-        <input type="text" id="input-local" placeholder="Academia, CT, parque…" />
-      </label>
-    </div>
+      <!-- ── seção Peso ── -->
+      <div class="screen-body" id="section-peso" hidden>
 
-    <div class="save-bar">
-      <div class="toast" id="toast" hidden></div>
-      <button type="button" class="btn btn-save" id="btn-save">
-        <span class="corner tl">+</span><span class="corner tr">+</span>
-        <span class="corner bl">+</span><span class="corner br">+</span>
-        Salvar treino
+        <div class="ticket goal-card">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <div class="label">Registrar peso</div>
+          <label class="field goal-field">
+            <span class="field-label">Data</span>
+            <input type="date" id="input-weight-date" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">Peso (kg)</span>
+            <input type="text" id="input-weight-value" inputmode="decimal" placeholder="Ex: 78,4" />
+          </label>
+          <div class="toast" id="weight-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">
+            <span id="btn-save-weight-label">Salvar peso</span>
+          </button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Tendência</span>
+          </div>
+          <div id="weight-chart-wrap" class="chart-wrap"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Histórico</span>
+            <span class="section-note" id="weight-count-note">0 registros</span>
+          </div>
+          <div id="weights-list" class="records-list">
+            <p class="empty-state">Nenhum peso registrado ainda.</p>
+          </div>
+          <div id="weights-pager" class="pager" hidden>
+            <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
+            <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
+            <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Meta ───────── -->
+    <main class="screen" id="screen-meta" data-screen="meta" hidden>
+      <div class="screen-head">
+        <h1 class="title">Meta</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <div class="label">Meta mensal</div>
+          <label class="field goal-field">
+            <span class="field-label">Treinos por mês (1 a 30)</span>
+            <input type="number" id="input-goal" min="1" max="30" step="1" inputmode="numeric" />
+          </label>
+          <div class="toast" id="goal-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-goal">Salvar meta</button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Progresso do mês</div>
+          <div class="bar">
+            <div class="bar-fill" id="meta-progress-bar"></div>
+          </div>
+          <div class="bar-caption">
+            <span id="meta-progress-pct">0% da meta</span>
+            <span id="meta-progress-count">0 de 12 treinos</span>
+          </div>
+          <div class="streak-note" id="meta-streak-note"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Evolução</div>
+          <div id="evolution-list" class="evolution-list"></div>
+        </div>
+
+        <div class="ticket goal-card">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <div class="label">Meta de peso</div>
+          <label class="field goal-field">
+            <span class="field-label">Peso-alvo em kg (opcional — em branco remove a meta)</span>
+            <input type="text" id="input-target-weight" inputmode="decimal" placeholder="Ex: 77,0" />
+          </label>
+          <div class="toast" id="target-weight-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-target-weight">Salvar meta de peso</button>
+          <div class="bar-caption target-weight-caption" id="target-weight-caption" hidden>
+            <span id="target-weight-current"></span>
+            <span id="target-weight-remaining"></span>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Exportar dados</div>
+          <div class="export-actions">
+            <button type="button" class="export-btn" id="btn-export-workouts">Treinos (CSV)</button>
+            <button type="button" class="export-btn" id="btn-export-weights">Pesos (CSV)</button>
+          </div>
+        </div>
+
+        <div class="section account-section">
+          <div class="section-title">Conta</div>
+          <p class="account-email" id="meta-account-email"></p>
+          <button type="button" class="export-btn" id="btn-logout-meta">Sair</button>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Documentos ───────── -->
+    <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
+      <div class="screen-head">
+        <h1 class="title">Documentos</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <div class="label">Enviar exame</div>
+          <label class="field goal-field">
+            <span class="field-label">Arquivo (PDF, JPG ou PNG — até 10MB)</span>
+            <input type="file" id="input-document-file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp" />
+          </label>
+          <div class="toast" id="document-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-document">Enviar documento</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Seus documentos</span>
+            <span class="section-note" id="document-count-note">0 documentos</span>
+          </div>
+          <div id="documents-list" class="records-list">
+            <p class="empty-state">Nenhum documento enviado ainda.</p>
+          </div>
+          <div id="documents-pager" class="pager" hidden>
+            <button type="button" class="pager-btn" id="documents-pager-prev">‹ Anterior</button>
+            <span class="pager-note" id="documents-pager-note">Página 1 de 1</span>
+            <button type="button" class="pager-btn" id="documents-pager-next">Próxima ›</button>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Usuários (admin) ───────── -->
+    <main class="screen" id="screen-usuarios" data-screen="usuarios" hidden>
+      <div class="screen-head">
+        <h1 class="title">Usuários</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <span class="corner tl">+</span><span class="corner tr">+</span>
+          <span class="corner bl">+</span><span class="corner br">+</span>
+          <div class="label">Cadastrar usuário</div>
+          <label class="field goal-field">
+            <span class="field-label">Nome</span>
+            <input type="text" id="input-user-nome" placeholder="Nome completo" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">E-mail</span>
+            <input type="email" id="input-user-email" inputmode="email" placeholder="email@exemplo.com" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">Senha inicial (mín. 6 caracteres)</span>
+            <input type="text" id="input-user-password" placeholder="Defina uma senha" />
+          </label>
+          <div class="field goal-field">
+            <span class="field-label">Papel</span>
+            <div class="role-options" id="role-options">
+              <button type="button" class="role-option active" data-role="usuario">Usuário</button>
+              <button type="button" class="role-option" data-role="medico">Médico</button>
+            </div>
+          </div>
+          <div class="toast" id="user-form-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-user">Cadastrar</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Usuários cadastrados</span>
+            <span class="section-note" id="users-count-note">0 usuários</span>
+          </div>
+          <div id="users-list" class="records-list">
+            <p class="empty-state">Carregando usuários…</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Pacientes (médico) ───────── -->
+    <main class="screen" id="screen-pacientes" data-screen="pacientes" hidden>
+      <div class="screen-head">
+        <h1 class="title" id="pacientes-title">Pacientes</h1>
+      </div>
+
+      <div class="screen-body" id="pacientes-list-view">
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Selecione um paciente</span>
+            <span class="section-note" id="patients-count-note">0 pacientes</span>
+          </div>
+          <div id="patients-list" class="records-list">
+            <p class="empty-state">Carregando pacientes…</p>
+          </div>
+        </div>
+        <div class="section account-section">
+          <button type="button" class="export-btn" id="btn-logout-pacientes">Sair</button>
+        </div>
+      </div>
+
+      <div class="screen-body" id="pacientes-detail-view" hidden>
+        <button type="button" class="back-link" id="btn-back-to-patients">‹ Voltar aos pacientes</button>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Documentos</span>
+            <span class="section-note" id="patient-docs-note"></span>
+          </div>
+          <div id="patient-documents-list" class="records-list"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Tendência de peso</div>
+          <div id="patient-weight-chart-wrap" class="chart-wrap"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Peso (mais recentes)</span>
+            <span class="section-note" id="patient-weights-note"></span>
+          </div>
+          <div id="patient-weights-list" class="records-list"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Treinos (mais recentes)</span>
+            <span class="section-note" id="patient-workouts-note"></span>
+          </div>
+          <div id="patient-workouts-list" class="records-list"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ───────── Tab bar ───────── -->
+    <nav class="tabbar" id="tabbar">
+      <button type="button" class="tab-btn" data-tab="painel">
+        <span class="tab-mark"></span>
+        <span>Painel</span>
       </button>
-    </div>
-  </main>
+      <button type="button" class="tab-btn" data-tab="registrar">
+        <span class="tab-mark"></span>
+        <span>Registrar</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="meta">
+        <span class="tab-mark"></span>
+        <span>Meta</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="documentos">
+        <span class="tab-mark"></span>
+        <span>Documentos</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="usuarios" id="tab-btn-usuarios" hidden>
+        <span class="tab-mark"></span>
+        <span>Usuários</span>
+      </button>
+    </nav>
 
-  <!-- ───────── Meta ───────── -->
-  <main class="screen" id="screen-meta" data-screen="meta" hidden>
-    <div class="screen-head">
-      <h1 class="title">Meta</h1>
-    </div>
+  </div>
 
-    <div class="screen-body">
-
-      <div class="ticket goal-card">
-        <span class="corner tl">+</span><span class="corner tr">+</span>
-        <span class="corner bl">+</span><span class="corner br">+</span>
-        <div class="label">Meta mensal</div>
-        <label class="field goal-field">
-          <span class="field-label">Treinos por mês (1 a 30)</span>
-          <input type="number" id="input-goal" min="1" max="30" step="1" inputmode="numeric" />
-        </label>
-        <div class="toast" id="goal-toast" hidden></div>
-        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-goal">Salvar meta</button>
+  <!-- ───────── Confirm modal ───────── -->
+  <div class="modal-overlay" id="confirm-modal" hidden>
+    <div class="modal-card">
+      <span class="corner tl">+</span><span class="corner tr">+</span>
+      <span class="corner bl">+</span><span class="corner br">+</span>
+      <p class="modal-message" id="confirm-modal-message"></p>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-cancel" id="confirm-modal-cancel">Cancelar</button>
+        <button type="button" class="modal-btn modal-btn-confirm" id="confirm-modal-confirm">Excluir</button>
       </div>
-
-      <div class="section">
-        <div class="section-title">Progresso do mês</div>
-        <div class="bar">
-          <div class="bar-fill" id="meta-progress-bar"></div>
-        </div>
-        <div class="bar-caption">
-          <span id="meta-progress-pct">0% da meta</span>
-          <span id="meta-progress-count">0 de 12 treinos</span>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Evolução</div>
-        <div id="evolution-list" class="evolution-list"></div>
-      </div>
-
     </div>
-  </main>
-
-  <!-- ───────── Peso ───────── -->
-  <main class="screen" id="screen-peso" data-screen="peso" hidden>
-    <div class="screen-head">
-      <h1 class="title">Peso</h1>
-    </div>
-
-    <div class="screen-body">
-
-      <div class="ticket goal-card">
-        <span class="corner tl">+</span><span class="corner tr">+</span>
-        <span class="corner bl">+</span><span class="corner br">+</span>
-        <div class="label">Registrar peso</div>
-        <label class="field goal-field">
-          <span class="field-label">Data</span>
-          <input type="date" id="input-weight-date" />
-        </label>
-        <label class="field goal-field">
-          <span class="field-label">Peso (kg)</span>
-          <input type="text" id="input-weight-value" inputmode="decimal" placeholder="Ex: 78,4" />
-        </label>
-        <div class="toast" id="weight-toast" hidden></div>
-        <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">Salvar peso</button>
-      </div>
-
-      <div class="section">
-        <div class="section-head-row">
-          <span class="section-title">Histórico</span>
-          <span class="section-note" id="weight-count-note">0 registros</span>
-        </div>
-        <div id="weights-list" class="records-list">
-          <p class="empty-state">Nenhum peso registrado ainda.</p>
-        </div>
-        <div id="weights-pager" class="pager" hidden>
-          <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
-          <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
-          <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
-        </div>
-      </div>
-
-    </div>
-  </main>
-
-  <!-- ───────── Tab bar ───────── -->
-  <nav class="tabbar">
-    <button type="button" class="tab-btn" data-tab="painel">
-      <span class="tab-mark"></span>
-      <span>Painel</span>
-    </button>
-    <button type="button" class="tab-btn" data-tab="registrar">
-      <span class="tab-mark"></span>
-      <span>Registrar</span>
-    </button>
-    <button type="button" class="tab-btn" data-tab="meta">
-      <span class="tab-mark"></span>
-      <span>Meta</span>
-    </button>
-    <button type="button" class="tab-btn" data-tab="peso">
-      <span class="tab-mark"></span>
-      <span>Peso</span>
-    </button>
-  </nav>
+  </div>
 
 </div>
 
-<script type="module" src="assets/app.js?v=1"></script>
+<script type="module" src="assets/app.js?v=15"></script>
 </body>
 </html>

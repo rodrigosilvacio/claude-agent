@@ -150,45 +150,128 @@ stateless do `cep-agent`).
 
 ## PandaFit — Registro de Treinos (`/pandafit`)
 
-App de quatro telas para registrar treinos, peso e acompanhar o mês,
-mobile-first (coluna centralizada de até 460px, aba fixa no rodapé). Mesmo
-padrão do resto do repo: HTML/CSS/JS estático, sem build. Os treinos ficam
-gravados na tabela `pandafit_workouts`, a meta mensal em `pandafit_settings`
-e o peso diário em `pandafit_weights`, no Supabase (`ClaudeProjects`) — os
-dados persistem no banco e aparecem em qualquer dispositivo/navegador, não
-só no que fez o registro.
+App mobile-first (coluna centralizada de até 460px) para registrar
+treinos, peso e exames, com login e três papéis — **admin**, **usuario**
+e **medico** (ver seção de autenticação abaixo). Mesmo padrão do resto do
+repo: HTML/CSS/JS estático, sem build. Os treinos ficam na tabela
+`pandafit_workouts`, a meta mensal em `pandafit_settings`, o peso diário em
+`pandafit_weights` e os documentos em `pandafit_documents` + bucket de
+Storage `pandafit-documents`, no Supabase (`ClaudeProjects`) — cada linha
+pertence a um `user_id` e os dados persistem no banco, disponíveis em
+qualquer dispositivo em que a mesma conta faça login.
 
-Ferramenta pessoal sem tela de login (o protótipo de design não previa
-autenticação), então a leitura, a escrita e a exclusão ficam abertas para o
-role `anon` via RLS — qualquer pessoa com a URL da página consegue ver,
-adicionar, apagar treinos/pesos e alterar a meta. Aceitável para o uso
-pretendido (uso pessoal, dado de baixo risco), mas vale lembrar caso o link
-circule.
+Visual em Barlow / Barlow Condensed, paleta terracota `#b6633f` sobre
+neutros quentes (`#fbf8f4`/`#efeae2`), cartões com cantos retos, marcas "+"
+nos vértices e leve elevação (`box-shadow`) — estilo ticket/recibo, com
+modo escuro automático (ver abaixo), transição suave ao trocar de aba e
+feedback tátil (`:active { transform: scale(...) }`) em todo alvo de
+toque.
 
-Reproduz o protótipo de design em anexo (Barlow / Barlow Condensed, paleta
-azul-marinho `#1d2d3d` + azul acinzentado `#5980a6`, cartões com cantos retos
-e marcas "+" nos vértices, estilo ticket/recibo).
+### Autenticação e papéis
 
-- **Painel**: cabeçalho com o mês atual; cartão de total de treinos no mês
-  (contagem, não duração) com barra de progresso até a meta mensal; divisão
-  do tempo por tipo de treino (Musculação, Jiu Jitsu, Corrida); lista dos
-  registros do mês (dia, tipo, local, duração), paginada de 5 em 5, com
-  botão de excluir (confirmação antes de apagar) em cada linha.
-- **Registrar**: alterna entre **Manual** (aba padrão — data + duração em
+Login por e-mail/senha (`supabase.auth`) — sem cadastro público: só o
+admin cria contas. Como o projeto Supabase (`ClaudeProjects`) é
+compartilhado com vários outros apps deste repo, `auth.users` tem contas
+de todos eles; a tabela `pandafit_usuarios` (id = `auth.users.id`, email,
+nome, `role`) é o escopo de quem tem acesso a *este* app — mesmo padrão já
+usado por `sucesu_usuarios` em SUCESU SP Connect. As políticas RLS de
+`pandafit_workouts`/`pandafit_weights`/`pandafit_settings`/
+`pandafit_documents` (e do bucket de Storage) checam `auth.uid()` contra
+essa tabela via a função `pandafit_current_role()` (`security definer`,
+`EXECUTE` revogado de `anon`): sem uma linha em `pandafit_usuarios`,
+nenhuma política libera nada — uma conta autenticada de *outro* app deste
+mesmo projeto nunca enxerga dado nenhum do PandaFit.
+
+- **usuario**: acesso só às próprias linhas (`user_id = auth.uid()`) —
+  Painel/Registrar/Meta/Documentos, exatamente como descrito abaixo.
+- **admin**: mesmo acesso de um usuario às próprias telas (o admin também
+  treina), mais uma aba **Usuários** — cadastrar (nome, e-mail, senha
+  inicial, papel usuario/médico), trocar o papel de alguém ou revogar o
+  acesso ao PandaFit. Tudo isso chama a edge function
+  `pandafit-admin-users` (service role key, nunca exposta no cliente), que
+  confirma que quem chamou é admin antes de qualquer ação. Ao convidar um
+  e-mail que já tem conta neste projeto compartilhado (comum, já que é
+  usado por outros apps), a function só adiciona a linha em
+  `pandafit_usuarios` — **nunca** mexe na senha existente, porque a mesma
+  conta pode logar em outro app. Revogar remove só a linha de
+  `pandafit_usuarios` (nunca a conta em `auth.users`, pelo mesmo motivo).
+- **medico**: sem tabbar — cai direto numa tela **Pacientes**, lista de
+  contas com `role = 'usuario'`; ao selecionar uma, vê (somente leitura,
+  sem editar/excluir) os documentos enviados, o gráfico de tendência de
+  peso, o histórico de peso e os treinos mais recentes daquele paciente. É
+  a tela pedida para o médico acompanhar o que o usuário envia.
+
+O primeiro admin (`rodrigosilvapmp@hotmail.com`) foi cadastrado direto via
+SQL (`0049_pandafit_bootstrap_admin.sql`) reaproveitando uma conta que já
+existia neste projeto compartilhado — sem mexer na senha dela — e todo o
+histórico de treinos/pesos/documentos gravado antes de existir
+autenticação foi migrado para essa conta.
+
+Documentos: o bucket `pandafit-documents` **não é mais público** — cada
+arquivo vive em `<user_id>/<arquivo>` e as políticas de Storage restringem
+`select`/`insert`/`delete` à própria pasta (médico tem `select` em todas).
+O link "Ver" gera uma signed URL (`createSignedUrl`, expira em 5 minutos)
+na hora do clique em vez de expor uma URL pública permanente — importante
+agora que a aba guarda exame médico de verdade.
+
+A tela de login exibe o nome **LaVie Fit** (o app em si continua se
+chamando PandaFit em todo o resto — título da aba, ícones, nome do PWA).
+
+As quatro telas abaixo (Painel/Registrar/Meta/Documentos) são a
+experiência de quem loga como **usuario** ou **admin**; o **medico** vê a
+tela de Pacientes descrita acima em vez delas.
+
+- **Painel**: banners de lembrete no topo (só no mês atual) — "faltam X
+  treinos para bater a meta deste mês" quando ainda não bateu, e "você ainda
+  não registrou seu peso hoje" quando não há peso salvo com a data de hoje;
+  cada um pode ser dispensado (`×`) só pra aquela sessão/carregamento da
+  página, sem push notification de verdade (fora do escopo — precisaria de
+  infra de VAPID/Edge Function). Cabeçalho com o mês exibido e setas `‹`/`›`
+  para navegar entre meses (a seta `›` fica desabilitada no mês atual — não
+  dá pra ver o futuro); cartão de total de treinos no mês (contagem, não
+  duração) com
+  barra de progresso até a meta mensal; divisão do tempo por tipo de treino
+  (Musculação, Jiu Jitsu, Corrida); lista dos registros do mês (dia, tipo,
+  local, duração), paginada de 5 em 5, com botão de editar (lápis) e de
+  excluir (confirmação antes de apagar) em cada linha — tudo recalculado
+  para o mês selecionado.
+- **Registrar**: alterna entre **Treino** e **Peso** por uma aba superior;
+  dentro de Treino, alterna entre **Manual** (aba padrão — data + duração em
   minutos digitadas à mão) e **Cronômetro** (inicia/pausa/zera, registra a
-  duração corrida ao salvar); seletor do tipo de treino; campo opcional de
-  local; confirmação por toast ao salvar.
+  duração corrida ao salvar), com seletor do tipo de treino e campo opcional
+  de local; dentro de Peso, registra data + kg (salvar no mesmo dia
+  sobrescreve em vez de duplicar — `upsert` por `date`, que é `unique` na
+  tabela), mostra um gráfico de linha simples (SVG, sem biblioteca) com a
+  tendência dos últimos 30 pesos registrados — some se houver menos de 2
+  registros — e o histórico com a variação em relação ao registro anterior,
+  colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`) quando caiu,
+  neutro (`=`) quando ficou igual. Ambas paginadas de 5 em 5, com edição
+  (lápis) além da exclusão em cada linha: clicar em editar preenche o
+  formulário com os dados do registro, troca "Registrar" por "Editar" no
+  título e no botão de salvar, mostra um link "Cancelar edição" e, no caso
+  de um treino, esconde a alternância Manual/Cronômetro (edição é sempre
+  manual); salvar faz `update` por `id` em vez de criar um novo registro.
 - **Meta**: campo para ajustar a meta mensal (1 a 30 treinos, de qualquer
   modalidade — validado no cliente e também no banco via `check`); barra de
-  progresso do mês corrente; "Evolução" com a contagem dos últimos 6 meses
-  (calculada a partir dos treinos já carregados, sem consulta extra) para
-  acompanhar a tendência mês a mês.
-- **Peso**: registro diário de peso (data + kg); salvar no mesmo dia
-  sobrescreve o registro em vez de duplicar (`upsert` por `date`, que é
-  `unique` na tabela). O histórico mostra a variação em relação ao registro
-  anterior, colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`)
-  quando caiu, neutro (`=`) quando ficou igual — paginado de 5 em 5, com
-  botão de excluir por linha.
+  progresso do mês corrente; sequência (streak) de meses seguidos batendo a
+  meta, contando a partir do mês atual para trás e parando no primeiro mês
+  (incluindo o atual, se ainda não bateu) que ficou abaixo — calculada a
+  partir dos treinos já carregados, sem consulta extra; "Evolução" com a
+  contagem dos últimos 6 meses (calculada a partir dos treinos já
+  carregados, sem consulta extra) para acompanhar a tendência mês a mês;
+  meta de peso opcional (`target_weight_kg`
+  em `pandafit_settings`) — mostra "faltam X kg" comparando com o peso mais
+  recente registrado, ou "meta batida!"; deixar o campo em branco remove a
+  meta; botões para baixar todos os treinos e todos os pesos já carregados
+  em CSV (ordenado por data, `,` como separador, `.` como decimal — sem
+  formatação brasileira para não colidir com o separador de campo — e BOM
+  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local); seção
+  "Conta" no fim mostrando e-mail/papel logado e o botão **Sair**.
+- **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
+  Supabase, salvo em `<user_id>/<arquivo>`; lista paginada de 5 em 5 com
+  nome, tamanho, data de envio, link "Ver" (gera uma signed URL na hora do
+  clique — o bucket não é público) e exclusão (remove do Storage e da
+  tabela).
 
 Dimensões revisadas para iPhone: `min-height: 100dvh` (evita o salto de
 altura quando a barra do Safari some/aparece), inputs com `font-size: 16px`
@@ -198,7 +281,38 @@ excluir, `-webkit-tap-highlight-color`/`-webkit-touch-callout` desligados
 para não ficar com o realce cinza/menu de contexto do Safari, e
 `overscroll-behavior` para conter o bounce de rolagem à área de conteúdo.
 Também ganhou meta tags de "adicionar à tela de início" (ícone, título,
-barra de status).
+barra de status). Um botão circular no canto superior direito (iniciais do
+nome/e-mail) fica visível em qualquer tela após o login e abre a
+confirmação de logout — mesmo modal reusado para excluir registros.
+
+Suporta modo escuro automático via `@media (prefers-color-scheme: dark)`:
+todas as cores do app são tokens (`--ink`, `--muted`, `--accent`,
+`--bg-app`, `--line`, `--track`, `--bad`/`--good` para os indicadores de
+peso e o botão de exclusão, etc.) definidos em `:root` e redefinidos dentro
+do media query — segue a preferência do sistema operacional/navegador, sem
+alternância manual. `color-scheme: light dark` também é declarado para que
+controles nativos (date picker, seletor de arquivo) sigam o tema.
+
+### PWA (manifest + service worker)
+
+`manifest.json` (nome, ícones 192/512px gerados a partir do mesmo panda do
+favicon, `display: standalone`, cores do tema) deixa o Chrome/Android
+oferecer instalação de verdade, além do "adicionar à tela de início" que já
+existia via meta tags para iOS. `sw.js` faz cache básico do app shell
+(`index.html`, `manifest.json`, `styles.css`, `app.js`,
+`supabaseClient.js`, ícones) — estratégia cache-first com atualização em
+segundo plano (stale-while-revalidate), então o app abre mesmo sem
+internet (a UI carrega do cache; os dados do Supabase, esses sim, exigem
+rede). O service worker só intercepta pedidos same-origin — chamadas ao
+Supabase e ao esm.sh (import do `supabase-js`) são cross-origin e vão
+direto pra rede, nunca ficam em cache, então os dados nunca aparecem
+desatualizados por causa disso.
+
+**Atenção**: como o service worker cacheia os arquivos versionados
+(`?v=N`), sempre que incrementar essa versão em `styles.css`/`app.js`/
+`supabaseClient.js` (ver seção abaixo), também é preciso atualizar o
+`CACHE_NAME` e a lista `APP_SHELL` em `sw.js` com o mesmo número — senão o
+cache antigo nunca é limpo.
 
 ### Hospedagem (GitHub Pages) e cache
 
@@ -209,7 +323,8 @@ CDN do GitHub Pages e o cache do navegador podem continuar servindo a
 versão antiga por vários minutos mesmo depois do merge (foi exatamente
 esse cache que fez o fix da vírgula no campo de peso parecer que não tinha
 entrado no ar). **Sempre que alterar `app.js`, `styles.css` ou
-`supabaseClient.js`, incremente esse número nos três lugares.**
+`supabaseClient.js`, incremente esse número nos três lugares — e também em
+`CACHE_NAME`/`APP_SHELL` dentro de `sw.js` (ver seção PWA acima).**
 
 ## Painel de Reports (`/reports`)
 
