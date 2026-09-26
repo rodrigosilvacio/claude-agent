@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=22" />
+<link rel="stylesheet" href="assets/styles.css?v=23" />
 </head>
 <body>
 
@@ -249,6 +249,31 @@
             <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
             <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
             <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
+          </div>
+        </div>
+
+        <div class="ticket goal-card">
+          <div class="label">Foto de progresso</div>
+          <label class="field goal-field">
+            <span class="field-label">Foto (JPG, PNG ou HEIC — até 10MB)</span>
+            <input type="file" id="input-photo-file" accept=".jpg,.jpeg,.png,.heic,.webp" />
+          </label>
+          <div class="toast" id="photo-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-photo">Enviar foto</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Galeria de progresso</span>
+            <span class="section-note" id="photos-count-note">0 fotos</span>
+          </div>
+          <div id="photos-gallery" class="photos-gallery">
+            <p class="empty-state">Nenhuma foto enviada ainda.</p>
+          </div>
+          <div id="photos-pager" class="pager" hidden>
+            <button type="button" class="pager-btn" id="photos-pager-prev">‹ Anterior</button>
+            <span class="pager-note" id="photos-pager-note">Página 1 de 1</span>
+            <button type="button" class="pager-btn" id="photos-pager-next">Próxima ›</button>
           </div>
         </div>
 
@@ -591,6 +616,14 @@
 
         <div class="section">
           <div class="section-head-row">
+            <span class="section-title">Fotos de progresso</span>
+            <span class="section-note" id="patient-photos-note"></span>
+          </div>
+          <div id="patient-photos-gallery" class="photos-gallery"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
             <span class="section-title">Treinos (mais recentes)</span>
             <span class="section-note" id="patient-workouts-note"></span>
           </div>
@@ -630,6 +663,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=22"></script>
+<script type="module" src="assets/app.js?v=23"></script>
 </body>
 </html>

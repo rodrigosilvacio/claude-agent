@@ -215,7 +215,11 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   recente), link **Baixar** (signed URL com download forçado, em vez de só
   abrir numa aba) além do **Ver**, e exclusão — o único ponto onde o médico
   pode apagar algo do paciente, pra tirar um exame enviado errado ou já
-  obsoleto (ver `0053_pandafit_medico_pode_excluir_documentos.sql`).
+  obsoleto (ver `0053_pandafit_medico_pode_excluir_documentos.sql`); e a
+  galeria de **fotos de progresso** do paciente, só leitura (sem download
+  forçado nem exclusão — diferente de Documentos, fotos não são documento
+  médico, então o médico só acompanha, ver
+  `0055_pandafit_fotos_de_progresso.sql`).
 
 O primeiro admin (`rodrigosilvapmp@hotmail.com`) foi cadastrado direto via
 SQL (`0049_pandafit_bootstrap_admin.sql`) reaproveitando uma conta que já
@@ -281,6 +285,15 @@ descrita acima.
   título e no botão de salvar, mostra um link "Cancelar edição" e, no caso
   de um treino, esconde a alternância Manual/Cronômetro (edição é sempre
   manual); salvar faz `update` por `id` em vez de criar um novo registro.
+  Dentro de Peso, uma **galeria de fotos de progresso** (miniaturas de
+  verdade, não só uma lista com link) — upload de uma foto (JPG/PNG/HEIC/WEBP,
+  até 10MB) para o Storage privado (`pandafit-progress-photos`, salvo em
+  `<user_id>/<arquivo>`), grade de 3 colunas paginada de 6 em 6, mais recente
+  primeiro; as URLs assinadas das miniaturas da página são buscadas numa
+  chamada só (`createSignedUrls`, plural) em vez de uma por foto; clicar
+  numa miniatura abre a foto em tamanho real numa nova aba; exclusão com
+  confirmação (remove do Storage e da tabela). Fotos não entram no cache
+  offline (mesmo motivo dos documentos).
 - **Meta**: campo para ajustar a meta mensal (1 a 30 treinos, de qualquer
   modalidade — validado no cliente e também no banco via `check`); barra de
   progresso do mês corrente; sequência (streak) de meses seguidos batendo a
@@ -375,10 +388,11 @@ desses carrega com sucesso, a resposta é salva; no próximo boot, o cache
 aparece na tela na hora enquanto a rede responde em paralelo, e se a rede
 falhar (sem internet mesmo) o app continua mostrando os dados salvos em
 vez de uma tela de erro, com um aviso "Sem conexão — mostrando dados
-salvos no aparelho" no topo. Documentos ficam de fora desse cache de
-propósito — o nome de um arquivo pode ser sensível (ex: resultado de
-exame) e não devia ficar gravado fora do Supabase. É só leitura: criar,
-editar ou excluir continua exigindo rede, e o cache é limpo no logout.
+salvos no aparelho" no topo. Documentos e fotos de progresso ficam de fora
+desse cache de propósito — o nome de um arquivo pode ser sensível (ex:
+resultado de exame) e não devia ficar gravado fora do Supabase. É só
+leitura: criar, editar ou excluir continua exigindo rede, e o cache é
+limpo no logout.
 
 **Atenção**: como o service worker cacheia os arquivos versionados
 (`?v=N`), sempre que incrementar essa versão em `styles.css`/`app.js`/
