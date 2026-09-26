@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=33';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=34';
 
 // Link de "esqueci minha senha": o Supabase volta pra cá com
 // "#...type=recovery" no hash. Lido aqui, no topo do módulo, porque o
@@ -1488,8 +1488,7 @@ function resetAppState() {
   state.savingLinkFor = null;
   state.patients = [];
   state.patientsLoading = true;
-  state.selectedPatient = null;
-  state.patientDetail = null;
+  showPatientsListView();
   timerStateCache = null;
   els.loginEmail.value = '';
   els.loginPassword.value = '';
@@ -1642,6 +1641,7 @@ function showAppShell() {
   if (appStarted) return;
   appStarted = true;
   if (role === 'medico') {
+    showPatientsListView();
     setTab('pacientes');
     loadPatients();
   } else {
@@ -4440,16 +4440,38 @@ function openPatientDetail(patient) {
 }
 RETRY_HANDLERS.patient = function () { if (state.selectedPatient) loadPatientDetail(state.selectedPatient.id); };
 
-els.btnBackToPatients.addEventListener('click', function () {
+// Volta pra lista e apaga o detalhe renderizado. Chamado também no login e
+// no logout: sem isso, o detalhe do último paciente aberto continuava na
+// tela (com dados velhos) no próximo login, e num aparelho compartilhado
+// outro médico veria o paciente aberto pelo anterior.
+function showPatientsListView() {
   state.selectedPatient = null;
+  state.patientDetail = null;
   els.pacientesTitle.textContent = 'Pacientes';
   els.pacientesSubtitle.hidden = true;
   els.pacientesListView.hidden = false;
   els.pacientesDetailView.hidden = true;
+  [els.sinceGrid, els.patientDocumentsList, els.patientWeightChartWrap, els.patientWeightsList,
+    els.patientMeasurementsList, els.patientPhotosGallery, els.patientWorkoutsList]
+    .forEach(function (el) { el.innerHTML = ''; });
+}
+
+els.btnBackToPatients.addEventListener('click', function () {
+  showPatientsListView();
   renderPatientsList();
 });
 
+// Paciente pode ter enviado foto/exame/peso enquanto o app do médico estava
+// em segundo plano: ao voltar pro app, recarrega o paciente aberto.
+var patientDetailLoadedAt = 0;
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState !== 'visible' || !state.selectedPatient) return;
+  if (Date.now() - patientDetailLoadedAt < 30000) return;
+  loadPatientDetail(state.selectedPatient.id);
+});
+
 function loadPatientDetail(patientId) {
+  patientDetailLoadedAt = Date.now();
   [els.patientDocumentsList, els.patientWeightsList, els.patientMeasurementsList, els.patientPhotosGallery, els.patientWorkoutsList]
     .forEach(function (el) { el.innerHTML = skeletonRows(2); });
   els.sinceGrid.innerHTML = skeletonRows(1);
