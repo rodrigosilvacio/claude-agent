@@ -209,7 +209,8 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   `pandafit_usuarios` (nunca a conta em `auth.users`, pelo mesmo motivo).
 - **medico**: sem tabbar — cai direto numa tela **Pacientes**, lista de
   contas com `role = 'usuario'`; ao selecionar uma, vê o gráfico de
-  tendência de peso, o histórico de peso e os treinos mais recentes
+  tendência de peso, o histórico de peso, as medidas corporais (cintura/%
+  gordura, também só leitura) e os treinos mais recentes
   daquele paciente (somente leitura, sem editar/excluir) e a seção
   **Documentos**, com um resumo (espaço total ocupado + data do envio mais
   recente), link **Baixar** (signed URL com download forçado, em vez de só
@@ -285,6 +286,13 @@ descrita acima.
   título e no botão de salvar, mostra um link "Cancelar edição" e, no caso
   de um treino, esconde a alternância Manual/Cronômetro (edição é sempre
   manual); salvar faz `update` por `id` em vez de criar um novo registro.
+  Ainda dentro de Peso, um card de **medidas corporais** (cintura e/ou %
+  de gordura, um ou outro ou os dois por registro, mesmo `upsert` por
+  `date` do peso) com histórico paginado de 5 em 5, seta ▲/▼/= de variação
+  por métrica (cada uma comparada com o registro anterior que tinha aquele
+  campo preenchido, já que nem todo registro traz os dois) e edição/exclusão
+  — versão enxuta do item de roadmap P2, sem meta dedicada por métrica por
+  enquanto (`0056_pandafit_medidas_corporais.sql`).
   Dentro de Peso, uma **galeria de fotos de progresso** (miniaturas de
   verdade, não só uma lista com link) — upload de uma foto (JPG/PNG/HEIC/WEBP,
   até 10MB) para o Storage privado (`pandafit-progress-photos`, salvo em
@@ -381,8 +389,8 @@ Supabase e ao esm.sh (import do `supabase-js`) são cross-origin e vão
 direto pra rede, nunca ficam em cache, então os dados nunca aparecem
 desatualizados por causa disso.
 
-Separado do service worker, os **dados** (treinos, pesos, meta e os
-catálogos de modalidades/locais/exercícios) têm seu próprio cache de
+Separado do service worker, os **dados** (treinos, pesos, medidas corporais,
+meta e os catálogos de modalidades/locais/exercícios) têm seu próprio cache de
 leitura em `localStorage`, namespaced por `user_id`: toda vez que um
 desses carrega com sucesso, a resposta é salva; no próximo boot, o cache
 aparece na tela na hora enquanto a rede responde em paralelo, e se a rede
