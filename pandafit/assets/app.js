@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=25';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=26';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -860,6 +860,8 @@ var els = {
   metaProgressCount: $('#meta-progress-count'),
   metaStreakNote: $('#meta-streak-note'),
   evolutionList: $('#evolution-list'),
+  achievementsGrid: $('#achievements-grid'),
+  achievementsCountNote: $('#achievements-count-note'),
   btnExportWorkouts: $('#btn-export-workouts'),
   btnExportWeights: $('#btn-export-weights'),
   btnPrintReport: $('#btn-print-report'),
@@ -2362,6 +2364,33 @@ function renderPainel() {
   }
 }
 
+// ── conquistas: badges calculados na hora a partir dos dados já carregados
+// (sem tabela nova nem consulta extra — "leve" no sentido literal) ──
+var ACHIEVEMENTS = [
+  { title: 'Primeiro treino', desc: 'Registre seu primeiro treino.', check: function () { return state.workouts.length >= 1; } },
+  { title: '10 treinos', desc: 'Registre 10 treinos.', check: function () { return state.workouts.length >= 10; } },
+  { title: '50 treinos', desc: 'Registre 50 treinos.', check: function () { return state.workouts.length >= 50; } },
+  { title: '100 treinos', desc: 'Registre 100 treinos.', check: function () { return state.workouts.length >= 100; } },
+  { title: 'Primeiro peso', desc: 'Registre seu primeiro peso.', check: function () { return state.weights.length >= 1; } },
+  { title: '30 registros de peso', desc: 'Registre seu peso 30 vezes.', check: function () { return state.weights.length >= 30; } },
+  { title: 'Sequência de 3 meses', desc: 'Bata a meta mensal 3 meses seguidos.', check: function () { return computeGoalStreak() >= 3; } },
+  { title: 'Sequência de 6 meses', desc: 'Bata a meta mensal 6 meses seguidos.', check: function () { return computeGoalStreak() >= 6; } },
+  { title: 'Primeira foto', desc: 'Envie sua primeira foto de progresso.', check: function () { return state.photos.length >= 1; } },
+];
+
+function renderAchievements() {
+  var unlockedCount = 0;
+  els.achievementsGrid.innerHTML = ACHIEVEMENTS.map(function (a) {
+    var unlocked = a.check();
+    if (unlocked) unlockedCount++;
+    return '<div class="achievement-tile' + (unlocked ? ' unlocked' : '') + '">' +
+      '<div class="achievement-title">' + a.title + '</div>' +
+      '<div class="achievement-desc">' + a.desc + '</div>' +
+      '</div>';
+  }).join('');
+  els.achievementsCountNote.textContent = unlockedCount + ' de ' + ACHIEVEMENTS.length;
+}
+
 // ── render: Meta screen ──
 function renderMeta() {
   els.inputGoal.value = state.monthlyGoal;
@@ -2391,6 +2420,8 @@ function renderMeta() {
   els.metaStreakNote.textContent = streak > 0
     ? streak + (streak === 1 ? ' mês seguido batendo a meta' : ' meses seguidos batendo a meta')
     : 'Ainda sem sequência — bata a meta este mês para começar.';
+
+  renderAchievements();
 
   var months = [];
   for (var i = EVOLUTION_MONTHS - 1; i >= 0; i--) {

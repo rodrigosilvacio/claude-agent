@@ -316,7 +316,11 @@ descrita acima.
   meta; botões para baixar todos os treinos e todos os pesos já carregados
   em CSV (ordenado por data, `,` como separador, `.` como decimal — sem
   formatação brasileira para não colidir com o separador de campo — e BOM
-  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local); e um
+  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local); um painel
+  de **Conquistas** — 9 badges calculados na hora a partir dos dados já
+  carregados (1/10/50/100 treinos, 1/30 pesos, 1ª foto de progresso, 3/6
+  meses de sequência batendo a meta), sem tabela nova nem consulta extra —
+  "leve" no sentido literal, versão enxuta do item de roadmap P2; e um
   **relatório para o médico** — resumo de peso, medidas corporais e treinos
   recentes (últimos 15 de cada) pronto pra levar numa consulta. Em vez de
   gerar o PDF com uma lib externa, o botão preenche uma seção oculta
