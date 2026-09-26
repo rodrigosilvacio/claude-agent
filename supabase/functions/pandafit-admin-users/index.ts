@@ -200,8 +200,11 @@ Deno.serve(async (req: Request) => {
       const { data: medico } = await admin.from("pandafit_usuarios").select("role").eq("id", medicoId).maybeSingle()
       if (!medico || medico.role !== "medico") return json({ error: "medicoId não é um médico válido" }, 400)
 
+      // "Paciente" aqui é qualquer conta que registra os próprios dados de
+      // treino/peso — usuario, mas também admin (o admin também usa o app
+      // como usuario, ver README). Só não pode ser outro médico.
       const { data: paciente } = await admin.from("pandafit_usuarios").select("role").eq("id", usuarioId).maybeSingle()
-      if (!paciente || paciente.role !== "usuario") return json({ error: "usuarioId não é um paciente válido" }, 400)
+      if (!paciente || paciente.role === "medico") return json({ error: "usuarioId não é um paciente válido" }, 400)
 
       if (linked) {
         const { error } = await admin
