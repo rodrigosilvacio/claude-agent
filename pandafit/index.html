@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=29" />
+<link rel="stylesheet" href="assets/styles.css?v=30" />
 </head>
 <body>
 
@@ -241,6 +241,17 @@
           <div class="section-head-row">
             <span class="section-title">Histórico</span>
             <span class="section-note" id="weight-count-note">0 registros</span>
+          </div>
+          <div class="date-filter-row">
+            <label class="field date-filter-field">
+              <span class="field-label">De</span>
+              <input type="date" id="input-weight-filter-from" />
+            </label>
+            <label class="field date-filter-field">
+              <span class="field-label">Até</span>
+              <input type="date" id="input-weight-filter-to" />
+            </label>
+            <button type="button" class="date-filter-clear" id="btn-clear-weight-filter" hidden>Limpar</button>
           </div>
           <div id="weights-list" class="records-list">
             <p class="empty-state">Nenhum peso registrado ainda.</p>
@@ -727,6 +738,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=29"></script>
+<script type="module" src="assets/app.js?v=30"></script>
 </body>
 </html>
