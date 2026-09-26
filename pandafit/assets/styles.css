@@ -1552,6 +1552,49 @@ input[type="file"]::file-selector-button {
   opacity: 0.5;
 }
 
+/* ── vínculo paciente↔médico (gestão de cadastros) ── */
+.user-links-row {
+  padding: 0 0 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-links-label {
+  font: 600 10px/1 "Inter", sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.link-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.link-chip {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-app);
+  color: var(--muted);
+  padding: 5px 11px;
+  font: 500 11px/1 "Inter", sans-serif;
+  white-space: nowrap;
+}
+.link-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.link-chip:disabled {
+  opacity: 0.5;
+}
+
 /* ── médico: Pacientes ── */
 .patient-row,
 .settings-row {
