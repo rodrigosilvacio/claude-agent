@@ -228,7 +228,7 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   tendência de peso, o histórico de peso, as medidas corporais (cintura/%
   gordura, também só leitura) e os treinos mais recentes
   daquele paciente (somente leitura, sem editar/excluir) e a seção
-  **Documentos**, com um resumo (espaço total ocupado + data do envio mais
+  **Exames**, com um resumo (espaço total ocupado + data do envio mais
   recente), link **Baixar** (signed URL com download forçado, em vez de só
   abrir numa aba) além do **Ver**, e exclusão — o único ponto onde o médico
   pode apagar algo do paciente, pra tirar um exame enviado errado ou já
@@ -358,7 +358,9 @@ descrita acima.
   preto-no-branco fixo (não segue o tema claro/escuro da tela), e o usuário
   salva como PDF pelo próprio diálogo de impressão do navegador — zero
   dependências novas, mesmo espírito de "sem build step" do resto do app.
-- **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
+- **Exames** (rótulo na UI; tabela e bucket seguem se chamando
+  `pandafit_documents`/`pandafit-documents` internamente): upload de exames
+  (PDF/JPG/PNG, até 10MB) para o Storage do
   Supabase, salvo em `<user_id>/<arquivo>`; lista paginada de 5 em 5 com
   nome, tamanho, data de envio, link "Ver" (gera uma signed URL na hora do
   clique — o bucket não é público) e exclusão (remove do Storage e da

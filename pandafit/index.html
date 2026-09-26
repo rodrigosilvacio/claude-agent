@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=30" />
+<link rel="stylesheet" href="assets/styles.css?v=31" />
 </head>
 <body>
 
@@ -504,11 +504,11 @@
       </div>
     </main>
 
-    <!-- ───────── Documentos ───────── -->
+    <!-- ───────── Exames ───────── -->
     <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
       <div class="screen-head">
         <button type="button" class="back-link" data-back="config">‹ Configurações</button>
-        <h1 class="title">Documentos</h1>
+        <h1 class="title">Exames</h1>
       </div>
 
       <div class="screen-body">
@@ -520,16 +520,16 @@
             <input type="file" id="input-document-file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp" />
           </label>
           <div class="toast" id="document-toast" hidden></div>
-          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-document">Enviar documento</button>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-document">Enviar exame</button>
         </div>
 
         <div class="section">
           <div class="section-head-row">
-            <span class="section-title">Seus documentos</span>
-            <span class="section-note" id="document-count-note">0 documentos</span>
+            <span class="section-title">Seus exames</span>
+            <span class="section-note" id="document-count-note">0 exames</span>
           </div>
           <div id="documents-list" class="records-list">
-            <p class="empty-state">Nenhum documento enviado ainda.</p>
+            <p class="empty-state">Nenhum exame enviado ainda.</p>
           </div>
           <div id="documents-pager" class="pager" hidden>
             <button type="button" class="pager-btn" id="documents-pager-prev">‹ Anterior</button>
@@ -568,7 +568,7 @@
               <span class="settings-row-arrow">›</span>
             </button>
             <button type="button" class="settings-row" data-open="documentos">
-              <span class="settings-row-label">Documentos</span>
+              <span class="settings-row-label">Exames</span>
               <span class="settings-row-arrow">›</span>
             </button>
             <button type="button" class="settings-row" data-open="usuarios" id="settings-row-usuarios" hidden>
@@ -657,7 +657,7 @@
 
         <div class="section">
           <div class="section-head-row">
-            <span class="section-title">Documentos</span>
+            <span class="section-title">Exames</span>
             <span class="section-note" id="patient-docs-note"></span>
           </div>
           <p class="doc-summary" id="patient-docs-summary" hidden></p>
@@ -738,6 +738,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=30"></script>
+<script type="module" src="assets/app.js?v=31"></script>
 </body>
 </html>
