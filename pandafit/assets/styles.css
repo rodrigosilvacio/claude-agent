@@ -1567,3 +1567,64 @@ input[type="file"]::file-selector-button {
   text-transform: uppercase;
   color: var(--accent-text);
 }
+
+/* ── relatório pro médico (impressão/PDF) ──
+   Fica oculto na tela sempre; só vira visível dentro de @media print,
+   quando .printing-report troca o que aparece pro navegador imprimir.
+   Cores fixas (não usa os tokens --ink/--bg-app) porque um PDF impresso
+   deve ficar em preto-no-branco de verdade, independente do tema
+   claro/escuro do app na tela. */
+#print-report { display: none; }
+
+@media print {
+  /* #print-report lives inside .app (the single direct child of body), so
+     the "hide everything else" rule targets .app's children, not body's. */
+  body.printing-report .app > *:not(#print-report) { display: none !important; }
+  body.printing-report #print-report {
+    display: block;
+    color: #0f172a;
+    background: #ffffff;
+    font-family: "Inter", -apple-system, system-ui, sans-serif;
+    padding: 16px;
+  }
+  #print-report h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+  }
+  #print-report .print-report-meta {
+    font-size: 12px;
+    color: #475569;
+    margin: 0 0 24px;
+  }
+  #print-report section {
+    margin-bottom: 22px;
+    break-inside: avoid;
+  }
+  #print-report h2 {
+    font-size: 14px;
+    margin: 0 0 8px;
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 4px;
+  }
+  #print-report .print-report-summary {
+    font-size: 12px;
+    color: #334155;
+    margin: 0 0 8px;
+  }
+  #print-report table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  #print-report th,
+  #print-report td {
+    text-align: left;
+    padding: 4px 6px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  #print-report .print-report-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    font-style: italic;
+  }
+}

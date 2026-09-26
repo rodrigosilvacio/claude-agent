@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=24';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=25';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -145,6 +145,11 @@ function fmtDuration(min) {
 function fmtDayLabel(iso) {
   var parts = iso.split('-');
   return parts[2] + '/' + parts[1];
+}
+
+function fmtFullDayLabel(iso) {
+  var parts = iso.split('-');
+  return parts[2] + '/' + parts[1] + '/' + parts[0];
 }
 
 function fmtWeight(kg) {
@@ -857,6 +862,8 @@ var els = {
   evolutionList: $('#evolution-list'),
   btnExportWorkouts: $('#btn-export-workouts'),
   btnExportWeights: $('#btn-export-weights'),
+  btnPrintReport: $('#btn-print-report'),
+  printReport: $('#print-report'),
   inputTargetWeight: $('#input-target-weight'),
   btnSaveTargetWeight: $('#btn-save-target-weight'),
   targetWeightToast: $('#target-weight-toast'),
@@ -2681,6 +2688,78 @@ els.btnExportWeights.addEventListener('click', function () {
   });
   var rows = sorted.map(function (w) { return [w.date, w.weight_kg]; });
   downloadCSV('pandafit-pesos.csv', ['Data', 'Peso (kg)'], rows);
+});
+
+// ── relatório para o médico (impressão nativa do navegador → "Salvar
+// como PDF" no diálogo de impressão, sem depender de nenhuma lib externa) ──
+var REPORT_RECENT_LIMIT = 15;
+
+function buildPrintReportTable(headers, rows) {
+  if (rows.length === 0) return '<p class="print-report-empty">Nenhum registro ainda.</p>';
+  return '<table><thead><tr>' +
+    headers.map(function (h) { return '<th>' + h + '</th>'; }).join('') +
+    '</tr></thead><tbody>' +
+    rows.map(function (cells) {
+      return '<tr>' + cells.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
+    }).join('') +
+    '</tbody></table>';
+}
+
+function buildPrintReportHTML() {
+  var name = (state.profile && (state.profile.nome || state.profile.email)) || '';
+  var generatedAt = fmtFullDayLabel(todayISO());
+
+  var recentWeights = state.weights.slice(0, REPORT_RECENT_LIMIT); // already sorted date desc
+  var weightSummary = recentWeights.length
+    ? 'Peso mais recente: ' + fmtWeight(recentWeights[0].weight_kg) + ' kg (registrado em ' + fmtFullDayLabel(recentWeights[0].date) + ').'
+    : '';
+
+  var recentMeasurements = state.measurements.slice(0, REPORT_RECENT_LIMIT); // already sorted date desc
+  var latestWaist = recentMeasurements.find(function (m) { return m.waist_cm != null; });
+  var latestBodyFat = recentMeasurements.find(function (m) { return m.body_fat_pct != null; });
+  var measurementSummaryParts = [];
+  if (latestWaist) measurementSummaryParts.push('cintura ' + fmtWeight(latestWaist.waist_cm) + ' cm (' + fmtFullDayLabel(latestWaist.date) + ')');
+  if (latestBodyFat) measurementSummaryParts.push('% de gordura ' + fmtWeight(latestBodyFat.body_fat_pct) + '% (' + fmtFullDayLabel(latestBodyFat.date) + ')');
+  var measurementSummary = measurementSummaryParts.length ? 'Mais recente: ' + measurementSummaryParts.join(', ') + '.' : '';
+
+  var recentWorkouts = state.workouts.slice()
+    .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; })
+    .slice(0, REPORT_RECENT_LIMIT);
+  var workoutSummary = recentWorkouts.length
+    ? 'Últimos ' + recentWorkouts.length + (recentWorkouts.length === 1 ? ' treino registrado.' : ' treinos registrados.')
+    : '';
+
+  return '<h1>PandaFit — Relatório de acompanhamento</h1>' +
+    '<p class="print-report-meta">' + (name ? name + ' · ' : '') + 'Gerado em ' + generatedAt + '</p>' +
+    '<section>' +
+    '<h2>Peso</h2>' +
+    (weightSummary ? '<p class="print-report-summary">' + weightSummary + '</p>' : '') +
+    buildPrintReportTable(['Data', 'Peso (kg)'], recentWeights.map(function (w) { return [fmtFullDayLabel(w.date), fmtWeight(w.weight_kg)]; })) +
+    '</section>' +
+    '<section>' +
+    '<h2>Medidas corporais</h2>' +
+    (measurementSummary ? '<p class="print-report-summary">' + measurementSummary + '</p>' : '') +
+    buildPrintReportTable(['Data', 'Cintura (cm)', '% de gordura'], recentMeasurements.map(function (m) {
+      return [fmtFullDayLabel(m.date), m.waist_cm != null ? fmtWeight(m.waist_cm) : '—', m.body_fat_pct != null ? fmtWeight(m.body_fat_pct) + '%' : '—'];
+    })) +
+    '</section>' +
+    '<section>' +
+    '<h2>Treinos recentes</h2>' +
+    (workoutSummary ? '<p class="print-report-summary">' + workoutSummary + '</p>' : '') +
+    buildPrintReportTable(['Data', 'Tipo', 'Duração', 'Local'], recentWorkouts.map(function (w) {
+      return [fmtFullDayLabel(w.date), w.type, fmtDuration(w.minutes), w.local || '—'];
+    })) +
+    '</section>';
+}
+
+els.btnPrintReport.addEventListener('click', function () {
+  els.printReport.innerHTML = buildPrintReportHTML();
+  document.body.classList.add('printing-report');
+  window.print();
+});
+
+window.addEventListener('afterprint', function () {
+  document.body.classList.remove('printing-report');
 });
 
 // ── Modalidades (catálogo) ──

@@ -316,7 +316,15 @@ descrita acima.
   meta; botões para baixar todos os treinos e todos os pesos já carregados
   em CSV (ordenado por data, `,` como separador, `.` como decimal — sem
   formatação brasileira para não colidir com o separador de campo — e BOM
-  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local).
+  UTF-8 na frente pro Excel não bagunçar os acentos de tipo/local); e um
+  **relatório para o médico** — resumo de peso, medidas corporais e treinos
+  recentes (últimos 15 de cada) pronto pra levar numa consulta. Em vez de
+  gerar o PDF com uma lib externa, o botão preenche uma seção oculta
+  (`#print-report`) com HTML puro e chama `window.print()`: um CSS de
+  `@media print` some com o resto do app e mostra só o relatório, em
+  preto-no-branco fixo (não segue o tema claro/escuro da tela), e o usuário
+  salva como PDF pelo próprio diálogo de impressão do navegador — zero
+  dependências novas, mesmo espírito de "sem build step" do resto do app.
 - **Documentos**: upload de exames (PDF/JPG/PNG, até 10MB) para o Storage do
   Supabase, salvo em `<user_id>/<arquivo>`; lista paginada de 5 em 5 com
   nome, tamanho, data de envio, link "Ver" (gera uma signed URL na hora do
