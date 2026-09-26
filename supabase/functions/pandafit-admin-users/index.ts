@@ -125,6 +125,9 @@ Deno.serve(async (req: Request) => {
           email: emailNormalizado,
           password,
           email_confirm: true,
+          // Senha inicial é provisória: o app pede a troca no primeiro
+          // login e desliga essa flag (ver requirePasswordChange em app.js).
+          user_metadata: { pandafit_trocar_senha: true },
         })
         if (createError) throw createError
         userId = created.user.id
@@ -167,7 +170,10 @@ Deno.serve(async (req: Request) => {
       const { data: alvo } = await admin.from("pandafit_usuarios").select("id").eq("id", userId).maybeSingle()
       if (!alvo) return json({ error: "Usuário fora do escopo do PandaFit" }, 403)
 
-      const { error } = await admin.auth.admin.updateUserById(userId, { password })
+      const { error } = await admin.auth.admin.updateUserById(userId, {
+        password,
+        user_metadata: { pandafit_trocar_senha: true },
+      })
       if (error) throw error
 
       return json({ ok: true })

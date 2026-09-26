@@ -264,15 +264,17 @@ permanente — importante agora que a aba guarda exame médico de verdade; o
 o navegador a salvar o arquivo em vez de só abri-lo numa aba.
 
 Quem loga como **usuario** ou **admin** vê a tabbar com **Painel ·
-Registrar · Config.** — Meta, Documentos e (só para admin) Usuários não
-têm aba própria: são linhas dentro de **Configurações**, cada uma abrindo
-sua tela com um "‹ Configurações" para voltar. Isso existe porque a
-tabbar com uma aba por tela (Painel/Registrar/Meta/Documentos/Usuários)
-quebrava visualmente assim que o admin logava — 5 itens não cabem numa
-grade de 4 colunas e a 5ª aba ("Usuários") ficava sozinha numa segunda
-linha. Com só 3 abas fixas, a tabbar nunca quebra, seja qual for o papel.
-O **medico** não tem tabbar nem Configurações — vê só a tela de Pacientes
-descrita acima.
+Registrar · Progresso · Exames** (4 abas com ícone, desde a v32). Registrar
+é só entrada rápida; Progresso é consulta (gráfico e histórico de peso,
+medidas, galeria com comparador, evolução de 6 meses e conquistas); Exames
+virou destino de primeiro nível por ser o principal elo com o médico.
+Configurações saiu da tabbar e abre pelo **menu da conta** (avatar no
+topo), junto com "Quem vê meus dados" e Sair; Metas, Modalidades, Locais,
+Exercícios, Quem vê meus dados e (só admin) Usuários são linhas dentro de
+Configurações, cada uma com um "‹ Configurações" para voltar. O **medico**
+não tem tabbar nem Configurações: vê só a tela de Pacientes. As descrições
+por tela abaixo são anteriores à v32; o que mudou está resumido em
+"Revisão de UX/CX (v32)", mais abaixo.
 
 - **Painel**: banners de lembrete no topo (só no mês atual) — "faltam X
   treinos para bater a meta deste mês" quando ainda não bateu, e "você ainda
@@ -417,6 +419,68 @@ peso e o botão de exclusão, etc.) definidos em `:root` e redefinidos dentro
 do media query — segue a preferência do sistema operacional/navegador, sem
 alternância manual. `color-scheme: light dark` também é declarado para que
 controles nativos (date picker, seletor de arquivo) sigam o tema.
+
+### Revisão de UX/CX (v32)
+
+Execução do plano em `pandafit/MELHORIAS-UX-CX.md` (35 itens). O que mudou
+em relação às descrições acima:
+
+- **Segurança**: todo texto dinâmico (modalidade, local, exercício, nome de
+  arquivo, nome/e-mail de usuário e paciente) passa por `escapeHtml` antes
+  de entrar em `innerHTML` — antes, um nome de arquivo malicioso enviado por
+  um paciente executava script na sessão do médico. O nome do arquivo
+  também é saneado no upload (`safeFileName`).
+- **Senha**: "Esqueci minha senha" no login (`resetPasswordForEmail`, volta
+  para `/pandafit/` e cai na tela de nova senha). Senha provisória criada
+  pelo admin agora marca `user_metadata.pandafit_trocar_senha` (edge
+  function `pandafit-admin-users`) e o app exige a troca no 1º login. Campo
+  de senha do admin é `type=password` com mostrar/ocultar e "Gerar senha
+  forte". **Pré-requisito**: a URL do app (ex:
+  `https://erpconnect.vercel.app/pandafit/`) precisa estar em *Auth → URL
+  Configuration → Redirect URLs* do Supabase; senão o link de recuperação
+  cai na Site URL do projeto compartilhado.
+- **Cronômetro persistente**: guarda o instante de início no aparelho
+  (`localStorage`, por usuário) e calcula `agora − início`; fechar o app ou
+  o iOS suspender o PWA não perde o treino. O Painel mostra "Treino em
+  andamento" com atalho, e o treino fica com a data em que começou (editável).
+- **Loop de registro**: "Repetir último treino" no Painel (pré-preenche
+  modalidade, duração, local e exercícios para hoje); peso pré-preenchido
+  com o último valor e stepper ±0,1; "+ Série" copia a série anterior e,
+  ao escolher um exercício, as séries vêm pré-preenchidas com a última
+  execução ("Última vez: 3×10 @ 40kg"); tocar num dia do calendário filtra
+  os treinos do dia ou abre o Registrar com a data.
+- **Excluir com Desfazer** (treino, peso, medida): some da tela na hora e só
+  apaga no banco depois de 5s; exclusões pendentes são confirmadas se o app
+  for fechado. Linhas também aceitam deslizar para a esquerda.
+- **Feedback e estados**: toasts globais acessíveis (`role=status`, variação
+  de sucesso/erro, ação opcional), validação inline junto do campo,
+  skeletons no carregamento, erro com botão "Tentar de novo", "Ver mais" no
+  lugar da paginação, celebração (toast + confete, respeitando
+  `prefers-reduced-motion`) ao bater a meta ou desbloquear conquista,
+  lembretes dispensados por dia inteiro e com ação direta.
+- **Acessibilidade**: modais com Esc, clique fora, foco preso e devolvido;
+  `:focus-visible`; botões com texto em sentence case; mês por extenso.
+- **Relatório para o médico**: PDF real com jsPDF (`esm.sh`, carregado só
+  no clique) compartilhável pelo menu nativo; `window.print()` virou plano B.
+- **CX**: onboarding de 3 passos no 1º acesso (meta, modalidades, peso
+  inicial); tela **Quem vê meus dados** lista os médicos conectados e deixa
+  o paciente remover o acesso (RPCs `pandafit_meus_medicos` e
+  `pandafit_revogar_medico`); exames lidos por IA mostram o selo "Lido por
+  IA" e o paciente pode abrir o resumo; **Sugerir melhoria** grava em
+  `pandafit_feedback` (só admin lê); **resumo semanal por e-mail** opt-in
+  (`pandafit_settings.weekly_summary_email`), enviado toda segunda 08:00 pela
+  edge function `pandafit-resumo-semanal` (pg_cron, idempotente por
+  usuário/semana em `pandafit_resumo_semanal_envios`). Enquanto o remetente
+  for `onboarding@resend.dev`, o Resend só entrega para o e-mail dono da
+  conta Resend; para outros usuários é preciso verificar um domínio.
+- **Visão do médico**: cartão "Desde a última visita" (peso, cintura,
+  treinos por semana, exames e fotos novos) com período selecionável; a
+  data da visita anterior fica neste aparelho. Exames novos no período
+  ganham o selo "novo".
+- **Marca**: favicon, ícone da tela inicial, login e barra de topo usam o
+  mesmo panda do ícone do PWA.
+
+Backend desta versão: `supabase/migrations/0059_pandafit_ux_cx_transparencia_feedback_resumo.sql`.
 
 ### PWA (manifest + service worker)
 

@@ -18,13 +18,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="PandaFit" />
 <meta name="format-detection" content="telephone=no" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%BC%3C/text%3E%3C/svg%3E" />
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23fbf8f4'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle'%3E%F0%9F%90%BC%3C/text%3E%3C/svg%3E" />
+<!-- Uma identidade só: o mesmo panda do ícone do app instalado (manifest)
+     no favicon, no ícone da tela inicial do iOS, no login e na barra de topo. -->
+<link rel="icon" type="image/png" href="assets/icon-192.png" />
+<link rel="apple-touch-icon" href="assets/icon-192.png" />
 <link rel="manifest" href="manifest.json" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=31" />
+<link rel="stylesheet" href="assets/styles.css?v=32" />
 </head>
 <body>
 
@@ -34,16 +36,13 @@
   <main class="screen screen-login" id="screen-login">
     <div class="login-wrap">
       <div class="login-brand">
-        <div class="login-mark" aria-hidden="true">
-          <svg width="30" height="30" viewBox="0 0 40 40" fill="none">
-            <path d="M4 21h6.5l2.5-9 5 19 4-15 2.5 5H36" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </div>
+        <img class="login-mark" src="assets/icon-192.png" alt="" width="56" height="56" />
         <h1 class="login-title">PandaFit</h1>
         <p class="login-subtitle">Treinos, peso e exames em um só lugar.</p>
       </div>
 
-      <div class="login-card">
+      <!-- entrar -->
+      <div class="login-card" id="login-view-signin">
         <form class="login-form" id="login-form" novalidate>
           <label class="field">
             <span class="field-label">E-mail</span>
@@ -51,16 +50,54 @@
           </label>
           <label class="field">
             <span class="field-label">Senha</span>
-            <input type="password" id="login-password" autocomplete="current-password" required />
+            <span class="password-wrap">
+              <input type="password" id="login-password" autocomplete="current-password" required />
+              <button type="button" class="password-toggle" data-toggle-password="login-password" aria-label="Mostrar senha">Mostrar</button>
+            </span>
           </label>
-          <div class="toast toast-error" id="login-error" hidden></div>
+          <div class="toast toast-error" id="login-error" role="alert" hidden></div>
           <button type="submit" class="btn btn-save login-submit" id="btn-login">
             <span id="btn-login-label">Entrar</span>
           </button>
+          <button type="button" class="link-btn" id="btn-forgot">Esqueci minha senha</button>
         </form>
       </div>
 
-      <p class="login-footnote">Acesso só por convite — fale com o administrador se precisar de uma conta.</p>
+      <!-- esqueci a senha -->
+      <div class="login-card" id="login-view-forgot" hidden>
+        <form class="login-form" id="forgot-form" novalidate>
+          <p class="login-help">Informe seu e-mail. Se ele tiver acesso ao PandaFit, você recebe um link para criar uma nova senha.</p>
+          <label class="field">
+            <span class="field-label">E-mail</span>
+            <input type="email" id="forgot-email" inputmode="email" autocomplete="username" required />
+          </label>
+          <div class="toast" id="forgot-msg" role="status" hidden></div>
+          <button type="submit" class="btn btn-save login-submit" id="btn-forgot-send">Enviar link</button>
+          <button type="button" class="link-btn" id="btn-forgot-back">Voltar para o login</button>
+        </form>
+      </div>
+
+      <!-- nova senha (link de recuperação ou senha provisória no 1º acesso) -->
+      <div class="login-card" id="login-view-newpass" hidden>
+        <form class="login-form" id="newpass-form" novalidate>
+          <p class="login-help" id="newpass-help">Crie uma senha só sua para continuar.</p>
+          <label class="field">
+            <span class="field-label">Nova senha (mín. 8 caracteres)</span>
+            <span class="password-wrap">
+              <input type="password" id="newpass-1" autocomplete="new-password" required />
+              <button type="button" class="password-toggle" data-toggle-password="newpass-1" aria-label="Mostrar senha">Mostrar</button>
+            </span>
+          </label>
+          <label class="field">
+            <span class="field-label">Repita a nova senha</span>
+            <input type="password" id="newpass-2" autocomplete="new-password" required />
+          </label>
+          <div class="toast toast-error" id="newpass-error" role="alert" hidden></div>
+          <button type="submit" class="btn btn-save login-submit" id="btn-newpass">Salvar nova senha</button>
+        </form>
+      </div>
+
+      <p class="login-footnote">Acesso só por convite. Fale com o administrador se precisar de uma conta.</p>
     </div>
   </main>
 
@@ -69,30 +106,34 @@
     <!-- ───────── Barra de topo (marca do app + conta) ───────── -->
     <header class="app-topbar">
       <div class="app-topbar-brand">
-        <svg class="app-topbar-mark" width="16" height="16" viewBox="0 0 40 40" fill="none" aria-hidden="true">
-          <path d="M4 21h6.5l2.5-9 5 19 4-15 2.5 5H36" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        <img class="app-topbar-mark" src="assets/icon-192.png" alt="" width="22" height="22" />
         <span>PandaFit</span>
       </div>
-      <button type="button" class="account-btn" id="btn-account" aria-label="Conta">
+      <button type="button" class="account-btn" id="btn-account" aria-label="Abrir menu da conta" aria-haspopup="menu" aria-expanded="false">
         <span id="account-initial"></span>
       </button>
     </header>
 
-    <div class="offline-banner" id="offline-banner" hidden>Sem conexão — mostrando dados salvos no aparelho.</div>
+    <div class="offline-banner" id="offline-banner" role="status" hidden>Sem conexão. Mostrando dados salvos no aparelho.</div>
 
     <!-- ───────── Painel do mês ───────── -->
     <main class="screen" id="screen-painel" data-screen="painel">
       <div class="screen-head">
         <div class="month-nav">
           <button type="button" class="month-nav-btn" id="month-prev" aria-label="Mês anterior">‹</button>
-          <div class="eyebrow" id="month-label">Mês</div>
+          <div class="eyebrow" id="month-label" aria-live="polite">Mês</div>
           <button type="button" class="month-nav-btn" id="month-next" aria-label="Próximo mês" disabled>›</button>
         </div>
         <h1 class="title">Mês em movimento</h1>
       </div>
 
       <div class="screen-body">
+
+        <div id="timer-running-banner" class="timer-running-banner" hidden>
+          <span class="dot running" aria-hidden="true"></span>
+          <span id="timer-running-text">Treino em andamento</span>
+          <button type="button" class="banner-action" id="btn-open-timer">Abrir</button>
+        </div>
 
         <div id="reminder-banners" class="reminder-banners" hidden></div>
 
@@ -102,17 +143,29 @@
             <span class="total-hours" id="month-count">0</span>
             <span class="total-mins" id="month-goal-suffix">de 12</span>
           </div>
-          <div class="bar">
+          <div class="bar" role="progressbar" aria-label="Progresso da meta do mês" aria-valuemin="0" aria-valuemax="100" id="goal-bar-wrap">
             <div class="bar-fill" id="goal-bar"></div>
           </div>
           <div class="bar-caption">
             <span id="goal-pct">0% da meta</span>
             <span id="goal-meta">meta 12 treinos/mês</span>
           </div>
+          <div class="streak-note" id="painel-streak-note"></div>
+        </div>
+
+        <div class="repeat-card" id="repeat-card" hidden>
+          <div class="repeat-info">
+            <span class="repeat-label">Repetir último treino</span>
+            <span class="repeat-desc" id="repeat-desc"></span>
+          </div>
+          <button type="button" class="btn btn-primary repeat-btn" id="btn-repeat-last">Repetir</button>
         </div>
 
         <div class="section">
-          <div class="section-title">Calendário</div>
+          <div class="section-head-row">
+            <span class="section-title">Calendário</span>
+            <span class="section-note">Toque num dia</span>
+          </div>
           <div id="calendar-heatmap" class="calendar-heatmap"></div>
         </div>
 
@@ -126,14 +179,23 @@
             <span class="section-title">Registros</span>
             <span class="section-note" id="session-count-note">0 neste mês</span>
           </div>
+          <div class="day-filter" id="day-filter" hidden>
+            <span id="day-filter-label"></span>
+            <button type="button" class="link-btn" id="btn-clear-day-filter">Ver o mês todo</button>
+          </div>
           <div id="records-list" class="records-list">
             <p class="empty-state">Nenhum treino registrado neste mês ainda.</p>
           </div>
-          <div id="records-pager" class="pager" hidden>
-            <button type="button" class="pager-btn" id="pager-prev">‹ Anterior</button>
-            <span class="pager-note" id="pager-note">Página 1 de 1</span>
-            <button type="button" class="pager-btn" id="pager-next">Próxima ›</button>
+          <button type="button" class="more-btn" id="records-more" hidden>Ver mais</button>
+          <p class="swipe-hint">Dica: deslize um registro para a esquerda para excluir.</p>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Conquistas</span>
+            <span class="section-note" id="painel-achievements-note">0 de 0</span>
           </div>
+          <div id="painel-achievements" class="achievements-strip"></div>
         </div>
 
       </div>
@@ -146,9 +208,9 @@
           <h1 class="title" id="registrar-title">Registrar treino</h1>
           <button type="button" class="edit-cancel-link" id="btn-cancel-edit" hidden>Cancelar edição</button>
         </div>
-        <div class="section-tabs">
-          <button type="button" class="section-tab" data-section="treino">Treino</button>
-          <button type="button" class="section-tab" data-section="peso">Peso</button>
+        <div class="section-tabs" role="tablist">
+          <button type="button" class="section-tab" role="tab" data-section="treino">Treino</button>
+          <button type="button" class="section-tab" role="tab" data-section="peso">Peso e medidas</button>
         </div>
       </div>
 
@@ -165,21 +227,23 @@
             <span class="dot" id="timer-dot"></span>
             <span id="timer-run-label">Pausado</span>
           </div>
-          <div class="clock" id="clock">00:00</div>
+          <div class="clock" id="clock" role="timer" aria-live="off">00:00</div>
+          <div class="timer-started" id="timer-started" hidden></div>
           <div class="timer-actions">
             <button type="button" class="btn btn-primary" id="btn-toggle-run">Iniciar</button>
             <button type="button" class="btn btn-ghost" id="btn-reset-run">Zerar</button>
           </div>
         </div>
 
-        <div class="manual-fields" id="manual-fields" hidden>
+        <div class="manual-fields">
           <label class="field">
             <span class="field-label">Data</span>
             <input type="date" id="input-date" />
           </label>
-          <label class="field">
+          <label class="field" id="field-mins">
             <span class="field-label">Duração (minutos)</span>
-            <input type="number" inputmode="numeric" min="1" max="720" id="input-mins" class="mins-input" />
+            <input type="number" inputmode="numeric" min="1" max="720" id="input-mins" class="mins-input" aria-describedby="err-input-mins" />
+            <span class="field-error" id="err-input-mins" hidden></span>
           </label>
         </div>
 
@@ -205,41 +269,89 @@
       </div>
 
       <div class="save-bar" id="save-bar-treino">
-        <div class="toast" id="toast" hidden></div>
         <button type="button" class="btn btn-save" id="btn-save">
           <span id="btn-save-label">Salvar treino</span>
         </button>
       </div>
 
-      <!-- ── seção Peso ── -->
+      <!-- ── seção Peso e medidas (só entrada; histórico fica em Progresso) ── -->
       <div class="screen-body" id="section-peso" hidden>
 
         <div class="ticket goal-card">
-          <div class="label">Registrar peso</div>
+          <div class="label">Peso</div>
           <label class="field goal-field">
             <span class="field-label">Data</span>
             <input type="date" id="input-weight-date" />
           </label>
-          <label class="field goal-field">
-            <span class="field-label">Peso (kg)</span>
-            <input type="text" id="input-weight-value" inputmode="decimal" placeholder="Ex: 78,4" />
-          </label>
-          <div class="toast" id="weight-toast" hidden></div>
+          <div class="field goal-field">
+            <label class="field-label" for="input-weight-value">Peso (kg)</label>
+            <div class="stepper">
+              <button type="button" class="stepper-btn" id="btn-weight-minus" aria-label="Diminuir 0,1 kg">−</button>
+              <input type="text" id="input-weight-value" inputmode="decimal" placeholder="Ex: 78,4" aria-describedby="err-input-weight-value weight-last-hint" />
+              <button type="button" class="stepper-btn" id="btn-weight-plus" aria-label="Aumentar 0,1 kg">+</button>
+            </div>
+            <span class="field-hint" id="weight-last-hint"></span>
+            <span class="field-error" id="err-input-weight-value" hidden></span>
+          </div>
           <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-weight">
             <span id="btn-save-weight-label">Salvar peso</span>
           </button>
         </div>
 
+        <div class="ticket goal-card">
+          <div class="label">Medidas corporais</div>
+          <label class="field goal-field">
+            <span class="field-label">Data</span>
+            <input type="date" id="input-measurement-date" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">Cintura (cm)</span>
+            <input type="text" id="input-measurement-waist" inputmode="decimal" placeholder="Ex: 82,5" aria-describedby="err-input-measurement-waist" />
+            <span class="field-error" id="err-input-measurement-waist" hidden></span>
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">% de gordura</span>
+            <input type="text" id="input-measurement-body-fat" inputmode="decimal" placeholder="Ex: 18,0" aria-describedby="err-input-measurement-body-fat" />
+            <span class="field-error" id="err-input-measurement-body-fat" hidden></span>
+          </label>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-measurement">
+            <span id="btn-save-measurement-label">Salvar medidas</span>
+          </button>
+          <button type="button" class="edit-cancel-link" id="btn-cancel-edit-measurement" hidden>Cancelar edição</button>
+        </div>
+
+        <div class="ticket goal-card">
+          <div class="label">Foto de progresso</div>
+          <label class="field goal-field">
+            <span class="field-label">Foto (JPG, PNG ou HEIC, até 10MB)</span>
+            <input type="file" id="input-photo-file" accept=".jpg,.jpeg,.png,.heic,.webp" />
+          </label>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-photo">Enviar foto</button>
+        </div>
+
+        <button type="button" class="link-btn center" data-goto="progresso">Ver histórico e evolução em Progresso ›</button>
+      </div>
+    </main>
+
+    <!-- ───────── Progresso (consulta: peso, medidas, fotos, evolução) ───────── -->
+    <main class="screen" id="screen-progresso" data-screen="progresso" hidden>
+      <div class="screen-head">
+        <h1 class="title">Progresso</h1>
+      </div>
+
+      <div class="screen-body">
+
         <div class="section">
           <div class="section-head-row">
-            <span class="section-title">Tendência</span>
+            <span class="section-title">Peso: tendência</span>
+            <span class="section-note" id="target-weight-note"></span>
           </div>
           <div id="weight-chart-wrap" class="chart-wrap"></div>
         </div>
 
         <div class="section">
           <div class="section-head-row">
-            <span class="section-title">Histórico</span>
+            <span class="section-title">Peso: histórico</span>
             <span class="section-note" id="weight-count-note">0 registros</span>
           </div>
           <div class="date-filter-row">
@@ -256,57 +368,18 @@
           <div id="weights-list" class="records-list">
             <p class="empty-state">Nenhum peso registrado ainda.</p>
           </div>
-          <div id="weights-pager" class="pager" hidden>
-            <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
-            <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
-            <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
-          </div>
-        </div>
-
-        <div class="ticket goal-card">
-          <div class="label">Medidas corporais</div>
-          <label class="field goal-field">
-            <span class="field-label">Data</span>
-            <input type="date" id="input-measurement-date" />
-          </label>
-          <label class="field goal-field">
-            <span class="field-label">Cintura (cm)</span>
-            <input type="text" id="input-measurement-waist" inputmode="decimal" placeholder="Ex: 82,5" />
-          </label>
-          <label class="field goal-field">
-            <span class="field-label">% de gordura</span>
-            <input type="text" id="input-measurement-body-fat" inputmode="decimal" placeholder="Ex: 18,0" />
-          </label>
-          <div class="toast" id="measurement-toast" hidden></div>
-          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-measurement">
-            <span id="btn-save-measurement-label">Salvar medidas</span>
-          </button>
-          <button type="button" class="edit-cancel-link" id="btn-cancel-edit-measurement" hidden>Cancelar edição</button>
+          <button type="button" class="more-btn" id="weights-more" hidden>Ver mais</button>
         </div>
 
         <div class="section">
           <div class="section-head-row">
-            <span class="section-title">Medidas — histórico</span>
+            <span class="section-title">Medidas: histórico</span>
             <span class="section-note" id="measurement-count-note">0 registros</span>
           </div>
           <div id="measurements-list" class="records-list">
             <p class="empty-state">Nenhuma medida registrada ainda.</p>
           </div>
-          <div id="measurements-pager" class="pager" hidden>
-            <button type="button" class="pager-btn" id="measurements-pager-prev">‹ Anterior</button>
-            <span class="pager-note" id="measurements-pager-note">Página 1 de 1</span>
-            <button type="button" class="pager-btn" id="measurements-pager-next">Próxima ›</button>
-          </div>
-        </div>
-
-        <div class="ticket goal-card">
-          <div class="label">Foto de progresso</div>
-          <label class="field goal-field">
-            <span class="field-label">Foto (JPG, PNG ou HEIC — até 10MB)</span>
-            <input type="file" id="input-photo-file" accept=".jpg,.jpeg,.png,.heic,.webp" />
-          </label>
-          <div class="toast" id="photo-toast" hidden></div>
-          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-photo">Enviar foto</button>
+          <button type="button" class="more-btn" id="measurements-more" hidden>Ver mais</button>
         </div>
 
         <div class="section">
@@ -314,70 +387,160 @@
             <span class="section-title">Galeria de progresso</span>
             <span class="section-note" id="photos-count-note">0 fotos</span>
           </div>
+          <button type="button" class="export-btn compare-open-btn" id="btn-open-compare" hidden>Comparar antes e depois</button>
           <div id="photos-gallery" class="photos-gallery">
             <p class="empty-state">Nenhuma foto enviada ainda.</p>
           </div>
-          <div id="photos-pager" class="pager" hidden>
-            <button type="button" class="pager-btn" id="photos-pager-prev">‹ Anterior</button>
-            <span class="pager-note" id="photos-pager-note">Página 1 de 1</span>
-            <button type="button" class="pager-btn" id="photos-pager-next">Próxima ›</button>
-          </div>
-        </div>
-
-      </div>
-    </main>
-
-    <!-- ───────── Meta ───────── -->
-    <main class="screen" id="screen-meta" data-screen="meta" hidden>
-      <div class="screen-head">
-        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
-        <h1 class="title">Meta</h1>
-      </div>
-
-      <div class="screen-body">
-
-        <div class="ticket goal-card">
-          <div class="label">Meta mensal</div>
-          <label class="field goal-field">
-            <span class="field-label">Treinos por mês (1 a 30)</span>
-            <input type="number" id="input-goal" min="1" max="30" step="1" inputmode="numeric" />
-          </label>
-          <div class="toast" id="goal-toast" hidden></div>
-          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-goal">Salvar meta</button>
+          <button type="button" class="more-btn" id="photos-more" hidden>Ver mais</button>
         </div>
 
         <div class="section">
-          <div class="section-title">Progresso do mês</div>
-          <div class="bar">
-            <div class="bar-fill" id="meta-progress-bar"></div>
-          </div>
-          <div class="bar-caption">
-            <span id="meta-progress-pct">0% da meta</span>
-            <span id="meta-progress-count">0 de 12 treinos</span>
-          </div>
-          <div class="streak-note" id="meta-streak-note"></div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Evolução</div>
+          <div class="section-title">Treinos: últimos 6 meses</div>
           <div id="evolution-list" class="evolution-list"></div>
         </div>
 
         <div class="section">
           <div class="section-head-row">
-            <span class="section-title">Conquistas</span>
+            <span class="section-title">Todas as conquistas</span>
             <span class="section-note" id="achievements-count-note">0 de 0</span>
           </div>
           <div id="achievements-grid" class="achievements-grid"></div>
         </div>
 
+      </div>
+    </main>
+
+    <!-- ───────── Exames ───────── -->
+    <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
+      <div class="screen-head">
+        <h1 class="title">Exames</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <div class="label">Enviar exame</div>
+          <label class="field goal-field">
+            <span class="field-label">Arquivo (PDF, JPG ou PNG, até 10MB)</span>
+            <input type="file" id="input-document-file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp" />
+          </label>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-document">Enviar exame</button>
+        </div>
+
+        <div class="info-note" id="docs-privacy-note">
+          <strong>Quem vê seus exames:</strong> você e os médicos conectados à sua conta
+          (<button type="button" class="link-btn inline" data-goto="privacidade">ver quem</button>).
+          O médico pode pedir uma leitura de apoio feita por IA (Claude, da Anthropic). Quando isso acontece, o exame mostra o selo
+          <span class="ai-badge">Lido por IA</span> e você também pode ver o resumo. A interpretação é sempre do médico.
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Seus exames</span>
+            <span class="section-note" id="document-count-note">0 exames</span>
+          </div>
+          <div id="documents-list" class="records-list">
+            <p class="empty-state">Nenhum exame enviado ainda.</p>
+          </div>
+          <button type="button" class="more-btn" id="documents-more" hidden>Ver mais</button>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Configurações ───────── -->
+    <main class="screen" id="screen-config" data-screen="config" hidden>
+      <div class="screen-head">
+        <h1 class="title">Configurações</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="section">
+          <div class="settings-list">
+            <button type="button" class="settings-row" data-open="meta">
+              <span class="settings-row-label">Metas, exportação e relatório</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="modalidades">
+              <span class="settings-row-label">Modalidades</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="locais">
+              <span class="settings-row-label">Locais</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="exercicios">
+              <span class="settings-row-label">Exercícios</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="privacidade">
+              <span class="settings-row-label">Quem vê meus dados</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+            <button type="button" class="settings-row" data-open="usuarios" id="settings-row-usuarios" hidden>
+              <span class="settings-row-label">Usuários</span>
+              <span class="settings-row-arrow">›</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Notificações</div>
+          <label class="switch-row">
+            <span class="switch-text">
+              <span class="switch-label">Resumo semanal por e-mail</span>
+              <span class="switch-desc">Toda segunda: treinos da semana, peso e distância da meta.</span>
+            </span>
+            <input type="checkbox" class="switch" id="toggle-weekly-summary" role="switch" />
+          </label>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Sugerir melhoria</div>
+          <label class="field">
+            <span class="field-label">O que deixaria o PandaFit melhor pra você?</span>
+            <textarea id="input-feedback" rows="3" maxlength="2000" placeholder="Conte o que faltou, o que atrapalhou ou uma ideia." aria-describedby="err-input-feedback"></textarea>
+            <span class="field-error" id="err-input-feedback" hidden></span>
+          </label>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-send-feedback">Enviar sugestão</button>
+        </div>
+
+        <div class="section account-section">
+          <div class="section-title">Conta</div>
+          <p class="account-email" id="config-account-email"></p>
+          <button type="button" class="export-btn" id="btn-logout-config">Sair</button>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───────── Metas, exportação e relatório ───────── -->
+    <main class="screen" id="screen-meta" data-screen="meta" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-link" data-back="config">‹ Configurações</button>
+        <h1 class="title">Metas</h1>
+      </div>
+
+      <div class="screen-body">
+
+        <div class="ticket goal-card">
+          <div class="label">Meta mensal de treinos</div>
+          <label class="field goal-field">
+            <span class="field-label">Treinos por mês (1 a 30)</span>
+            <input type="number" id="input-goal" min="1" max="30" step="1" inputmode="numeric" aria-describedby="err-input-goal" />
+            <span class="field-error" id="err-input-goal" hidden></span>
+          </label>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-goal">Salvar meta</button>
+        </div>
+
         <div class="ticket goal-card">
           <div class="label">Meta de peso</div>
           <label class="field goal-field">
-            <span class="field-label">Peso-alvo em kg (opcional — em branco remove a meta)</span>
-            <input type="text" id="input-target-weight" inputmode="decimal" placeholder="Ex: 77,0" />
+            <span class="field-label">Peso-alvo em kg (opcional, em branco remove a meta)</span>
+            <input type="text" id="input-target-weight" inputmode="decimal" placeholder="Ex: 77,0" aria-describedby="err-input-target-weight" />
+            <span class="field-error" id="err-input-target-weight" hidden></span>
           </label>
-          <div class="toast" id="target-weight-toast" hidden></div>
           <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-target-weight">Salvar meta de peso</button>
           <div class="bar-caption target-weight-caption" id="target-weight-caption" hidden>
             <span id="target-weight-current"></span>
@@ -395,9 +558,9 @@
 
         <div class="section">
           <div class="section-title">Relatório para o médico</div>
-          <p class="doc-summary">Resumo de peso, medidas e treinos recentes — pronto pra levar numa consulta.</p>
+          <p class="doc-summary">Resumo de peso, medidas e treinos recentes em PDF, pronto pra compartilhar ou levar numa consulta.</p>
           <div class="export-actions">
-            <button type="button" class="export-btn" id="btn-print-report">Gerar PDF (imprimir)</button>
+            <button type="button" class="export-btn" id="btn-print-report">Gerar PDF</button>
           </div>
         </div>
 
@@ -417,13 +580,13 @@
           <div class="label">Cadastrar modalidade</div>
           <label class="field goal-field">
             <span class="field-label">Nome</span>
-            <input type="text" id="input-type-name" placeholder="Ex: Natação" />
+            <input type="text" id="input-type-name" placeholder="Ex: Natação" aria-describedby="err-input-type-name" />
+            <span class="field-error" id="err-input-type-name" hidden></span>
           </label>
           <label class="field goal-field">
             <span class="field-label">Apelido (opcional)</span>
             <input type="text" id="input-type-hint" placeholder="Ex: piscina" />
           </label>
-          <div class="toast" id="type-form-toast" hidden></div>
           <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-type">Cadastrar</button>
         </div>
 
@@ -432,9 +595,7 @@
             <span class="section-title">Modalidades cadastradas</span>
             <span class="section-note" id="types-count-note">0 modalidades</span>
           </div>
-          <div id="types-list" class="records-list">
-            <p class="empty-state">Carregando modalidades…</p>
-          </div>
+          <div id="types-list" class="records-list"></div>
         </div>
 
       </div>
@@ -453,9 +614,9 @@
           <div class="label">Cadastrar local</div>
           <label class="field goal-field">
             <span class="field-label">Nome</span>
-            <input type="text" id="input-location-name" placeholder="Ex: Academia Center" />
+            <input type="text" id="input-location-name" placeholder="Ex: Academia Center" aria-describedby="err-input-location-name" />
+            <span class="field-error" id="err-input-location-name" hidden></span>
           </label>
-          <div class="toast" id="location-form-toast" hidden></div>
           <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-location">Cadastrar</button>
         </div>
 
@@ -464,9 +625,7 @@
             <span class="section-title">Locais cadastrados</span>
             <span class="section-note" id="locations-count-note">0 locais</span>
           </div>
-          <div id="locations-list" class="records-list">
-            <p class="empty-state">Carregando locais…</p>
-          </div>
+          <div id="locations-list" class="records-list"></div>
         </div>
 
       </div>
@@ -485,9 +644,9 @@
           <div class="label">Cadastrar exercício</div>
           <label class="field goal-field">
             <span class="field-label">Nome</span>
-            <input type="text" id="input-exercise-name" placeholder="Ex: Supino reto" />
+            <input type="text" id="input-exercise-name" placeholder="Ex: Supino reto" aria-describedby="err-input-exercise-name" />
+            <span class="field-error" id="err-input-exercise-name" hidden></span>
           </label>
-          <div class="toast" id="exercise-form-toast" hidden></div>
           <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-exercise">Cadastrar</button>
         </div>
 
@@ -496,94 +655,42 @@
             <span class="section-title">Exercícios cadastrados</span>
             <span class="section-note" id="exercises-count-note">0 exercícios</span>
           </div>
-          <div id="exercises-catalog-list" class="records-list">
-            <p class="empty-state">Carregando exercícios…</p>
-          </div>
+          <div id="exercises-catalog-list" class="records-list"></div>
         </div>
 
       </div>
     </main>
 
-    <!-- ───────── Exames ───────── -->
-    <main class="screen" id="screen-documentos" data-screen="documentos" hidden>
+    <!-- ───────── Quem vê meus dados (LGPD) ───────── -->
+    <main class="screen" id="screen-privacidade" data-screen="privacidade" hidden>
       <div class="screen-head">
         <button type="button" class="back-link" data-back="config">‹ Configurações</button>
-        <h1 class="title">Exames</h1>
+        <h1 class="title">Quem vê meus dados</h1>
       </div>
 
       <div class="screen-body">
+        <div class="info-note">
+          Seus dados de saúde são só seus. Além de você, só os médicos listados abaixo acessam sua conta, porque foram
+          conectados a você pelo administrador do PandaFit. Você pode remover qualquer um a qualquer momento.
+        </div>
 
-        <div class="ticket goal-card">
-          <div class="label">Enviar exame</div>
-          <label class="field goal-field">
-            <span class="field-label">Arquivo (PDF, JPG ou PNG — até 10MB)</span>
-            <input type="file" id="input-document-file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp" />
-          </label>
-          <div class="toast" id="document-toast" hidden></div>
-          <button type="button" class="btn btn-primary goal-save-btn" id="btn-upload-document">Enviar exame</button>
+        <div class="section">
+          <div class="section-title">O que cada médico conectado vê</div>
+          <ul class="access-list">
+            <li><strong>Exames</strong>: pode ver, baixar, excluir e pedir uma leitura de apoio por IA.</li>
+            <li><strong>Peso e medidas</strong>: só leitura.</li>
+            <li><strong>Fotos de progresso</strong>: só leitura.</li>
+            <li><strong>Treinos e séries</strong>: só leitura.</li>
+          </ul>
         </div>
 
         <div class="section">
           <div class="section-head-row">
-            <span class="section-title">Seus exames</span>
-            <span class="section-note" id="document-count-note">0 exames</span>
+            <span class="section-title">Médicos conectados</span>
+            <span class="section-note" id="doctors-count-note"></span>
           </div>
-          <div id="documents-list" class="records-list">
-            <p class="empty-state">Nenhum exame enviado ainda.</p>
-          </div>
-          <div id="documents-pager" class="pager" hidden>
-            <button type="button" class="pager-btn" id="documents-pager-prev">‹ Anterior</button>
-            <span class="pager-note" id="documents-pager-note">Página 1 de 1</span>
-            <button type="button" class="pager-btn" id="documents-pager-next">Próxima ›</button>
-          </div>
+          <div id="doctors-list" class="records-list"></div>
         </div>
-
-      </div>
-    </main>
-
-    <!-- ───────── Configurações ───────── -->
-    <main class="screen" id="screen-config" data-screen="config" hidden>
-      <div class="screen-head">
-        <h1 class="title">Configurações</h1>
-      </div>
-
-      <div class="screen-body">
-
-        <div class="section">
-          <div class="settings-list">
-            <button type="button" class="settings-row" data-open="meta">
-              <span class="settings-row-label">Meta</span>
-              <span class="settings-row-arrow">›</span>
-            </button>
-            <button type="button" class="settings-row" data-open="modalidades">
-              <span class="settings-row-label">Modalidades</span>
-              <span class="settings-row-arrow">›</span>
-            </button>
-            <button type="button" class="settings-row" data-open="locais">
-              <span class="settings-row-label">Locais</span>
-              <span class="settings-row-arrow">›</span>
-            </button>
-            <button type="button" class="settings-row" data-open="exercicios">
-              <span class="settings-row-label">Exercícios</span>
-              <span class="settings-row-arrow">›</span>
-            </button>
-            <button type="button" class="settings-row" data-open="documentos">
-              <span class="settings-row-label">Exames</span>
-              <span class="settings-row-arrow">›</span>
-            </button>
-            <button type="button" class="settings-row" data-open="usuarios" id="settings-row-usuarios" hidden>
-              <span class="settings-row-label">Usuários</span>
-              <span class="settings-row-arrow">›</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="section account-section">
-          <div class="section-title">Conta</div>
-          <p class="account-email" id="config-account-email"></p>
-          <button type="button" class="export-btn" id="btn-logout-config">Sair</button>
-        </div>
-
       </div>
     </main>
 
@@ -604,12 +711,19 @@
           </label>
           <label class="field goal-field">
             <span class="field-label">E-mail</span>
-            <input type="email" id="input-user-email" inputmode="email" placeholder="email@exemplo.com" />
+            <input type="email" id="input-user-email" inputmode="email" placeholder="email@exemplo.com" aria-describedby="err-input-user-email" />
+            <span class="field-error" id="err-input-user-email" hidden></span>
           </label>
-          <label class="field goal-field">
-            <span class="field-label">Senha inicial (mín. 6 caracteres)</span>
-            <input type="text" id="input-user-password" placeholder="Defina uma senha" />
-          </label>
+          <div class="field goal-field">
+            <label class="field-label" for="input-user-password">Senha provisória (mín. 8 caracteres)</label>
+            <span class="password-wrap">
+              <input type="password" id="input-user-password" autocomplete="new-password" placeholder="Defina ou gere uma senha" aria-describedby="err-input-user-password user-password-hint" />
+              <button type="button" class="password-toggle" data-toggle-password="input-user-password" aria-label="Mostrar senha">Mostrar</button>
+            </span>
+            <button type="button" class="link-btn" id="btn-generate-password">Gerar senha forte</button>
+            <span class="field-hint" id="user-password-hint">A pessoa troca essa senha no primeiro acesso.</span>
+            <span class="field-error" id="err-input-user-password" hidden></span>
+          </div>
           <div class="field goal-field">
             <span class="field-label">Papel</span>
             <div class="role-options" id="role-options">
@@ -617,7 +731,6 @@
               <button type="button" class="role-option" data-role="medico">Médico</button>
             </div>
           </div>
-          <div class="toast" id="user-form-toast" hidden></div>
           <button type="button" class="btn btn-primary goal-save-btn" id="btn-create-user">Cadastrar</button>
         </div>
 
@@ -626,9 +739,7 @@
             <span class="section-title">Usuários cadastrados</span>
             <span class="section-note" id="users-count-note">0 usuários</span>
           </div>
-          <div id="users-list" class="records-list">
-            <p class="empty-state">Carregando usuários…</p>
-          </div>
+          <div id="users-list" class="records-list"></div>
         </div>
 
       </div>
@@ -646,14 +757,24 @@
             <span class="section-title">Selecione um paciente</span>
             <span class="section-note" id="patients-count-note">0 pacientes</span>
           </div>
-          <div id="patients-list" class="records-list">
-            <p class="empty-state">Carregando pacientes…</p>
-          </div>
+          <div id="patients-list" class="records-list"></div>
         </div>
       </div>
 
       <div class="screen-body" id="pacientes-detail-view" hidden>
         <button type="button" class="back-link" id="btn-back-to-patients">‹ Voltar aos pacientes</button>
+
+        <div class="ticket since-card" id="since-card">
+          <div class="since-head">
+            <span class="label" id="since-title">Desde a última visita</span>
+            <select id="since-period" class="since-select" aria-label="Período">
+              <option value="last">Desde a última visita</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+            </select>
+          </div>
+          <div class="since-grid" id="since-grid"></div>
+        </div>
 
         <div class="section">
           <div class="section-head-row">
@@ -704,29 +825,124 @@
     </main>
 
     <!-- ───────── Tab bar ───────── -->
-    <nav class="tabbar" id="tabbar">
+    <nav class="tabbar" id="tabbar" aria-label="Navegação principal">
       <button type="button" class="tab-btn" data-tab="painel">
-        <span class="tab-mark"></span>
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h4v7H4zM10 4h4v16h-4zM16 9h4v11h-4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
         <span>Painel</span>
       </button>
       <button type="button" class="tab-btn" data-tab="registrar">
-        <span class="tab-mark"></span>
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <span>Registrar</span>
       </button>
-      <button type="button" class="tab-btn" data-tab="config">
-        <span class="tab-mark"></span>
-        <span>Config.</span>
+      <button type="button" class="tab-btn" data-tab="progresso">
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8M15 7h6v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Progresso</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="documentos">
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6M10 17h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <span>Exames</span>
       </button>
     </nav>
 
   </div>
 
-  <!-- ───────── Relatório para impressão/PDF (oculto na tela, só aparece
-       ao chamar window.print() — ver .printing-report no CSS) ───────── -->
+  <!-- ───────── Menu da conta (avatar) ───────── -->
+  <div class="sheet-overlay" id="account-menu" hidden>
+    <div class="sheet" role="menu" aria-label="Conta">
+      <div class="sheet-head">
+        <span class="sheet-avatar" id="menu-avatar"></span>
+        <span class="sheet-id">
+          <span class="sheet-name" id="menu-name"></span>
+          <span class="sheet-role" id="menu-role"></span>
+        </span>
+      </div>
+      <button type="button" class="sheet-item" role="menuitem" id="menu-config">Configurações</button>
+      <button type="button" class="sheet-item" role="menuitem" id="menu-privacy">Quem vê meus dados</button>
+      <button type="button" class="sheet-item sheet-item-danger" role="menuitem" id="menu-logout">Sair</button>
+      <button type="button" class="sheet-item sheet-item-muted" role="menuitem" id="menu-close">Fechar</button>
+    </div>
+  </div>
+
+  <!-- ───────── Onboarding (primeiro acesso) ───────── -->
+  <div class="onboarding-overlay" id="onboarding" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" hidden>
+    <div class="onboarding-card">
+      <div class="onboarding-steps" aria-hidden="true">
+        <span class="ob-dot" data-dot="1"></span><span class="ob-dot" data-dot="2"></span><span class="ob-dot" data-dot="3"></span>
+      </div>
+      <h2 class="onboarding-title" id="onboarding-title">Bem-vindo ao PandaFit</h2>
+
+      <div class="ob-step" data-step="1">
+        <p class="ob-text">Quantos treinos por mês você quer fazer? Dá pra mudar depois.</p>
+        <div class="ob-goal-options" id="ob-goal-options">
+          <button type="button" class="ob-chip" data-goal="8">8</button>
+          <button type="button" class="ob-chip" data-goal="12">12</button>
+          <button type="button" class="ob-chip" data-goal="16">16</button>
+          <button type="button" class="ob-chip" data-goal="20">20</button>
+        </div>
+      </div>
+
+      <div class="ob-step" data-step="2" hidden>
+        <p class="ob-text">Quais modalidades você pratica?</p>
+        <div class="ob-types" id="ob-types"></div>
+        <label class="field">
+          <span class="field-label">Outra modalidade (opcional)</span>
+          <input type="text" id="ob-type-extra" placeholder="Ex: Natação" />
+        </label>
+      </div>
+
+      <div class="ob-step" data-step="3" hidden>
+        <p class="ob-text">Qual é o seu peso hoje? É o ponto de partida do gráfico.</p>
+        <label class="field">
+          <span class="field-label">Peso (kg, opcional)</span>
+          <input type="text" id="ob-weight" inputmode="decimal" placeholder="Ex: 78,4" />
+        </label>
+        <span class="field-error" id="err-ob-weight" hidden></span>
+      </div>
+
+      <div class="onboarding-actions">
+        <button type="button" class="modal-btn modal-btn-cancel" id="ob-skip">Pular</button>
+        <button type="button" class="modal-btn modal-btn-primary" id="ob-next">Continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── Comparador antes/depois ───────── -->
+  <div class="modal-overlay" id="compare-modal" role="dialog" aria-modal="true" aria-labelledby="compare-title" hidden>
+    <div class="modal-card compare-card">
+      <h2 class="compare-title" id="compare-title">Antes e depois</h2>
+      <div class="compare-pickers">
+        <label class="field"><span class="field-label">Antes</span><select id="compare-before"></select></label>
+        <label class="field"><span class="field-label">Depois</span><select id="compare-after"></select></label>
+      </div>
+      <div class="compare-stage" id="compare-stage">
+        <img id="compare-img-before" alt="Foto de antes" />
+        <div class="compare-after-clip" id="compare-after-clip"><img id="compare-img-after" alt="Foto de depois" /></div>
+        <div class="compare-divider" id="compare-divider" aria-hidden="true"></div>
+      </div>
+      <input type="range" min="0" max="100" value="50" id="compare-range" class="compare-range" aria-label="Deslize para comparar" />
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-cancel" id="compare-close">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── Resumo de IA (visão do paciente) ───────── -->
+  <div class="modal-overlay" id="ai-summary-modal" role="dialog" aria-modal="true" aria-labelledby="ai-summary-title" hidden>
+    <div class="modal-card">
+      <h2 class="compare-title" id="ai-summary-title">Leitura de apoio por IA</h2>
+      <div class="ai-summary-body" id="ai-summary-body"></div>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-cancel" id="ai-summary-close">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── Relatório para impressão/PDF (fallback: oculto na tela, só
+       aparece ao chamar window.print() — ver .printing-report no CSS) ───────── -->
   <div id="print-report"></div>
 
   <!-- ───────── Confirm modal ───────── -->
-  <div class="modal-overlay" id="confirm-modal" hidden>
+  <div class="modal-overlay" id="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-message" hidden>
     <div class="modal-card">
       <p class="modal-message" id="confirm-modal-message"></p>
       <div class="modal-actions">
@@ -736,8 +952,12 @@
     </div>
   </div>
 
+  <!-- ───────── Toasts globais (acima da tab bar, lidos por leitor de tela) ───────── -->
+  <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
+  <div class="confetti" id="confetti" aria-hidden="true"></div>
+
 </div>
 
-<script type="module" src="assets/app.js?v=31"></script>
+<script type="module" src="assets/app.js?v=32"></script>
 </body>
 </html>

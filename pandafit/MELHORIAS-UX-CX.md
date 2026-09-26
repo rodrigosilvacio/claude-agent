@@ -2,6 +2,23 @@
 
 Revisão feita sobre o código atual (`pandafit/index.html`, `assets/app.js`, `assets/styles.css`, `sw.js`), versão `v31`, em 26/09/2026.
 
+## Status de execução (v32)
+
+Os 35 itens foram implementados na versão `v32` do app. Detalhes técnicos em `README.md` › "Revisão de UX/CX (v32)".
+
+| Onda | Itens | Status |
+|---|---|---|
+| P0 confiança e segurança | 1 a 4 | Entregue |
+| P1 loop principal, navegação, estados | 5 a 19 | Entregue |
+| P2 refinamento e acessibilidade | 20 a 29 | Entregue |
+| CX | 30 a 35 | Entregue |
+
+Pendências fora do código (dependem de configuração do Supabase/Resend):
+
+- Adicionar a URL do app em *Auth › URL Configuration › Redirect URLs* para o link de "Esqueci minha senha" voltar ao PandaFit.
+- Verificar um domínio no Resend para o resumo semanal chegar a todos os usuários (com `onboarding@resend.dev`, só o e-mail dono da conta Resend recebe).
+- Item 34 cobre e-mail; push notification continua fora do escopo (exige VAPID e service worker de push).
+
 ## Resumo executivo
 
 O PandaFit já tem uma base sólida: PWA instalável, dark mode, cache offline, papéis (usuário, médico, admin), metas, conquistas e resumo de exames com IA. O que trava a experiência hoje não é falta de feature, é **fricção no loop principal** (registrar treino e peso) e **arquitetura de informação** (coisas importantes enterradas em Configurações).
