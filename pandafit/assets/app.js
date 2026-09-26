@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=30';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=31';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -2189,7 +2189,7 @@ async function handleViewDocumentClick(path, linkEl) {
     window.open(url, '_blank', 'noopener');
   } catch (err) {
     console.error('Falha ao gerar link do documento', err);
-    showDocumentToast('Não foi possível abrir o documento.');
+    showDocumentToast('Não foi possível abrir o exame.');
   } finally {
     linkEl.textContent = original;
   }
@@ -2689,25 +2689,25 @@ function renderWeights() {
   els.weightsPagerNext.disabled = state.weightsPage >= pageCount - 1;
 }
 
-// ── render: Documentos screen ──
+// ── render: Exames screen ──
 function renderDocuments() {
   if (state.documentsLoading) {
-    els.documentsList.innerHTML = '<p class="empty-state">Carregando documentos…</p>';
+    els.documentsList.innerHTML = '<p class="empty-state">Carregando exames…</p>';
     els.documentsPager.hidden = true;
     return;
   }
 
   if (state.documentsLoadError) {
-    els.documentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os documentos. Recarregue a página.</p>';
+    els.documentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os exames. Recarregue a página.</p>';
     els.documentsPager.hidden = true;
     return;
   }
 
   var sorted = state.documents; // already sorted uploaded_at desc
-  els.documentCountNote.textContent = sorted.length + (sorted.length === 1 ? ' documento' : ' documentos');
+  els.documentCountNote.textContent = sorted.length + (sorted.length === 1 ? ' exame' : ' exames');
 
   if (sorted.length === 0) {
-    els.documentsList.innerHTML = '<p class="empty-state">Nenhum documento enviado ainda.</p>';
+    els.documentsList.innerHTML = '<p class="empty-state">Nenhum exame enviado ainda.</p>';
     els.documentsPager.hidden = true;
     state.documentsPage = 0;
     return;
@@ -2726,7 +2726,7 @@ function renderDocuments() {
       '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
       '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
       '<a class="record-dur doc-view-link" href="#" data-path="' + doc.file_path + '">Ver</a>' +
-      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir documento">' +
+      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir exame">' +
       DELETE_ICON_SVG +
       '</button>' +
       '</div>';
@@ -3497,13 +3497,13 @@ function renderPatientMeasurements(measurements) {
 function renderPatientDocuments(documents) {
   if (documents == null) {
     els.patientDocsSummary.hidden = true;
-    els.patientDocumentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os documentos.</p>';
+    els.patientDocumentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os exames.</p>';
     return;
   }
-  els.patientDocsNote.textContent = documents.length + (documents.length === 1 ? ' documento' : ' documentos');
+  els.patientDocsNote.textContent = documents.length + (documents.length === 1 ? ' exame' : ' exames');
   if (documents.length === 0) {
     els.patientDocsSummary.hidden = true;
-    els.patientDocumentsList.innerHTML = '<p class="empty-state">Nenhum documento enviado.</p>';
+    els.patientDocumentsList.innerHTML = '<p class="empty-state">Nenhum exame enviado.</p>';
     return;
   }
 
@@ -3521,7 +3521,7 @@ function renderPatientDocuments(documents) {
       '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
       '<a class="record-dur doc-view-link" href="#" data-path="' + doc.file_path + '">Ver</a>' +
       '<a class="record-dur doc-download-link" href="#" data-path="' + doc.file_path + '" data-name="' + doc.file_name.replace(/"/g, '&quot;') + '">Baixar</a>' +
-      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir documento">' +
+      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir exame">' +
       DELETE_ICON_SVG +
       '</button>' +
       '</div>' +
@@ -3565,7 +3565,7 @@ async function handleDownloadDocumentClick(path, fileName, linkEl) {
     window.open(url, '_blank', 'noopener');
   } catch (err) {
     console.error('Falha ao gerar link de download', err);
-    showDocumentToast('Não foi possível baixar o documento.');
+    showDocumentToast('Não foi possível baixar o exame.');
   } finally {
     linkEl.textContent = original;
   }
