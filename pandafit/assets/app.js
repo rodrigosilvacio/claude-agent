@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=23';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=24';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -78,6 +78,18 @@ var state = {
   weightsPage: 0,
   deletingWeightId: null,
   editingWeightId: null,
+
+  measurements: [],
+  measurementsLoading: true,
+  measurementsLoadError: false,
+  measurementDateVal: todayISO(),
+  measurementWaistVal: '',
+  measurementBodyFatVal: '',
+  savingMeasurement: false,
+  measurementsPage: 0,
+  deletingMeasurementId: null,
+  editingMeasurementId: null,
+
   documents: [],
   documentsLoading: true,
   documentsLoadError: false,
@@ -256,7 +268,7 @@ function cacheSet(userId, key, value) {
   }
 }
 
-var CACHE_KEYS = ['workouts', 'weights', 'settings', 'workoutTypes', 'locations', 'exerciseCatalog', 'workoutSets'];
+var CACHE_KEYS = ['workouts', 'weights', 'measurements', 'settings', 'workoutTypes', 'locations', 'exerciseCatalog', 'workoutSets'];
 
 function clearUserCache(userId) {
   CACHE_KEYS.forEach(function (key) {
@@ -367,6 +379,48 @@ async function updateWeight(id, patch) {
 async function deleteWeight(id) {
   var { error } = await supabase
     .from('pandafit_weights')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+async function fetchBodyMeasurements(userId, limit) {
+  var { data, error } = await supabase
+    .from('pandafit_body_measurements')
+    .select('id, date, waist_cm, body_fat_pct')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .limit(limit || 500);
+  if (error) throw error;
+  return data;
+}
+
+// Upsert on (user_id, date), mesmo padrão de pandafit_weights.
+async function upsertBodyMeasurement(row) {
+  var payload = Object.assign({ user_id: currentUserId() }, row);
+  var { data, error } = await supabase
+    .from('pandafit_body_measurements')
+    .upsert(payload, { onConflict: 'user_id,date' })
+    .select('id, date, waist_cm, body_fat_pct')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function updateBodyMeasurement(id, patch) {
+  var { data, error } = await supabase
+    .from('pandafit_body_measurements')
+    .update(patch)
+    .eq('id', id)
+    .select('id, date, waist_cm, body_fat_pct')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteBodyMeasurement(id) {
+  var { error } = await supabase
+    .from('pandafit_body_measurements')
     .delete()
     .eq('id', id);
   if (error) throw error;
@@ -823,6 +877,20 @@ var els = {
   weightsPagerNext: $('#weights-pager-next'),
   weightsPagerNote: $('#weights-pager-note'),
 
+  inputMeasurementDate: $('#input-measurement-date'),
+  inputMeasurementWaist: $('#input-measurement-waist'),
+  inputMeasurementBodyFat: $('#input-measurement-body-fat'),
+  btnSaveMeasurement: $('#btn-save-measurement'),
+  btnSaveMeasurementLabel: $('#btn-save-measurement-label'),
+  btnCancelEditMeasurement: $('#btn-cancel-edit-measurement'),
+  measurementToast: $('#measurement-toast'),
+  measurementsList: $('#measurements-list'),
+  measurementCountNote: $('#measurement-count-note'),
+  measurementsPager: $('#measurements-pager'),
+  measurementsPagerPrev: $('#measurements-pager-prev'),
+  measurementsPagerNext: $('#measurements-pager-next'),
+  measurementsPagerNote: $('#measurements-pager-note'),
+
   inputPhotoFile: $('#input-photo-file'),
   btnUploadPhoto: $('#btn-upload-photo'),
   photoToast: $('#photo-toast'),
@@ -871,6 +939,8 @@ var els = {
   patientWeightChartWrap: $('#patient-weight-chart-wrap'),
   patientWeightsNote: $('#patient-weights-note'),
   patientWeightsList: $('#patient-weights-list'),
+  patientMeasurementsNote: $('#patient-measurements-note'),
+  patientMeasurementsList: $('#patient-measurements-list'),
   patientPhotosNote: $('#patient-photos-note'),
   patientPhotosGallery: $('#patient-photos-gallery'),
   patientWorkoutsNote: $('#patient-workouts-note'),
@@ -911,6 +981,7 @@ function makeToaster(el) {
 var showToast = makeToaster(els.toast);
 var showGoalToast = makeToaster(els.goalToast);
 var showWeightToast = makeToaster(els.weightToast);
+var showMeasurementToast = makeToaster(els.measurementToast);
 var showDocumentToast = makeToaster(els.documentToast);
 var showPhotoToast = makeToaster(els.photoToast);
 var showTargetWeightToast = makeToaster(els.targetWeightToast);
@@ -955,6 +1026,11 @@ function resetAppState() {
   state.weights = [];
   state.weightsLoading = true;
   state.weightsLoadError = false;
+  state.measurements = [];
+  state.measurementsLoading = true;
+  state.measurementsLoadError = false;
+  state.measurementsPage = 0;
+  state.editingMeasurementId = null;
   state.documents = [];
   state.documentsLoading = true;
   state.documentsLoadError = false;
@@ -1106,7 +1182,7 @@ function renderActiveTab() {
   if (state.tab === 'modalidades') renderWorkoutTypes();
   if (state.tab === 'locais') renderLocations();
   if (state.tab === 'exercicios') renderExerciseCatalog();
-  if (state.tab === 'registrar' && state.registrarSection === 'peso') { renderWeights(); renderPhotosGallery(); }
+  if (state.tab === 'registrar' && state.registrarSection === 'peso') { renderWeights(); renderMeasurements(); renderPhotosGallery(); }
   if (state.tab === 'documentos') renderDocuments();
 }
 
@@ -1120,7 +1196,7 @@ function setRegistrarSection(section) {
   els.sectionPeso.hidden = section !== 'peso';
   els.saveBarTreino.hidden = section !== 'treino';
   updateEditUI();
-  if (section === 'peso') { renderWeights(); renderPhotosGallery(); }
+  if (section === 'peso') { renderWeights(); renderMeasurements(); renderPhotosGallery(); }
 }
 
 // ── editing an existing workout/weight instead of only insert/delete ──
@@ -1631,6 +1707,224 @@ async function handleDeleteWeightClick(id) {
       renderWeights();
     });
 }
+
+// ── medidas corporais (cintura / % gordura) ──
+els.inputMeasurementDate.addEventListener('change', function (e) {
+  state.measurementDateVal = e.target.value || todayISO();
+});
+els.inputMeasurementWaist.addEventListener('input', function (e) {
+  state.measurementWaistVal = e.target.value;
+});
+els.inputMeasurementBodyFat.addEventListener('input', function (e) {
+  state.measurementBodyFatVal = e.target.value;
+});
+
+els.btnSaveMeasurement.addEventListener('click', function () {
+  if (state.savingMeasurement) return;
+
+  var dateISO = clampDateToToday(state.measurementDateVal || todayISO());
+  var waistRaw = String(state.measurementWaistVal || '').trim();
+  var bodyFatRaw = String(state.measurementBodyFatVal || '').trim();
+  var waist = waistRaw ? parseFloat(waistRaw.replace(',', '.')) : null;
+  var bodyFat = bodyFatRaw ? parseFloat(bodyFatRaw.replace(',', '.')) : null;
+
+  if (waistRaw && (!waist || waist <= 0 || waist >= 300)) {
+    showMeasurementToast('Informe uma cintura válida (entre 0 e 300 cm).');
+    return;
+  }
+  if (bodyFatRaw && (!bodyFat || bodyFat <= 0 || bodyFat >= 100)) {
+    showMeasurementToast('Informe um % de gordura válido (entre 0 e 100).');
+    return;
+  }
+  if (waist == null && bodyFat == null) {
+    showMeasurementToast('Preencha cintura, % de gordura, ou os dois.');
+    return;
+  }
+
+  var editingId = state.editingMeasurementId;
+
+  state.savingMeasurement = true;
+  els.btnSaveMeasurement.disabled = true;
+
+  var op = editingId != null
+    ? updateBodyMeasurement(editingId, { date: dateISO, waist_cm: waist, body_fat_pct: bodyFat })
+    : upsertBodyMeasurement({ date: dateISO, waist_cm: waist, body_fat_pct: bodyFat });
+
+  op
+    .then(function (row) {
+      state.measurements = state.measurements.filter(function (m) { return m.id !== row.id && m.date !== row.date; });
+      state.measurements.push(row);
+      state.measurements.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+      state.measurementsPage = 0;
+      if (editingId != null) {
+        cancelEditMeasurement();
+        showMeasurementToast('Medidas atualizadas.');
+      } else {
+        state.measurementWaistVal = '';
+        state.measurementBodyFatVal = '';
+        showMeasurementToast('Medidas registradas em ' + fmtDayLabel(row.date) + '.');
+      }
+      renderMeasurements();
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar medidas', err);
+      showMeasurementToast('Não foi possível salvar. Tente de novo.');
+    })
+    .finally(function () {
+      state.savingMeasurement = false;
+      els.btnSaveMeasurement.disabled = false;
+    });
+});
+
+function startEditMeasurement(m) {
+  state.editingMeasurementId = m.id;
+  state.measurementDateVal = m.date;
+  state.measurementWaistVal = m.waist_cm != null ? fmtWeight(m.waist_cm) : '';
+  state.measurementBodyFatVal = m.body_fat_pct != null ? fmtWeight(m.body_fat_pct) : '';
+  els.btnCancelEditMeasurement.hidden = false;
+  els.btnSaveMeasurementLabel.textContent = 'Salvar alterações';
+  renderMeasurements();
+}
+
+function cancelEditMeasurement() {
+  state.editingMeasurementId = null;
+  state.measurementDateVal = todayISO();
+  state.measurementWaistVal = '';
+  state.measurementBodyFatVal = '';
+  els.btnCancelEditMeasurement.hidden = true;
+  els.btnSaveMeasurementLabel.textContent = 'Salvar medidas';
+  renderMeasurements();
+}
+
+els.btnCancelEditMeasurement.addEventListener('click', cancelEditMeasurement);
+
+async function handleDeleteMeasurementClick(id) {
+  if (state.deletingMeasurementId) return;
+  var ok = await confirmModal('Excluir este registro de medidas? Essa ação não pode ser desfeita.');
+  if (!ok) return;
+
+  state.deletingMeasurementId = id;
+  deleteBodyMeasurement(id)
+    .then(function () {
+      state.measurements = state.measurements.filter(function (m) { return m.id !== id; });
+      if (state.editingMeasurementId === id) cancelEditMeasurement();
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir medidas', err);
+      showMeasurementToast('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingMeasurementId = null;
+      renderMeasurements();
+    });
+}
+
+// Procura pra trás (registros mais antigos) o valor anterior desse campo —
+// cintura e %gordura podem não estar preenchidos em todo registro.
+function findPrevMeasurementValue(sortedList, fromIndex, field) {
+  for (var j = fromIndex + 1; j < sortedList.length; j++) {
+    if (sortedList[j][field] != null) return sortedList[j][field];
+  }
+  return null;
+}
+
+function measurementDelta(current, previous) {
+  if (previous == null) return { trendClass: '', label: '—' };
+  var diff = current - previous;
+  if (diff > 0.05) return { trendClass: 'weight-up', label: '▲ ' + fmtWeight(diff) };
+  if (diff < -0.05) return { trendClass: 'weight-down', label: '▼ ' + fmtWeight(Math.abs(diff)) };
+  return { trendClass: '', label: '= 0,0' };
+}
+
+function renderMeasurements() {
+  els.inputMeasurementDate.value = state.measurementDateVal;
+  els.inputMeasurementWaist.value = state.measurementWaistVal;
+  els.inputMeasurementBodyFat.value = state.measurementBodyFatVal;
+
+  if (state.measurementsLoading) {
+    els.measurementsList.innerHTML = '<p class="empty-state">Carregando medidas…</p>';
+    els.measurementsPager.hidden = true;
+    return;
+  }
+  if (state.measurementsLoadError) {
+    els.measurementsList.innerHTML = '<p class="empty-state">Não foi possível carregar as medidas. Recarregue a página.</p>';
+    els.measurementsPager.hidden = true;
+    return;
+  }
+
+  var sorted = state.measurements; // already sorted date desc
+  els.measurementCountNote.textContent = sorted.length + (sorted.length === 1 ? ' registro' : ' registros');
+
+  if (sorted.length === 0) {
+    els.measurementsList.innerHTML = '<p class="empty-state">Nenhuma medida registrada ainda.</p>';
+    els.measurementsPager.hidden = true;
+    state.measurementsPage = 0;
+    return;
+  }
+
+  var pageCount = Math.ceil(sorted.length / RECORDS_PAGE_SIZE);
+  if (state.measurementsPage >= pageCount) state.measurementsPage = pageCount - 1;
+  if (state.measurementsPage < 0) state.measurementsPage = 0;
+
+  var start = state.measurementsPage * RECORDS_PAGE_SIZE;
+  var pageItems = sorted.slice(start, start + RECORDS_PAGE_SIZE);
+
+  els.measurementsList.innerHTML = pageItems.map(function (m, i) {
+    var fullIndex = start + i;
+    var waistDelta = m.waist_cm != null
+      ? measurementDelta(m.waist_cm, findPrevMeasurementValue(sorted, fullIndex, 'waist_cm'))
+      : null;
+    var bodyFatDelta = m.body_fat_pct != null
+      ? measurementDelta(m.body_fat_pct, findPrevMeasurementValue(sorted, fullIndex, 'body_fat_pct'))
+      : null;
+
+    return '<div class="record-row has-edit">' +
+      '<span class="record-day">' + fmtDayLabel(m.date) + '</span>' +
+      '<span class="record-mid">' +
+      (m.waist_cm != null ? '<span class="record-type">Cintura ' + fmtWeight(m.waist_cm) + ' cm</span>' : '') +
+      (m.body_fat_pct != null ? '<span class="record-local">Gordura ' + fmtWeight(m.body_fat_pct) + '%</span>' : '') +
+      '</span>' +
+      '<span class="measurement-delta-col">' +
+      (waistDelta ? '<span class="weight-delta ' + waistDelta.trendClass + '">' + waistDelta.label + '</span>' : '') +
+      (bodyFatDelta ? '<span class="weight-delta ' + bodyFatDelta.trendClass + '">' + bodyFatDelta.label + '</span>' : '') +
+      '</span>' +
+      '<button type="button" class="record-edit" data-id="' + m.id + '" aria-label="Editar medidas">' +
+      EDIT_ICON_SVG +
+      '</button>' +
+      '<button type="button" class="record-delete" data-id="' + m.id + '" aria-label="Excluir medidas">' +
+      DELETE_ICON_SVG +
+      '</button>' +
+      '</div>';
+  }).join('');
+
+  els.measurementsList.querySelectorAll('.record-edit').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var m = state.measurements.find(function (x) { return x.id === Number(btn.dataset.id); });
+      if (m) startEditMeasurement(m);
+    });
+  });
+  els.measurementsList.querySelectorAll('.record-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      handleDeleteMeasurementClick(Number(btn.dataset.id));
+    });
+  });
+
+  els.measurementsPager.hidden = pageCount <= 1;
+  els.measurementsPagerNote.textContent = 'Página ' + (state.measurementsPage + 1) + ' de ' + pageCount;
+  els.measurementsPagerPrev.disabled = state.measurementsPage === 0;
+  els.measurementsPagerNext.disabled = state.measurementsPage >= pageCount - 1;
+}
+
+els.measurementsPagerPrev.addEventListener('click', function () {
+  if (state.measurementsPage > 0) {
+    state.measurementsPage -= 1;
+    renderMeasurements();
+  }
+});
+els.measurementsPagerNext.addEventListener('click', function () {
+  state.measurementsPage += 1;
+  renderMeasurements();
+});
 
 var PHOTOS_PAGE_SIZE = 6;
 
@@ -2865,11 +3159,13 @@ els.btnBackToPatients.addEventListener('click', function () {
 function loadPatientDetail(patientId) {
   els.patientDocumentsList.innerHTML = '<p class="empty-state">Carregando…</p>';
   els.patientWeightsList.innerHTML = '<p class="empty-state">Carregando…</p>';
+  els.patientMeasurementsList.innerHTML = '<p class="empty-state">Carregando…</p>';
   els.patientPhotosGallery.innerHTML = '<p class="empty-state">Carregando…</p>';
   els.patientWorkoutsList.innerHTML = '<p class="empty-state">Carregando…</p>';
   els.patientWeightChartWrap.innerHTML = '';
   els.patientDocsNote.textContent = '';
   els.patientWeightsNote.textContent = '';
+  els.patientMeasurementsNote.textContent = '';
   els.patientPhotosNote.textContent = '';
   els.patientWorkoutsNote.textContent = '';
 
@@ -2879,13 +3175,47 @@ function loadPatientDetail(patientId) {
     fetchWorkouts(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
     fetchWorkoutSets(patientId).catch(function () { return {}; }),
     fetchProgressPhotos(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
+    fetchBodyMeasurements(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
   ]).then(function (results) {
-    state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2], sets: results[3], photos: results[4] };
+    state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2], sets: results[3], photos: results[4], measurements: results[5] };
     renderPatientDocuments(results[0]);
     renderPatientWeights(results[1]);
     renderPatientWorkouts(results[2], results[3]);
     renderPatientPhotos(results[4]);
+    renderPatientMeasurements(results[5]);
   });
+}
+
+// Somente leitura — mesmo padrão de renderPatientWeights.
+function renderPatientMeasurements(measurements) {
+  if (measurements == null) {
+    els.patientMeasurementsList.innerHTML = '<p class="empty-state">Não foi possível carregar as medidas.</p>';
+    return;
+  }
+  els.patientMeasurementsNote.textContent = measurements.length + (measurements.length === 1 ? ' registro' : ' registros');
+  if (measurements.length === 0) {
+    els.patientMeasurementsList.innerHTML = '<p class="empty-state">Nenhuma medida registrada.</p>';
+    return;
+  }
+  els.patientMeasurementsList.innerHTML = measurements.map(function (m, i) {
+    var waistDelta = m.waist_cm != null
+      ? measurementDelta(m.waist_cm, findPrevMeasurementValue(measurements, i, 'waist_cm'))
+      : null;
+    var bodyFatDelta = m.body_fat_pct != null
+      ? measurementDelta(m.body_fat_pct, findPrevMeasurementValue(measurements, i, 'body_fat_pct'))
+      : null;
+    return '<div class="record-row">' +
+      '<span class="record-day">' + fmtDayLabel(m.date) + '</span>' +
+      '<span class="record-mid">' +
+      (m.waist_cm != null ? '<span class="record-type">Cintura ' + fmtWeight(m.waist_cm) + ' cm</span>' : '') +
+      (m.body_fat_pct != null ? '<span class="record-local">Gordura ' + fmtWeight(m.body_fat_pct) + '%</span>' : '') +
+      '</span>' +
+      '<span class="measurement-delta-col">' +
+      (waistDelta ? '<span class="weight-delta ' + waistDelta.trendClass + '">' + waistDelta.label + '</span>' : '') +
+      (bodyFatDelta ? '<span class="weight-delta ' + bodyFatDelta.trendClass + '">' + bodyFatDelta.label + '</span>' : '') +
+      '</span>' +
+      '</div>';
+  }).join('');
 }
 
 function renderPatientDocuments(documents) {
@@ -3118,6 +3448,8 @@ function startOwnData() {
   els.inputDate.max = todayISO();
   els.inputWeightDate.value = state.weightDateVal;
   els.inputWeightDate.max = todayISO();
+  els.inputMeasurementDate.value = state.measurementDateVal;
+  els.inputMeasurementDate.max = todayISO();
   startTimerLoop();
   renderRegistrar();
   renderActiveTab();
@@ -3138,6 +3470,10 @@ function startOwnData() {
   loadWithCache(userId, 'weights', fetchWeights(userId),
     function (rows) { state.weights = rows; state.weightsLoading = false; },
     { onLoadError: function () { state.weightsLoading = false; state.weightsLoadError = true; } });
+
+  loadWithCache(userId, 'measurements', fetchBodyMeasurements(userId),
+    function (rows) { state.measurements = rows; state.measurementsLoading = false; },
+    { onLoadError: function () { state.measurementsLoading = false; state.measurementsLoadError = true; } });
 
   fetchDocuments(userId)
     .then(function (rows) {

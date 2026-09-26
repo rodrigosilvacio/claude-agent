@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=23" />
+<link rel="stylesheet" href="assets/styles.css?v=24" />
 </head>
 <body>
 
@@ -249,6 +249,42 @@
             <button type="button" class="pager-btn" id="weights-pager-prev">‹ Anterior</button>
             <span class="pager-note" id="weights-pager-note">Página 1 de 1</span>
             <button type="button" class="pager-btn" id="weights-pager-next">Próxima ›</button>
+          </div>
+        </div>
+
+        <div class="ticket goal-card">
+          <div class="label">Medidas corporais</div>
+          <label class="field goal-field">
+            <span class="field-label">Data</span>
+            <input type="date" id="input-measurement-date" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">Cintura (cm)</span>
+            <input type="text" id="input-measurement-waist" inputmode="decimal" placeholder="Ex: 82,5" />
+          </label>
+          <label class="field goal-field">
+            <span class="field-label">% de gordura</span>
+            <input type="text" id="input-measurement-body-fat" inputmode="decimal" placeholder="Ex: 18,0" />
+          </label>
+          <div class="toast" id="measurement-toast" hidden></div>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-measurement">
+            <span id="btn-save-measurement-label">Salvar medidas</span>
+          </button>
+          <button type="button" class="edit-cancel-link" id="btn-cancel-edit-measurement" hidden>Cancelar edição</button>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <span class="section-title">Medidas — histórico</span>
+            <span class="section-note" id="measurement-count-note">0 registros</span>
+          </div>
+          <div id="measurements-list" class="records-list">
+            <p class="empty-state">Nenhuma medida registrada ainda.</p>
+          </div>
+          <div id="measurements-pager" class="pager" hidden>
+            <button type="button" class="pager-btn" id="measurements-pager-prev">‹ Anterior</button>
+            <span class="pager-note" id="measurements-pager-note">Página 1 de 1</span>
+            <button type="button" class="pager-btn" id="measurements-pager-next">Próxima ›</button>
           </div>
         </div>
 
@@ -616,6 +652,14 @@
 
         <div class="section">
           <div class="section-head-row">
+            <span class="section-title">Medidas corporais</span>
+            <span class="section-note" id="patient-measurements-note"></span>
+          </div>
+          <div id="patient-measurements-list" class="records-list"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
             <span class="section-title">Fotos de progresso</span>
             <span class="section-note" id="patient-photos-note"></span>
           </div>
@@ -663,6 +707,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=23"></script>
+<script type="module" src="assets/app.js?v=24"></script>
 </body>
 </html>

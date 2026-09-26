@@ -1265,6 +1265,15 @@ input[type="file"]::file-selector-button {
 .weight-delta.weight-up { background: var(--bad-bg); color: var(--bad); }
 .weight-delta.weight-down { background: var(--good-bg); color: var(--good); }
 
+/* ── body measurements (cintura/%gordura) — up to two stacked deltas,
+   since a record row can carry either metric or both ── */
+.measurement-delta-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
 /* ── documents ── */
 .doc-view-link,
 .doc-download-link {
