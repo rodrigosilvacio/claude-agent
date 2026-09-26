@@ -207,10 +207,12 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   `pandafit_usuarios` — **nunca** mexe na senha existente, porque a mesma
   conta pode logar em outro app. Revogar remove só a linha de
   `pandafit_usuarios` (nunca a conta em `auth.users`, pelo mesmo motivo).
-  Cada paciente (`usuario`) da lista mostra uma linha de chips, um por
-  médico cadastrado — clicar liga/desliga o vínculo (N:N, um paciente pode
-  ter vários médicos e vice-versa) via a ação `set_link` da mesma edge
-  function, que grava em `pandafit_medico_pacientes`
+  Cada paciente da lista — `usuario`, mas também `admin` (ele também
+  registra os próprios treinos/peso, só não pode ser outro `medico`) —
+  mostra uma linha de chips, um por médico cadastrado — clicar liga/desliga
+  o vínculo (N:N, um paciente pode ter vários médicos e vice-versa) via a
+  ação `set_link` da mesma edge function, que grava em
+  `pandafit_medico_pacientes`
   (`0057_pandafit_medico_paciente_vinculo.sql`). Esse vínculo é o que
   controla o que cada médico enxerga — ver bullet **medico** abaixo.
 - **medico**: sem tabbar — cai direto numa tela **Pacientes**, lista de

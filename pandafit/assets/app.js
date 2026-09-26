@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=27';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=28';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -3168,7 +3168,10 @@ function renderUsers() {
 
     // Vínculo paciente↔médico: cada médico é um chip que liga/desliga o
     // acesso dele aos dados deste paciente (ver pandafit_medico_pacientes).
-    if (u.role === 'usuario') {
+    // Inclui admin: a conta admin também registra os próprios treinos/peso
+    // (ela usa o app como usuario também, ver README) e pode ser
+    // acompanhada por um médico como qualquer outro paciente.
+    if (u.role === 'usuario' || u.role === 'admin') {
       var linkedIds = state.userLinks
         .filter(function (l) { return l.usuario_id === u.id; })
         .map(function (l) { return l.medico_id; });
@@ -3263,10 +3266,14 @@ function loadPatients() {
   state.patientsLoading = true;
   state.patientsLoadError = false;
   renderPatientsList();
+  // Não filtra por role = 'usuario': o admin também pode ser paciente de um
+  // médico (ele também registra os próprios treinos/peso, ver README). A
+  // RLS de pandafit_usuarios já restringe o que volta aqui a quem está
+  // vinculado a este médico — só precisa excluir outro médico da lista.
   supabase
     .from('pandafit_usuarios')
-    .select('id, email, nome')
-    .eq('role', 'usuario')
+    .select('id, email, nome, role')
+    .neq('role', 'medico')
     .then(function (res) {
       if (res.error) throw res.error;
       state.patients = res.data;
