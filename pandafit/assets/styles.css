@@ -1281,6 +1281,36 @@ input[type="file"]::file-selector-button {
   font-weight: 600;
 }
 
+/* ── filtro de data (histórico de peso) ── */
+.date-filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.date-filter-field {
+  flex: 1;
+  min-width: 0;
+}
+.date-filter-field input[type="date"] {
+  padding: 8px 8px;
+  font-size: 14px;
+}
+
+.date-filter-clear {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 0;
+  background: transparent;
+  padding: 9px 2px;
+  font: 600 11px/1 "Inter", sans-serif;
+  letter-spacing: 0.04em;
+  color: var(--accent-text);
+  flex: none;
+}
+
 /* ── weight tracking (Peso) ── */
 .weight-value {
   font: 500 14px/1.25 "Inter", sans-serif;

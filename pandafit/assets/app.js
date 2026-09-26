@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=29';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=30';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -79,6 +79,8 @@ var state = {
   weightsPage: 0,
   deletingWeightId: null,
   editingWeightId: null,
+  weightFilterFrom: '',
+  weightFilterTo: '',
 
   measurements: [],
   measurementsLoading: true,
@@ -909,6 +911,9 @@ var els = {
   btnSaveWeightLabel: $('#btn-save-weight-label'),
   weightToast: $('#weight-toast'),
   weightChartWrap: $('#weight-chart-wrap'),
+  inputWeightFilterFrom: $('#input-weight-filter-from'),
+  inputWeightFilterTo: $('#input-weight-filter-to'),
+  btnClearWeightFilter: $('#btn-clear-weight-filter'),
   weightsList: $('#weights-list'),
   weightCountNote: $('#weight-count-note'),
   weightsPager: $('#weights-pager'),
@@ -1065,6 +1070,8 @@ function resetAppState() {
   state.weights = [];
   state.weightsLoading = true;
   state.weightsLoadError = false;
+  state.weightFilterFrom = '';
+  state.weightFilterTo = '';
   state.measurements = [];
   state.measurementsLoading = true;
   state.measurementsLoadError = false;
@@ -1352,6 +1359,23 @@ els.weightsPagerPrev.addEventListener('click', function () {
 });
 els.weightsPagerNext.addEventListener('click', function () {
   state.weightsPage += 1;
+  renderWeights();
+});
+
+els.inputWeightFilterFrom.addEventListener('change', function (e) {
+  state.weightFilterFrom = e.target.value;
+  state.weightsPage = 0;
+  renderWeights();
+});
+els.inputWeightFilterTo.addEventListener('change', function (e) {
+  state.weightFilterTo = e.target.value;
+  state.weightsPage = 0;
+  renderWeights();
+});
+els.btnClearWeightFilter.addEventListener('click', function () {
+  state.weightFilterFrom = '';
+  state.weightFilterTo = '';
+  state.weightsPage = 0;
   renderWeights();
 });
 
@@ -2561,38 +2585,57 @@ function buildWeightChartHTML(weights) {
     '</div>';
 }
 
-function renderWeightChart() {
+function renderWeightChart(weights) {
   var wrap = els.weightChartWrap;
   if (state.weightsLoading || state.weightsLoadError) {
     wrap.innerHTML = '';
     return;
   }
-  wrap.innerHTML = buildWeightChartHTML(state.weights);
+  wrap.innerHTML = buildWeightChartHTML(weights);
+}
+
+// Filtro "De/Até" do histórico de peso — aplica no cliente sobre o que já
+// está carregado, sem consulta extra.
+function filterWeightsByDate(list) {
+  var from = state.weightFilterFrom;
+  var to = state.weightFilterTo;
+  if (!from && !to) return list;
+  return list.filter(function (w) {
+    return (!from || w.date >= from) && (!to || w.date <= to);
+  });
 }
 
 // ── render: Peso screen ──
 function renderWeights() {
   els.inputWeightDate.value = state.weightDateVal;
   els.inputWeightValue.value = state.weightVal;
-  renderWeightChart();
+  els.inputWeightFilterFrom.value = state.weightFilterFrom;
+  els.inputWeightFilterTo.value = state.weightFilterTo;
+  els.btnClearWeightFilter.hidden = !state.weightFilterFrom && !state.weightFilterTo;
 
   if (state.weightsLoading) {
     els.weightsList.innerHTML = '<p class="empty-state">Carregando pesos…</p>';
     els.weightsPager.hidden = true;
+    renderWeightChart([]);
     return;
   }
 
   if (state.weightsLoadError) {
     els.weightsList.innerHTML = '<p class="empty-state">Não foi possível carregar os pesos. Recarregue a página.</p>';
     els.weightsPager.hidden = true;
+    renderWeightChart([]);
     return;
   }
 
-  var sorted = state.weights; // already sorted date desc
+  var sorted = filterWeightsByDate(state.weights); // já ordenado por data desc
+  var filterActive = !!(state.weightFilterFrom || state.weightFilterTo);
+  renderWeightChart(sorted);
   els.weightCountNote.textContent = sorted.length + (sorted.length === 1 ? ' registro' : ' registros');
 
   if (sorted.length === 0) {
-    els.weightsList.innerHTML = '<p class="empty-state">Nenhum peso registrado ainda.</p>';
+    els.weightsList.innerHTML = '<p class="empty-state">' +
+      (filterActive ? 'Nenhum peso registrado nesse período.' : 'Nenhum peso registrado ainda.') +
+      '</p>';
     els.weightsPager.hidden = true;
     state.weightsPage = 0;
     return;
@@ -3718,6 +3761,8 @@ function startOwnData() {
   els.inputDate.max = todayISO();
   els.inputWeightDate.value = state.weightDateVal;
   els.inputWeightDate.max = todayISO();
+  els.inputWeightFilterFrom.max = todayISO();
+  els.inputWeightFilterTo.max = todayISO();
   els.inputMeasurementDate.value = state.measurementDateVal;
   els.inputMeasurementDate.max = todayISO();
   startTimerLoop();

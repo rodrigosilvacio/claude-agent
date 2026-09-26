@@ -305,7 +305,11 @@ descrita acima.
   tendência dos últimos 30 pesos registrados — some se houver menos de 2
   registros — e o histórico com a variação em relação ao registro anterior,
   colorida — vermelho (`▲`) quando o peso subiu, verde (`▼`) quando caiu,
-  neutro (`=`) quando ficou igual. Ambas paginadas de 5 em 5, com edição
+  neutro (`=`) quando ficou igual. O histórico de peso tem um filtro de
+  data **De/Até** (aplicado no cliente sobre o que já está carregado, sem
+  consulta extra) — o gráfico de tendência também respeita o filtro, então
+  reduzir o intervalo mostra só aquele período tanto na lista quanto no
+  desenho da linha; "Limpar" volta a mostrar tudo. Ambas paginadas de 5 em 5, com edição
   (lápis) além da exclusão em cada linha: clicar em editar preenche o
   formulário com os dados do registro, troca "Registrar" por "Editar" no
   título e no botão de salvar, mostra um link "Cancelar edição" e, no caso
