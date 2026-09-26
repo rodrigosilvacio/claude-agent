@@ -1,13 +1,13 @@
 // Basic offline app-shell cache. Bump CACHE_NAME (and the file list below)
 // every time the ?v=N of styles.css/app.js/supabaseClient.js changes, so
 // the old versioned URLs get dropped instead of piling up forever.
-var CACHE_NAME = 'pandafit-v33';
+var CACHE_NAME = 'pandafit-v34';
 var APP_SHELL = [
   './index.html',
   './manifest.json',
-  './assets/styles.css?v=33',
-  './assets/app.js?v=33',
-  './assets/supabaseClient.js?v=33',
+  './assets/styles.css?v=34',
+  './assets/app.js?v=34',
+  './assets/supabaseClient.js?v=34',
   './assets/icon-192.png',
   './assets/icon-512.png',
 ];
