@@ -209,17 +209,22 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   `pandafit_usuarios` (nunca a conta em `auth.users`, pelo mesmo motivo).
   Cada paciente da lista — `usuario`, mas também `admin` (ele também
   registra os próprios treinos/peso, só não pode ser outro `medico`) —
-  mostra uma linha de chips, um por médico cadastrado — clicar liga/desliga
-  o vínculo (N:N, um paciente pode ter vários médicos e vice-versa) via a
-  ação `set_link` da mesma edge function, que grava em
-  `pandafit_medico_pacientes`
-  (`0057_pandafit_medico_paciente_vinculo.sql`). Esse vínculo é o que
-  controla o que cada médico enxerga — ver bullet **medico** abaixo.
+  mostra uma linha de chips, um por médico cadastrado, e cada `medico`
+  mostra a mesma linha na direção oposta (um chip por paciente elegível) —
+  clicar em qualquer um liga/desliga o vínculo (N:N, um paciente pode ter
+  vários médicos e vice-versa) via a ação `set_link` da mesma edge
+  function, que grava em `pandafit_medico_pacientes`
+  (`0057_pandafit_medico_paciente_vinculo.sql`). Ter os chips nos dois
+  sentidos é o que permite conectar o primeiro paciente já na hora de
+  cadastrar um médico novo, sem precisar ir linha por linha de paciente.
+  Esse vínculo é o que controla o que cada médico enxerga — ver bullet
+  **medico** abaixo.
 - **medico**: sem tabbar — cai direto numa tela **Pacientes**, lista de
-  contas com `role = 'usuario'` **e vinculadas a esse médico** (um paciente
-  só aparece depois que o admin conecta os dois em Usuários — antes desse
-  vínculo existir, todo médico enxergava todo mundo, o que só fazia sentido
-  com um médico só no sistema); ao selecionar uma, vê o gráfico de
+  contas (`usuario` ou `admin`, nunca outro `medico`) **vinculadas a esse
+  médico** (um paciente só aparece depois que o admin conecta os dois em
+  Usuários — antes desse vínculo existir, todo médico enxergava todo
+  mundo, o que só fazia sentido com um médico só no sistema); ao
+  selecionar uma, vê o gráfico de
   tendência de peso, o histórico de peso, as medidas corporais (cintura/%
   gordura, também só leitura) e os treinos mais recentes
   daquele paciente (somente leitura, sem editar/excluir) e a seção
@@ -227,7 +232,16 @@ mesmo projeto nunca enxerga dado nenhum do PandaFit.
   recente), link **Baixar** (signed URL com download forçado, em vez de só
   abrir numa aba) além do **Ver**, e exclusão — o único ponto onde o médico
   pode apagar algo do paciente, pra tirar um exame enviado errado ou já
-  obsoleto (ver `0053_pandafit_medico_pode_excluir_documentos.sql`); e a
+  obsoleto (ver `0053_pandafit_medico_pode_excluir_documentos.sql`). Cada
+  exame PDF/JPG/PNG também ganha um botão **Resumo com IA**, que chama a
+  edge function `pandafit-analyze-document`: ela envia o arquivo pra API
+  da Anthropic (Claude) pedir uma leitura de apoio (tipo de exame,
+  achados principais, valores fora da faixa de referência), sempre
+  terminando com o aviso de que é suporte por IA e a interpretação
+  clínica é do médico responsável. O resultado fica salvo por documento
+  (`pandafit_document_ai_summaries`) pra não gerar — nem gastar na API —
+  de novo se o médico reabrir o mesmo exame
+  (`0058_pandafit_resumo_ia_documentos.sql`); e a
   galeria de **fotos de progresso** do paciente, só leitura (sem download
   forçado nem exclusão — diferente de Documentos, fotos não são documento
   médico, então o médico só acompanha, ver

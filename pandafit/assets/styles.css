@@ -1317,6 +1317,48 @@ input[type="file"]::file-selector-button {
   display: inline-block;
 }
 
+/* ── resumo de exame por IA (só médico) ── */
+.doc-ai-row {
+  padding: 0 0 11px;
+  border-top: none;
+}
+
+.doc-ai-btn {
+  appearance: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  padding: 6px 12px;
+  font: 600 11px/1 "Inter", sans-serif;
+}
+.doc-ai-btn:disabled {
+  opacity: 0.6;
+}
+
+.doc-ai-result {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  border: 1px solid var(--line-soft);
+}
+
+.doc-ai-text {
+  margin: 0;
+  font: 400 12.5px/1.55 "Inter", sans-serif;
+  color: var(--ink);
+  white-space: normal;
+}
+
+.doc-ai-error {
+  margin: 0;
+  font: 400 12.5px/1.4 "Inter", sans-serif;
+  color: var(--bad);
+}
+
 /* ── confirm modal ── */
 .modal-overlay {
   position: fixed;
