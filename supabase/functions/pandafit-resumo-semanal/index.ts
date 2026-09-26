@@ -89,13 +89,17 @@ Deno.serve(async (req: Request) => {
         .maybeSingle()
       if (!usuario?.email) { resultado.pulados++; continue }
 
-      const [{ data: treinosSemana }, { data: treinosMes }, { data: pesos }] = await Promise.all([
+      const [{ data: treinosSemana }, { data: treinosMes }, { data: pesos }, { data: treinosAtual }] = await Promise.all([
         admin.from("pandafit_workouts").select("date, type, minutes")
           .eq("user_id", s.user_id).gte("date", inicio).lte("date", fim).order("date"),
         admin.from("pandafit_workouts").select("id", { count: "exact" })
           .eq("user_id", s.user_id).gte("date", inicioMes).lte("date", hojeIso),
         admin.from("pandafit_weights").select("date, weight_kg")
           .eq("user_id", s.user_id).order("date", { ascending: false }).limit(8),
+        // Semana corrente até hoje: o resumo fala da semana passada, mas
+        // mostrar só isso quando a pessoa já treinou nesta semana confunde.
+        admin.from("pandafit_workouts").select("date")
+          .eq("user_id", s.user_id).gt("date", fim).lte("date", hojeIso),
       ])
 
       const treinos = treinosSemana ?? []
@@ -108,7 +112,7 @@ Deno.serve(async (req: Request) => {
 
       const linhasTreino = treinos.length
         ? treinos.map((t) => `<li>${fmtDia(t.date)} · ${escapeHtml(t.type)} · ${t.minutes} min</li>`).join("")
-        : "<li>Nenhum treino registrado nesta semana.</li>"
+        : "<li>Nenhum treino registrado nessa semana.</li>"
 
       let blocoPeso = "<p>Nenhum peso registrado ainda.</p>"
       if (ultimoPeso) {
@@ -123,14 +127,22 @@ Deno.serve(async (req: Request) => {
         blocoPeso += ".</p>"
       }
 
-      const primeiroNome = (usuario.nome || "").split(" ")[0] || "Olá"
+      const primeiroNome = (usuario.nome || "").split(" ")[0]
+      const saudacao = primeiroNome ? `${escapeHtml(primeiroNome)}, na` : "Na"
+      const duracao = minutos
+        ? ` (${Math.floor(minutos / 60)}h ${String(minutos % 60).padStart(2, "0")})`
+        : ""
+      const nAtual = treinosAtual?.length ?? 0
+      const blocoAtual = nAtual
+        ? `<p style="background:#f0fdf4;color:#15803d;padding:10px 12px;border-radius:8px">Nesta semana, até hoje: <strong>${nAtual} ${nAtual === 1 ? "treino" : "treinos"}</strong>. Boa!</p>`
+        : ""
       const html = `
         <div style="font-family:Inter,Arial,sans-serif;max-width:520px;margin:auto;color:#0f172a">
-          <h2 style="margin:0 0 4px">🐼 Seu resumo da semana</h2>
-          <p style="color:#475569;margin:0 0 16px">${fmtDia(inicio)} a ${fmtDia(fim)}</p>
-          <p>${escapeHtml(primeiroNome)}, você treinou <strong>${treinos.length} ${treinos.length === 1 ? "vez" : "vezes"}</strong>
-          (${Math.floor(minutos / 60)}h ${String(minutos % 60).padStart(2, "0")}).</p>
+          <h2 style="margin:0 0 4px">🐼 Resumo da semana passada</h2>
+          <p style="color:#475569;margin:0 0 16px">Segunda ${fmtDia(inicio)} a domingo ${fmtDia(fim)}</p>
+          <p>${saudacao} semana passada você treinou <strong>${treinos.length} ${treinos.length === 1 ? "vez" : "vezes"}</strong>${duracao}.</p>
           <ul>${linhasTreino}</ul>
+          ${blocoAtual}
           <p>No mês: <strong>${noMes} de ${meta}</strong> treinos.
           ${faltam === 0 ? "Meta do mês batida! 🎉" : `Faltam ${faltam} para bater a meta.`}</p>
           ${blocoPeso}
@@ -144,7 +156,7 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({
           from: RESEND_FROM,
           to: [usuario.email],
-          subject: `PandaFit · ${treinos.length} ${treinos.length === 1 ? "treino" : "treinos"} na semana`,
+          subject: `PandaFit · semana de ${fmtDia(inicio)} a ${fmtDia(fim)}: ${treinos.length} ${treinos.length === 1 ? "treino" : "treinos"}`,
           html,
         }),
       })
