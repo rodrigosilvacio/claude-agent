@@ -164,6 +164,14 @@ Deno.serve(async (req: Request) => {
     if (!response.ok) {
       const errText = await response.text()
       console.error("Anthropic API error:", response.status, errText)
+      // 401/403 = chave da API inválida ou sem permissão: é configuração,
+      // não instabilidade — "tente de novo" só faria o médico insistir à toa.
+      if (response.status === 401 || response.status === 403) {
+        return json({ error: "O resumo por IA está indisponível no momento (configuração do serviço). Avise o administrador do PandaFit." }, 503)
+      }
+      if (response.status === 429 || response.status === 529) {
+        return json({ error: "O serviço de IA está sobrecarregado. Tente de novo em alguns minutos." }, 503)
+      }
       return json({ error: "Falha ao gerar o resumo. Tente novamente em instantes." }, 502)
     }
 

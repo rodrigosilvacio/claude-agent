@@ -1,4 +1,9 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=31';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=33';
+
+// Link de "esqueci minha senha": o Supabase volta pra cá com
+// "#...type=recovery" no hash. Lido aqui, no topo do módulo, porque o
+// supabase-js limpa o hash assim que termina de processar a sessão.
+var RECOVERY_FROM_URL = /type=recovery/.test(window.location.hash) || /type=recovery/.test(window.location.search);
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -10,11 +15,14 @@ var MAX_MONTH_OFFSET = 60;
 var MAX_STREAK_LOOKBACK = 240;
 var WEIGHT_CHART_MAX_POINTS = 30;
 var PATIENT_RECENT_LIMIT = 20;
+var PATIENT_SINCE_LIMIT = 200;
 var SIGNED_URL_TTL_SECONDS = 300;
+var UNDO_WINDOW_MS = 5000;
+var MIN_PASSWORD_LENGTH = 8;
 
 // Modalidades e locais eram uma lista fixa (WORKOUT_TYPES) e um histórico
 // calculado na hora — agora são catálogos por usuário (pandafit_workout_types
-// / pandafit_locations), carregados em startOwnData() e geridos em
+// / pandafit_locations), carregados em loadOwnData() e geridos em
 // Configurações > Modalidades / Locais.
 var DEFAULT_WORKOUT_TYPES = [
   { name: 'Musculação', hint: 'força' },
@@ -23,9 +31,10 @@ var DEFAULT_WORKOUT_TYPES = [
 ];
 
 var MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+var MONTHS_FULL_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
-var DELETE_ICON_SVG = '<svg width="15" height="16" viewBox="0 0 15 16" fill="none"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-var EDIT_ICON_SVG = '<svg width="15" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.3 2.3a1 1 0 011.4 0l1 1a1 1 0 010 1.4l-7.6 7.6-3 .7.7-3 7.5-7.7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+var DELETE_ICON_SVG = '<svg width="16" height="17" viewBox="0 0 15 16" fill="none" aria-hidden="true"><path d="M1 4h13M5.5 4V2a1 1 0 011-1h2a1 1 0 011 1v2m2 0v9a1.5 1.5 0 01-1.5 1.5h-6A1.5 1.5 0 013 13V4h9zM6 7.3v4M9 7.3v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var EDIT_ICON_SVG = '<svg width="16" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.3 2.3a1 1 0 011.4 0l1 1a1 1 0 010 1.4l-7.6 7.6-3 .7.7-3 7.5-7.7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>';
 
 // ── state ──
 var state = {
@@ -33,12 +42,11 @@ var state = {
   profile: null, // { id, email, nome, role }
   loginLoading: false,
   offlineMode: false,
+  passwordMode: null, // null | 'recovery' | 'first' — tela de nova senha
 
   tab: 'painel',
   registrarSection: 'treino',
   mode: 'manual',
-  running: false,
-  secs: 0,
   type: '',
   local: '',
   workoutTypes: [],
@@ -61,12 +69,12 @@ var state = {
   loading: true,
   loadError: false,
   saving: false,
-  recordsPage: 0,
-  deletingId: null,
+  recordsPages: 1,
+  dayFilter: null, // 'YYYY-MM-DD' quando um dia do calendário está selecionado
   editingWorkoutId: null,
   painelMonthOffset: 0,
-  dismissedReminders: {},
   monthlyGoal: DEFAULT_MONTHLY_GOAL,
+  weeklySummaryEmail: false,
   savingGoal: false,
   targetWeight: null,
   savingTargetWeight: false,
@@ -76,8 +84,7 @@ var state = {
   weightDateVal: todayISO(),
   weightVal: '',
   savingWeight: false,
-  weightsPage: 0,
-  deletingWeightId: null,
+  weightsPages: 1,
   editingWeightId: null,
   weightFilterFrom: '',
   weightFilterTo: '',
@@ -89,24 +96,27 @@ var state = {
   measurementWaistVal: '',
   measurementBodyFatVal: '',
   savingMeasurement: false,
-  measurementsPage: 0,
-  deletingMeasurementId: null,
+  measurementsPages: 1,
   editingMeasurementId: null,
 
   documents: [],
   documentsLoading: true,
   documentsLoadError: false,
   uploadingDocument: false,
-  documentsPage: 0,
+  documentsPages: 1,
   deletingDocumentId: null,
+  aiSummaries: {}, // { [document_id]: { summary, generated_at } } — leitura de IA feita pelo médico
 
   photos: [],
   photosLoading: true,
   photosLoadError: false,
   uploadingPhoto: false,
-  photosPage: 0,
+  photosPages: 1,
   deletingPhotoId: null,
-  photoSignedUrls: {}, // { [file_path]: signedUrl } — só da página atual da galeria
+
+  doctors: [],
+  doctorsLoading: true,
+  doctorsLoadError: false,
 
   // admin: Usuários
   users: [],
@@ -122,12 +132,12 @@ var state = {
   patientsLoading: true,
   patientsLoadError: false,
   selectedPatient: null,
-  patientDetail: null, // { workouts, weights, documents, loading, loadError }
+  patientDetail: null, // { workouts, weights, documents, sets, photos, measurements }
+  patientPrevVisit: null, // ISO da visita anterior deste médico a este paciente
   deletingPatientDocumentId: null,
 };
 var timerHandle = null;
 
-// ── helpers ──
 function pad(n) { return String(n).padStart(2, '0'); }
 
 function todayISO() {
@@ -333,7 +343,7 @@ async function deleteWorkout(id) {
 async function fetchSettings(userId) {
   var { data, error } = await supabase
     .from('pandafit_settings')
-    .select('monthly_goal, target_weight_kg')
+    .select('monthly_goal, target_weight_kg, weekly_summary_email')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
@@ -462,7 +472,7 @@ async function uploadDocument(file) {
     .from('pandafit_documents')
     .insert({
       user_id: userId,
-      file_name: file.name,
+      file_name: safeFileName(file.name),
       file_path: path,
       file_type: file.type || 'application/octet-stream',
       file_size: file.size,
@@ -528,7 +538,7 @@ async function uploadProgressPhoto(file, takenAt) {
     .from('pandafit_progress_photos')
     .insert({
       user_id: userId,
-      file_name: file.name,
+      file_name: safeFileName(file.name),
       file_path: path,
       file_type: file.type || 'application/octet-stream',
       file_size: file.size,
@@ -775,8 +785,7 @@ async function callAnalyzeDocument(documentId, force) {
   return body;
 }
 
-// Escapa antes de inserir texto de fonte externa (resposta do modelo) via
-// innerHTML — nada no resto do app precisava disso até aqui.
+// Escapa antes de inserir QUALQUER texto dinâmico via innerHTML (ver `esc`).
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -786,57 +795,149 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// Nome de arquivo vem do aparelho do usuário e aparece depois na tela do
+// médico: remove caracteres de controle e de marcação e limita o tamanho
+// (defesa extra; o render também escapa tudo com escapeHtml).
+function safeFileName(name) {
+  var cleaned = String(name || 'arquivo').replace(/[\u0000-\u001f\u007f<>"'`]/g, '').trim();
+  return (cleaned || 'arquivo').slice(0, 200);
+}
+
+// ── leituras de IA feitas pelo médico nos exames do próprio usuário ──
+// (a RLS de pandafit_document_ai_summaries já libera o dono do documento)
+async function fetchAiSummaries(documentIds) {
+  if (!documentIds.length) return {};
+  var { data, error } = await supabase
+    .from('pandafit_document_ai_summaries')
+    .select('document_id, summary, generated_at')
+    .in('document_id', documentIds);
+  if (error) throw error;
+  var map = {};
+  data.forEach(function (row) { map[row.document_id] = row; });
+  return map;
+}
+
+// ── "Quem vê meus dados": médicos vinculados ao usuário logado ──
+async function fetchMyDoctors() {
+  var { data, error } = await supabase.rpc('pandafit_meus_medicos');
+  if (error) throw error;
+  return data || [];
+}
+
+async function revokeDoctor(medicoId) {
+  var { error } = await supabase.rpc('pandafit_revogar_medico', { p_medico_id: medicoId });
+  if (error) throw error;
+}
+
+// ── canal de feedback (pandafit_feedback; só admin lê) ──
+async function insertFeedback(message) {
+  var { error } = await supabase
+    .from('pandafit_feedback')
+    .insert({ user_id: currentUserId(), message: message });
+  if (error) throw error;
+}
+
+
+// Atalho curto pro escape — TODO texto vindo do banco ou do usuário (nome de
+// modalidade, local, exercício, arquivo, paciente, e-mail…) passa por aqui
+// antes de entrar em innerHTML. Sem isso, um nome de arquivo malicioso
+// enviado por um paciente executaria script na sessão do médico.
+var esc = escapeHtml;
+
 // ── DOM refs ──
 var $ = function (sel) { return document.querySelector(sel); };
 
 var els = {
   screenLogin: $('#screen-login'),
+  loginViewSignin: $('#login-view-signin'),
+  loginViewForgot: $('#login-view-forgot'),
+  loginViewNewpass: $('#login-view-newpass'),
   loginForm: $('#login-form'),
   loginEmail: $('#login-email'),
   loginPassword: $('#login-password'),
   loginError: $('#login-error'),
   btnLogin: $('#btn-login'),
   btnLoginLabel: $('#btn-login-label'),
+  btnForgot: $('#btn-forgot'),
+  forgotForm: $('#forgot-form'),
+  forgotEmail: $('#forgot-email'),
+  forgotMsg: $('#forgot-msg'),
+  btnForgotSend: $('#btn-forgot-send'),
+  btnForgotBack: $('#btn-forgot-back'),
+  newpassForm: $('#newpass-form'),
+  newpassHelp: $('#newpass-help'),
+  newpass1: $('#newpass-1'),
+  newpass2: $('#newpass-2'),
+  newpassError: $('#newpass-error'),
+  btnNewpass: $('#btn-newpass'),
 
   appShell: $('#app-shell'),
   tabbar: $('#tabbar'),
   btnAccount: $('#btn-account'),
   accountInitial: $('#account-initial'),
+  accountMenu: $('#account-menu'),
+  menuAvatar: $('#menu-avatar'),
+  menuName: $('#menu-name'),
+  menuRole: $('#menu-role'),
+  menuConfig: $('#menu-config'),
+  menuPrivacy: $('#menu-privacy'),
+  menuLogout: $('#menu-logout'),
+  menuClose: $('#menu-close'),
   offlineBanner: $('#offline-banner'),
   configAccountEmail: $('#config-account-email'),
   btnLogoutConfig: $('#btn-logout-config'),
   settingsRowUsuarios: $('#settings-row-usuarios'),
+  toggleWeeklySummary: $('#toggle-weekly-summary'),
+  inputMyName: $('#input-my-name'),
+  btnSaveMyName: $('#btn-save-my-name'),
+  inputFeedback: $('#input-feedback'),
+  btnSendFeedback: $('#btn-send-feedback'),
 
   screens: {
     painel: $('#screen-painel'),
     registrar: $('#screen-registrar'),
+    progresso: $('#screen-progresso'),
+    documentos: $('#screen-documentos'),
     config: $('#screen-config'),
     meta: $('#screen-meta'),
     modalidades: $('#screen-modalidades'),
     locais: $('#screen-locais'),
     exercicios: $('#screen-exercicios'),
-    documentos: $('#screen-documentos'),
+    privacidade: $('#screen-privacidade'),
     usuarios: $('#screen-usuarios'),
     pacientes: $('#screen-pacientes'),
   },
+
+  // Painel
+  timerRunningBanner: $('#timer-running-banner'),
+  timerRunningText: $('#timer-running-text'),
+  btnOpenTimer: $('#btn-open-timer'),
   reminderBanners: $('#reminder-banners'),
   monthLabel: $('#month-label'),
   monthPrev: $('#month-prev'),
   monthNext: $('#month-next'),
   monthCount: $('#month-count'),
   monthGoalSuffix: $('#month-goal-suffix'),
+  goalBarWrap: $('#goal-bar-wrap'),
   goalBar: $('#goal-bar'),
   goalPct: $('#goal-pct'),
   goalMeta: $('#goal-meta'),
+  painelStreakNote: $('#painel-streak-note'),
+  repeatCard: $('#repeat-card'),
+  repeatDesc: $('#repeat-desc'),
+  btnRepeatLast: $('#btn-repeat-last'),
   splitsList: $('#splits-list'),
   calendarHeatmap: $('#calendar-heatmap'),
+  dayFilter: $('#day-filter'),
+  dayFilterLabel: $('#day-filter-label'),
+  btnClearDayFilter: $('#btn-clear-day-filter'),
   recordsList: $('#records-list'),
   sessionCountNote: $('#session-count-note'),
-  recordsPager: $('#records-pager'),
-  pagerPrev: $('#pager-prev'),
-  pagerNext: $('#pager-next'),
-  pagerNote: $('#pager-note'),
+  recordsMore: $('#records-more'),
+  painelAchievements: $('#painel-achievements'),
+  painelAchievementsNote: $('#painel-achievements-note'),
 
+  // Registrar: treino
   modeTabs: document.querySelectorAll('.mode-tab'),
   modeTabsWrap: $('#mode-tabs'),
   registrarTitle: $('#registrar-title'),
@@ -845,13 +946,14 @@ var els = {
   sectionPeso: $('#section-peso'),
   saveBarTreino: $('#save-bar-treino'),
   timerCard: $('#timer-card'),
-  manualFields: $('#manual-fields'),
   timerDot: $('#timer-dot'),
   timerRunLabel: $('#timer-run-label'),
+  timerStarted: $('#timer-started'),
   clock: $('#clock'),
   btnToggleRun: $('#btn-toggle-run'),
   btnResetRun: $('#btn-reset-run'),
   inputDate: $('#input-date'),
+  fieldMins: $('#field-mins'),
   inputMins: $('#input-mins'),
   typeOptions: $('#type-options'),
   inputLocal: $('#input-local'),
@@ -859,124 +961,133 @@ var els = {
   exercisesList: $('#exercises-list'),
   btnAddExercise: $('#btn-add-exercise'),
   exerciseSuggestions: $('#exercise-suggestions'),
-  toast: $('#toast'),
   btnSave: $('#btn-save'),
   btnSaveLabel: $('#btn-save-label'),
 
-  // Modalidades (catálogo)
-  inputTypeName: $('#input-type-name'),
-  inputTypeHint: $('#input-type-hint'),
-  typeFormToast: $('#type-form-toast'),
-  btnCreateType: $('#btn-create-type'),
-  typesList: $('#types-list'),
-  typesCountNote: $('#types-count-note'),
-
-  // Locais (catálogo)
-  inputLocationName: $('#input-location-name'),
-  locationFormToast: $('#location-form-toast'),
-  btnCreateLocation: $('#btn-create-location'),
-  locationsList: $('#locations-list'),
-  locationsCountNote: $('#locations-count-note'),
-
-  inputExerciseCatalogName: $('#input-exercise-name'),
-  exerciseFormToast: $('#exercise-form-toast'),
-  btnCreateExercise: $('#btn-create-exercise'),
-  exercisesCatalogList: $('#exercises-catalog-list'),
-  exercisesCountNote: $('#exercises-count-note'),
-
-  inputGoal: $('#input-goal'),
-  btnSaveGoal: $('#btn-save-goal'),
-  goalToast: $('#goal-toast'),
-  metaProgressBar: $('#meta-progress-bar'),
-  metaProgressPct: $('#meta-progress-pct'),
-  metaProgressCount: $('#meta-progress-count'),
-  metaStreakNote: $('#meta-streak-note'),
-  evolutionList: $('#evolution-list'),
-  achievementsGrid: $('#achievements-grid'),
-  achievementsCountNote: $('#achievements-count-note'),
-  btnExportWorkouts: $('#btn-export-workouts'),
-  btnExportWeights: $('#btn-export-weights'),
-  btnPrintReport: $('#btn-print-report'),
-  printReport: $('#print-report'),
-  inputTargetWeight: $('#input-target-weight'),
-  btnSaveTargetWeight: $('#btn-save-target-weight'),
-  targetWeightToast: $('#target-weight-toast'),
-  targetWeightCaption: $('#target-weight-caption'),
-  targetWeightCurrent: $('#target-weight-current'),
-  targetWeightRemaining: $('#target-weight-remaining'),
-
+  // Registrar: peso e medidas
   inputWeightDate: $('#input-weight-date'),
   inputWeightValue: $('#input-weight-value'),
+  btnWeightMinus: $('#btn-weight-minus'),
+  btnWeightPlus: $('#btn-weight-plus'),
+  weightLastHint: $('#weight-last-hint'),
   btnSaveWeight: $('#btn-save-weight'),
   btnSaveWeightLabel: $('#btn-save-weight-label'),
-  weightToast: $('#weight-toast'),
-  weightChartWrap: $('#weight-chart-wrap'),
-  inputWeightFilterFrom: $('#input-weight-filter-from'),
-  inputWeightFilterTo: $('#input-weight-filter-to'),
-  btnClearWeightFilter: $('#btn-clear-weight-filter'),
-  weightsList: $('#weights-list'),
-  weightCountNote: $('#weight-count-note'),
-  weightsPager: $('#weights-pager'),
-  weightsPagerPrev: $('#weights-pager-prev'),
-  weightsPagerNext: $('#weights-pager-next'),
-  weightsPagerNote: $('#weights-pager-note'),
-
   inputMeasurementDate: $('#input-measurement-date'),
   inputMeasurementWaist: $('#input-measurement-waist'),
   inputMeasurementBodyFat: $('#input-measurement-body-fat'),
   btnSaveMeasurement: $('#btn-save-measurement'),
   btnSaveMeasurementLabel: $('#btn-save-measurement-label'),
   btnCancelEditMeasurement: $('#btn-cancel-edit-measurement'),
-  measurementToast: $('#measurement-toast'),
-  measurementsList: $('#measurements-list'),
-  measurementCountNote: $('#measurement-count-note'),
-  measurementsPager: $('#measurements-pager'),
-  measurementsPagerPrev: $('#measurements-pager-prev'),
-  measurementsPagerNext: $('#measurements-pager-next'),
-  measurementsPagerNote: $('#measurements-pager-note'),
-
   inputPhotoFile: $('#input-photo-file'),
   btnUploadPhoto: $('#btn-upload-photo'),
-  photoToast: $('#photo-toast'),
+
+  // Progresso
+  targetWeightNote: $('#target-weight-note'),
+  weightChartWrap: $('#weight-chart-wrap'),
+  inputWeightFilterFrom: $('#input-weight-filter-from'),
+  inputWeightFilterTo: $('#input-weight-filter-to'),
+  btnClearWeightFilter: $('#btn-clear-weight-filter'),
+  weightsList: $('#weights-list'),
+  weightCountNote: $('#weight-count-note'),
+  weightsMore: $('#weights-more'),
+  measurementsList: $('#measurements-list'),
+  measurementCountNote: $('#measurement-count-note'),
+  measurementsMore: $('#measurements-more'),
   photosGallery: $('#photos-gallery'),
   photosCountNote: $('#photos-count-note'),
-  photosPager: $('#photos-pager'),
-  photosPagerPrev: $('#photos-pager-prev'),
-  photosPagerNext: $('#photos-pager-next'),
-  photosPagerNote: $('#photos-pager-note'),
+  photosMore: $('#photos-more'),
+  btnOpenCompare: $('#btn-open-compare'),
+  evolutionList: $('#evolution-list'),
+  achievementsGrid: $('#achievements-grid'),
+  achievementsCountNote: $('#achievements-count-note'),
 
+  // Exames
   inputDocumentFile: $('#input-document-file'),
   btnUploadDocument: $('#btn-upload-document'),
-  documentToast: $('#document-toast'),
   documentsList: $('#documents-list'),
   documentCountNote: $('#document-count-note'),
-  documentsPager: $('#documents-pager'),
-  documentsPagerPrev: $('#documents-pager-prev'),
-  documentsPagerNext: $('#documents-pager-next'),
-  documentsPagerNote: $('#documents-pager-note'),
+  documentsMore: $('#documents-more'),
 
+  // Catálogos
+  inputTypeName: $('#input-type-name'),
+  inputTypeHint: $('#input-type-hint'),
+  btnCreateType: $('#btn-create-type'),
+  typesList: $('#types-list'),
+  typesCountNote: $('#types-count-note'),
+  inputLocationName: $('#input-location-name'),
+  btnCreateLocation: $('#btn-create-location'),
+  locationsList: $('#locations-list'),
+  locationsCountNote: $('#locations-count-note'),
+  inputExerciseCatalogName: $('#input-exercise-name'),
+  btnCreateExercise: $('#btn-create-exercise'),
+  exercisesCatalogList: $('#exercises-catalog-list'),
+  exercisesCountNote: $('#exercises-count-note'),
+
+  // Metas
+  inputGoal: $('#input-goal'),
+  btnSaveGoal: $('#btn-save-goal'),
+  btnExportWorkouts: $('#btn-export-workouts'),
+  btnExportWeights: $('#btn-export-weights'),
+  btnPrintReport: $('#btn-print-report'),
+  printReport: $('#print-report'),
+  inputTargetWeight: $('#input-target-weight'),
+  btnSaveTargetWeight: $('#btn-save-target-weight'),
+  targetWeightCaption: $('#target-weight-caption'),
+  targetWeightCurrent: $('#target-weight-current'),
+  targetWeightRemaining: $('#target-weight-remaining'),
+
+  // Privacidade
+  doctorsList: $('#doctors-list'),
+  doctorsCountNote: $('#doctors-count-note'),
+
+  // Modais
   confirmModal: $('#confirm-modal'),
   confirmModalMessage: $('#confirm-modal-message'),
   confirmModalCancel: $('#confirm-modal-cancel'),
   confirmModalConfirm: $('#confirm-modal-confirm'),
+  compareModal: $('#compare-modal'),
+  compareBefore: $('#compare-before'),
+  compareAfter: $('#compare-after'),
+  compareImgBefore: $('#compare-img-before'),
+  compareImgAfter: $('#compare-img-after'),
+  compareAfterClip: $('#compare-after-clip'),
+  compareDivider: $('#compare-divider'),
+  compareRange: $('#compare-range'),
+  compareClose: $('#compare-close'),
+  aiSummaryModal: $('#ai-summary-modal'),
+  aiSummaryBody: $('#ai-summary-body'),
+  aiSummaryClose: $('#ai-summary-close'),
+  onboarding: $('#onboarding'),
+  obGoalOptions: $('#ob-goal-options'),
+  obTypes: $('#ob-types'),
+  obTypeExtra: $('#ob-type-extra'),
+  obWeight: $('#ob-weight'),
+  obSkip: $('#ob-skip'),
+  obNext: $('#ob-next'),
+  toastRegion: $('#toast-region'),
+  confetti: $('#confetti'),
 
   // admin: Usuários
   inputUserNome: $('#input-user-nome'),
   inputUserEmail: $('#input-user-email'),
   inputUserPassword: $('#input-user-password'),
+  btnGeneratePassword: $('#btn-generate-password'),
   roleOptions: $('#role-options'),
-  userFormToast: $('#user-form-toast'),
   btnCreateUser: $('#btn-create-user'),
   usersList: $('#users-list'),
   usersCountNote: $('#users-count-note'),
 
   // medico: Pacientes
   pacientesTitle: $('#pacientes-title'),
+  pacientesSubtitle: $('#pacientes-subtitle'),
+  inputPatientSearch: $('#input-patient-search'),
   pacientesListView: $('#pacientes-list-view'),
   pacientesDetailView: $('#pacientes-detail-view'),
   patientsList: $('#patients-list'),
   patientsCountNote: $('#patients-count-note'),
   btnBackToPatients: $('#btn-back-to-patients'),
+  sincePeriod: $('#since-period'),
+  sinceGrid: $('#since-grid'),
   patientDocsNote: $('#patient-docs-note'),
   patientDocsSummary: $('#patient-docs-summary'),
   patientDocumentsList: $('#patient-documents-list'),
@@ -991,51 +1102,298 @@ var els = {
   patientWorkoutsList: $('#patient-workouts-list'),
 };
 
-// ── confirm modal (replaces window.confirm to match the app's own look) ──
+// Nome de exibição: o nome cadastrado, ou null quando está vazio (aí a tela
+// decide como mostrar a falta dele, em vez de repetir o e-mail duas vezes).
+function displayName(u) {
+  var n = u && typeof u.nome === 'string' ? u.nome.trim() : '';
+  return n || null;
+}
+
+// ── preferências locais por usuário (conveniência; nunca fonte de verdade) ──
+function prefKey(name) { return 'pandafit_' + name + '_' + (currentUserId() || 'anon'); }
+function prefGet(name) {
+  try { var raw = localStorage.getItem(prefKey(name)); return raw ? JSON.parse(raw) : null; } catch (err) { return null; }
+}
+function prefSet(name, value) {
+  try { localStorage.setItem(prefKey(name), JSON.stringify(value)); } catch (err) { /* ignorado */ }
+}
+function prefRemove(name) {
+  try { localStorage.removeItem(prefKey(name)); } catch (err) { /* ignorado */ }
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// ── toasts globais ──
+// Um só lugar na tela (fixo acima da tab bar, sempre visível mesmo depois
+// de rolar), lido por leitor de tela (role=status no container) e com
+// variação visual pra sucesso / erro / info. `action` vira um botão no
+// próprio toast — usado pelo "Desfazer" das exclusões.
+var toastTimer = null;
+function notify(message, opts) {
+  opts = opts || {};
+  var type = opts.type || 'info';
+  clearTimeout(toastTimer);
+  var region = els.toastRegion;
+  region.innerHTML = '';
+  var toast = document.createElement('div');
+  toast.className = 'app-toast app-toast-' + type;
+  if (type === 'error') toast.setAttribute('role', 'alert');
+  var text = document.createElement('span');
+  text.className = 'app-toast-text';
+  text.textContent = message;
+  toast.appendChild(text);
+  if (opts.action) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'app-toast-action';
+    btn.textContent = opts.action.label;
+    btn.addEventListener('click', function () {
+      clearTimeout(toastTimer);
+      region.innerHTML = '';
+      opts.action.onClick();
+    });
+    toast.appendChild(btn);
+  }
+  region.appendChild(toast);
+  toastTimer = setTimeout(function () { region.innerHTML = ''; }, opts.duration || (type === 'error' ? 6000 : 4000));
+}
+function notifyError(message) { notify(message, { type: 'error' }); }
+function notifySuccess(message) { notify(message, { type: 'success' }); }
+
+// ── validação inline (mensagem junto do campo, não num toast distante) ──
+function setFieldError(input, message) {
+  var err = document.getElementById('err-' + input.id);
+  input.setAttribute('aria-invalid', 'true');
+  input.classList.add('is-invalid');
+  if (err) { err.textContent = message; err.hidden = false; }
+  input.focus();
+}
+function clearFieldError(input) {
+  var err = document.getElementById('err-' + input.id);
+  input.removeAttribute('aria-invalid');
+  input.classList.remove('is-invalid');
+  if (err) { err.textContent = ''; err.hidden = true; }
+}
+document.addEventListener('input', function (e) {
+  if (e.target && e.target.classList && e.target.classList.contains('is-invalid')) clearFieldError(e.target);
+});
+
+function parseDecimal(raw) {
+  var s = String(raw == null ? '' : raw).trim().replace(',', '.');
+  if (s === '') return null;
+  var n = parseFloat(s);
+  return isNaN(n) ? NaN : n;
+}
+
+// ── estados de carregamento / erro ──
+function skeletonRows(n) {
+  var rows = [];
+  for (var i = 0; i < (n || 3); i++) {
+    rows.push('<div class="skeleton-row" aria-hidden="true"><span class="sk sk-day"></span><span class="sk sk-mid"></span><span class="sk sk-end"></span></div>');
+  }
+  return '<div class="skeleton" role="status" aria-label="Carregando">' + rows.join('') + '</div>';
+}
+
+// Erro com ação, não "recarregue a página": data-retry é tratado pelo
+// listener delegado abaixo (ver RETRY_HANDLERS).
+function errorStateHTML(message, retryKey) {
+  return '<div class="error-state"><p>' + esc(message) + '</p>' +
+    (retryKey ? '<button type="button" class="retry-btn" data-retry="' + retryKey + '">Tentar de novo</button>' : '') +
+    '</div>';
+}
+var RETRY_HANDLERS = {};
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest && e.target.closest('[data-retry]');
+  if (!btn) return;
+  var handler = RETRY_HANDLERS[btn.dataset.retry];
+  if (handler) handler();
+});
+
+// ── "Ver mais" no lugar de paginação ──
+function renderMoreButton(btn, shown, total) {
+  btn.hidden = shown >= total;
+  btn.textContent = 'Ver mais (' + (total - shown) + ')';
+}
+
+// ── diálogos acessíveis: Esc fecha, clique fora fecha, foco preso dentro
+// e devolvido ao elemento de origem ao fechar ──
+var openDialogs = [];
+function openDialog(overlay, opts) {
+  opts = opts || {};
+  var previous = document.activeElement;
+  overlay.hidden = false;
+  function focusables() {
+    return Array.prototype.filter.call(
+      overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+      function (el) { return !el.disabled && !el.hidden && el.offsetParent !== null; }
+    );
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close('escape'); }
+    if (e.key === 'Tab') {
+      var f = focusables();
+      if (!f.length) return;
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }
+  function onOverlayClick(e) { if (e.target === overlay && !opts.persistent) close('overlay'); }
+  function close(reason) {
+    if (overlay.hidden) return;
+    overlay.hidden = true;
+    document.removeEventListener('keydown', onKey);
+    overlay.removeEventListener('click', onOverlayClick);
+    openDialogs = openDialogs.filter(function (d) { return d !== handle; });
+    if (previous && previous.focus) previous.focus();
+    if (opts.onClose) opts.onClose(reason);
+  }
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', onOverlayClick);
+  var handle = { close: close };
+  openDialogs.push(handle);
+  var initial = opts.initialFocus || focusables()[0];
+  if (initial) setTimeout(function () { initial.focus(); }, 0);
+  return handle;
+}
+
+// ── confirm modal (substitui window.confirm, no visual do app) ──
 function confirmModal(message, confirmLabel) {
   return new Promise(function (resolve) {
     els.confirmModalMessage.textContent = message;
     els.confirmModalConfirm.textContent = confirmLabel || 'Excluir';
-    els.confirmModal.hidden = false;
-
-    function onCancel() { finish(false); }
-    function onConfirm() { finish(true); }
+    var settled = false;
     function finish(result) {
-      els.confirmModal.hidden = true;
+      if (settled) return;
+      settled = true;
       els.confirmModalCancel.removeEventListener('click', onCancel);
       els.confirmModalConfirm.removeEventListener('click', onConfirm);
+      dialog.close('done');
       resolve(result);
     }
-
+    function onCancel() { finish(false); }
+    function onConfirm() { finish(true); }
+    var dialog = openDialog(els.confirmModal, {
+      initialFocus: els.confirmModalCancel,
+      onClose: function () { if (!settled) { settled = true; resolve(false); } },
+    });
     els.confirmModalCancel.addEventListener('click', onCancel);
     els.confirmModalConfirm.addEventListener('click', onConfirm);
   });
 }
 
-function makeToaster(el) {
-  var handle = null;
-  return function (msg) {
-    clearTimeout(handle);
-    el.textContent = msg;
-    el.hidden = false;
-    handle = setTimeout(function () { el.hidden = true; }, 4000);
+// ── exclusão com "Desfazer" ──
+// Tira o item da tela na hora e só apaga no banco depois da janela de
+// desfazer. Se a pessoa sair do app nesse meio tempo, as exclusões
+// pendentes são confirmadas (pagehide / aba oculta) — ninguém perde o
+// "excluir" que pediu, e quem tocou em Desfazer não perde o dado.
+var pendingDeletes = [];
+function deleteWithUndo(opts) {
+  opts.removeLocal();
+  opts.render();
+  var entry = { committed: false, timer: null, commit: null };
+  entry.commit = function () {
+    if (entry.committed) return;
+    entry.committed = true;
+    clearTimeout(entry.timer);
+    pendingDeletes = pendingDeletes.filter(function (p) { return p !== entry; });
+    opts.commit().catch(function (err) {
+      console.error('Falha ao excluir', err);
+      opts.restoreLocal();
+      opts.render();
+      notifyError('Não foi possível excluir. O registro voltou para a lista.');
+    });
   };
+  entry.timer = setTimeout(entry.commit, UNDO_WINDOW_MS);
+  pendingDeletes.push(entry);
+  notify(opts.message, {
+    duration: UNDO_WINDOW_MS,
+    action: {
+      label: 'Desfazer',
+      onClick: function () {
+        if (entry.committed) return;
+        entry.committed = true;
+        clearTimeout(entry.timer);
+        pendingDeletes = pendingDeletes.filter(function (p) { return p !== entry; });
+        opts.restoreLocal();
+        opts.render();
+        notify('Exclusão desfeita.');
+      },
+    },
+  });
+}
+function flushPendingDeletes() {
+  pendingDeletes.slice().forEach(function (p) { p.commit(); });
+}
+window.addEventListener('pagehide', flushPendingDeletes);
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden') flushPendingDeletes();
+});
+
+// ── deslizar pra esquerda = excluir (com Desfazer) ──
+function attachSwipeToDelete(listEl, onDelete) {
+  var startX = 0, startY = 0, row = null, dx = 0, tracking = false;
+  listEl.addEventListener('touchstart', function (e) {
+    var r = e.target.closest('[data-swipe-id]');
+    if (!r || e.target.closest('button, a, input')) { row = null; return; }
+    row = r; tracking = false; dx = 0;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+  }, { passive: true });
+  listEl.addEventListener('touchmove', function (e) {
+    if (!row) return;
+    var mx = e.touches[0].clientX - startX;
+    var my = e.touches[0].clientY - startY;
+    if (!tracking) {
+      if (Math.abs(mx) < 8) return;
+      if (Math.abs(my) > Math.abs(mx)) { row = null; return; }
+      tracking = true;
+    }
+    dx = Math.min(0, mx);
+    row.style.transform = 'translateX(' + dx + 'px)';
+    row.classList.toggle('swipe-armed', dx < -80);
+  }, { passive: true });
+  listEl.addEventListener('touchend', function () {
+    if (!row) return;
+    var r = row;
+    row = null;
+    r.style.transform = '';
+    r.classList.remove('swipe-armed');
+    if (tracking && dx < -80) onDelete(r.dataset.swipeId);
+  });
 }
 
-var showToast = makeToaster(els.toast);
-var showGoalToast = makeToaster(els.goalToast);
-var showWeightToast = makeToaster(els.weightToast);
-var showMeasurementToast = makeToaster(els.measurementToast);
-var showDocumentToast = makeToaster(els.documentToast);
-var showPhotoToast = makeToaster(els.photoToast);
-var showTargetWeightToast = makeToaster(els.targetWeightToast);
-var showUserFormToast = makeToaster(els.userFormToast);
-var showTypeFormToast = makeToaster(els.typeFormToast);
-var showLocationFormToast = makeToaster(els.locationFormToast);
-var showExerciseFormToast = makeToaster(els.exerciseFormToast);
+// ── celebração (meta batida / conquista nova) ──
+function celebrate(message) {
+  notify(message, { type: 'success', duration: 5000 });
+  if (prefersReducedMotion()) return;
+  var colors = ['#2563eb', '#16a34a', '#f59e0b', '#ec4899', '#8b5cf6'];
+  var pieces = [];
+  for (var i = 0; i < 40; i++) {
+    pieces.push('<span style="left:' + Math.round(Math.random() * 100) + '%;background:' + colors[i % colors.length] +
+      ';animation-delay:' + (Math.random() * 0.4).toFixed(2) + 's;transform:rotate(' + Math.round(Math.random() * 360) + 'deg)"></span>');
+  }
+  els.confetti.innerHTML = pieces.join('');
+  els.confetti.classList.add('is-on');
+  setTimeout(function () { els.confetti.classList.remove('is-on'); els.confetti.innerHTML = ''; }, 2200);
+}
 
-// ── auth: login, logout, role-based routing ──
+// Mostrar/ocultar senha em qualquer campo com [data-toggle-password].
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest && e.target.closest('[data-toggle-password]');
+  if (!btn) return;
+  var input = document.getElementById(btn.dataset.togglePassword);
+  var show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  btn.textContent = show ? 'Ocultar' : 'Mostrar';
+  btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+});
+
+
+// ── auth: login, esqueci a senha, nova senha, logout, roteamento por papel ──
 async function doLogout() {
+  flushPendingDeletes();
   var userId = currentUserId();
   await supabase.auth.signOut();
   if (userId) clearUserCache(userId);
@@ -1046,23 +1404,45 @@ async function confirmLogout() {
   if (ok) doLogout();
 }
 
-els.btnAccount.addEventListener('click', confirmLogout);
 els.btnLogoutConfig.addEventListener('click', confirmLogout);
+
+function showLoginView(view) {
+  els.loginViewSignin.hidden = view !== 'signin';
+  els.loginViewForgot.hidden = view !== 'forgot';
+  els.loginViewNewpass.hidden = view !== 'newpass';
+}
 
 function showLoginScreen(errorMessage) {
   els.appShell.hidden = true;
-  els.btnAccount.hidden = true;
   els.screenLogin.hidden = false;
+  showLoginView('signin');
   if (errorMessage) {
     els.loginError.textContent = errorMessage;
     els.loginError.hidden = false;
   }
 }
 
+// Tela de nova senha: usada no link de recuperação ("esqueci minha senha")
+// e no primeiro acesso de quem recebeu uma senha provisória do admin.
+function showNewPasswordScreen(mode) {
+  state.passwordMode = mode;
+  els.appShell.hidden = true;
+  els.screenLogin.hidden = false;
+  els.newpassHelp.textContent = mode === 'first'
+    ? 'Sua senha atual é provisória, definida pelo administrador. Crie uma senha só sua para continuar.'
+    : 'Crie uma nova senha para a sua conta.';
+  els.newpass1.value = '';
+  els.newpass2.value = '';
+  els.newpassError.hidden = true;
+  showLoginView('newpass');
+  els.newpass1.focus();
+}
+
 function resetAppState() {
   state.session = null;
   state.profile = null;
   state.offlineMode = false;
+  state.passwordMode = null;
   offlineResources = {};
   state.workouts = [];
   state.loading = true;
@@ -1072,20 +1452,24 @@ function resetAppState() {
   state.weightsLoadError = false;
   state.weightFilterFrom = '';
   state.weightFilterTo = '';
+  state.weightVal = '';
   state.measurements = [];
   state.measurementsLoading = true;
   state.measurementsLoadError = false;
-  state.measurementsPage = 0;
+  state.measurementsPages = 1;
   state.editingMeasurementId = null;
   state.documents = [];
   state.documentsLoading = true;
   state.documentsLoadError = false;
+  state.aiSummaries = {};
   state.photos = [];
   state.photosLoading = true;
   state.photosLoadError = false;
-  state.photosPage = 0;
-  state.photoSignedUrls = {};
+  state.photosPages = 1;
+  state.doctors = [];
+  state.doctorsLoading = true;
   state.monthlyGoal = DEFAULT_MONTHLY_GOAL;
+  state.weeklySummaryEmail = false;
   state.targetWeight = null;
   state.workoutTypes = [];
   state.workoutTypesLoading = true;
@@ -1097,6 +1481,7 @@ function resetAppState() {
   state.exerciseCatalogLoading = true;
   state.workoutExercises = [];
   state.workoutSets = {};
+  state.dayFilter = null;
   state.users = [];
   state.usersLoading = true;
   state.userLinks = [];
@@ -1105,6 +1490,7 @@ function resetAppState() {
   state.patientsLoading = true;
   state.selectedPatient = null;
   state.patientDetail = null;
+  timerStateCache = null;
   els.loginEmail.value = '';
   els.loginPassword.value = '';
 }
@@ -1115,6 +1501,11 @@ els.loginForm.addEventListener('submit', function (e) {
 
   var email = els.loginEmail.value.trim();
   var password = els.loginPassword.value;
+  if (!email || !password) {
+    els.loginError.textContent = 'Preencha e-mail e senha.';
+    els.loginError.hidden = false;
+    return;
+  }
   state.loginLoading = true;
   els.btnLogin.disabled = true;
   els.btnLoginLabel.textContent = 'Entrando…';
@@ -1137,6 +1528,68 @@ els.loginForm.addEventListener('submit', function (e) {
     });
 });
 
+els.btnForgot.addEventListener('click', function () {
+  els.forgotEmail.value = els.loginEmail.value.trim();
+  els.forgotMsg.hidden = true;
+  showLoginView('forgot');
+  els.forgotEmail.focus();
+});
+els.btnForgotBack.addEventListener('click', function () { showLoginView('signin'); });
+
+els.forgotForm.addEventListener('submit', function (e) {
+  e.preventDefault();
+  var email = els.forgotEmail.value.trim();
+  if (!email || email.indexOf('@') === -1) {
+    els.forgotMsg.className = 'toast toast-error';
+    els.forgotMsg.textContent = 'Informe um e-mail válido.';
+    els.forgotMsg.hidden = false;
+    return;
+  }
+  els.btnForgotSend.disabled = true;
+  var redirectTo = window.location.origin + '/pandafit/';
+  supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectTo })
+    .catch(function (err) { console.error('Falha ao pedir recuperação de senha', err); })
+    .finally(function () {
+      // Mensagem neutra de propósito: não confirma se o e-mail existe.
+      els.forgotMsg.className = 'toast';
+      els.forgotMsg.textContent = 'Se esse e-mail tiver acesso, o link chega em alguns minutos. Confira também o spam.';
+      els.forgotMsg.hidden = false;
+      els.btnForgotSend.disabled = false;
+    });
+});
+
+els.newpassForm.addEventListener('submit', function (e) {
+  e.preventDefault();
+  var p1 = els.newpass1.value;
+  var p2 = els.newpass2.value;
+  function fail(msg) { els.newpassError.textContent = msg; els.newpassError.hidden = false; }
+  if (p1.length < MIN_PASSWORD_LENGTH) return fail('A senha precisa ter pelo menos ' + MIN_PASSWORD_LENGTH + ' caracteres.');
+  if (p1 !== p2) return fail('As duas senhas não são iguais.');
+  els.btnNewpass.disabled = true;
+  els.newpassError.hidden = true;
+  supabase.auth.updateUser({ password: p1, data: { pandafit_trocar_senha: false } })
+    .then(function (res) {
+      if (res.error) throw res.error;
+      state.passwordMode = null;
+      return supabase.auth.getSession();
+    })
+    .then(function (res) {
+      notifySuccess('Senha atualizada.');
+      if (res && res.data && res.data.session) return handleSignedIn(res.data.session);
+      showLoginScreen();
+    })
+    .catch(function (err) {
+      console.error('Falha ao trocar senha', err);
+      fail(err && /different|same/i.test(err.message || '') ? 'Use uma senha diferente da atual.' : 'Não foi possível salvar a senha. Tente de novo.');
+    })
+    .finally(function () { els.btnNewpass.disabled = false; });
+});
+
+function requiresPasswordChange(session) {
+  var meta = session && session.user && session.user.user_metadata;
+  return !!(meta && meta.pandafit_trocar_senha);
+}
+
 async function handleSignedIn(session) {
   state.session = session;
   var { data, error } = await supabase
@@ -1153,21 +1606,41 @@ async function handleSignedIn(session) {
   }
 
   state.profile = data;
+  if (state.passwordMode === 'recovery' || RECOVERY_FROM_URL) {
+    RECOVERY_FROM_URL = false;
+    showNewPasswordScreen('recovery');
+    return;
+  }
+  if (requiresPasswordChange(session)) {
+    showNewPasswordScreen('first');
+    return;
+  }
   showAppShell();
 }
 
+function renderAccountIdentity() {
+  var label = displayName(state.profile) || state.profile.email || '?';
+  els.accountInitial.textContent = label.charAt(0).toUpperCase();
+  els.menuAvatar.textContent = label.charAt(0).toUpperCase();
+  els.menuName.textContent = label;
+}
+
+var appStarted = false;
 function showAppShell() {
   els.screenLogin.hidden = true;
   els.appShell.hidden = false;
-  els.btnAccount.hidden = false;
-  var label = (state.profile.nome || state.profile.email || '?').trim();
-  els.accountInitial.textContent = label.charAt(0).toUpperCase();
+  renderAccountIdentity();
+  els.menuRole.textContent = state.profile.email + ' · ' + roleLabel(state.profile.role);
   els.configAccountEmail.textContent = state.profile.email + ' · ' + roleLabel(state.profile.role);
 
   var role = state.profile.role;
   els.settingsRowUsuarios.hidden = role !== 'admin';
   els.tabbar.hidden = role === 'medico';
+  els.menuConfig.hidden = role === 'medico';
+  els.menuPrivacy.hidden = role === 'medico';
 
+  if (appStarted) return;
+  appStarted = true;
   if (role === 'medico') {
     setTab('pacientes');
     loadPatients();
@@ -1183,32 +1656,52 @@ function roleLabel(role) {
   return 'usuário';
 }
 
-// ── tab bar wiring ──
+// ── menu da conta (avatar do topo) ──
+var accountMenuDialog = null;
+els.btnAccount.addEventListener('click', function () {
+  els.btnAccount.setAttribute('aria-expanded', 'true');
+  accountMenuDialog = openDialog(els.accountMenu, {
+    onClose: function () { els.btnAccount.setAttribute('aria-expanded', 'false'); },
+  });
+});
+function closeAccountMenu() { if (accountMenuDialog) accountMenuDialog.close('done'); }
+els.menuClose.addEventListener('click', closeAccountMenu);
+els.menuConfig.addEventListener('click', function () { closeAccountMenu(); setTab('config'); });
+els.menuPrivacy.addEventListener('click', function () { closeAccountMenu(); setTab('privacidade'); });
+els.menuLogout.addEventListener('click', function () { closeAccountMenu(); confirmLogout(); });
+
+// ── tab bar ──
 document.querySelectorAll('.tab-btn').forEach(function (btn) {
   btn.addEventListener('click', function () { setTab(btn.dataset.tab); });
 });
 
-// Meta/Documentos/Usuários são sub-telas de Configurações (abertas por um
-// settings-row, não por um botão próprio na tabbar) — a aba "Config."
-// continua marcada como ativa enquanto qualquer uma delas está aberta.
-var CONFIG_SUB_SCREENS = ['config', 'meta', 'modalidades', 'locais', 'exercicios', 'documentos', 'usuarios'];
+// Configurações e suas sub-telas são abertas pelo menu da conta (avatar),
+// não pela tab bar — nenhuma aba fica marcada enquanto uma delas está aberta.
+var TAB_KEYS = ['painel', 'registrar', 'progresso', 'documentos'];
 
 function setTab(tab) {
   state.tab = tab;
+  // Usado pelo CSS pra subir os toasts acima da barra "Salvar treino".
+  document.querySelector('.app').dataset.tab = tab;
   Object.keys(els.screens).forEach(function (key) {
     els.screens[key].hidden = key !== tab;
   });
-  var tabbarKey = CONFIG_SUB_SCREENS.indexOf(tab) >= 0 ? 'config' : tab;
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
-    btn.classList.toggle('active', btn.dataset.tab === tabbarKey);
+    var active = btn.dataset.tab === tab;
+    btn.classList.toggle('active', active);
+    if (active) btn.setAttribute('aria-current', 'page'); else btn.removeAttribute('aria-current');
   });
+  window.scrollTo(0, 0);
   if (tab === 'painel') renderPainel();
+  if (tab === 'registrar') setRegistrarSection(state.registrarSection);
+  if (tab === 'progresso') renderProgresso();
+  if (tab === 'documentos') renderDocuments();
   if (tab === 'meta') renderMeta();
+  if (tab === 'config') renderConfig();
   if (tab === 'modalidades') renderWorkoutTypes();
   if (tab === 'locais') renderLocations();
   if (tab === 'exercicios') renderExerciseCatalog();
-  if (tab === 'registrar') setRegistrarSection(state.registrarSection);
-  if (tab === 'documentos') renderDocuments();
+  if (tab === 'privacidade') loadDoctors();
   if (tab === 'usuarios') { renderUsers(); loadUsers(); }
 }
 
@@ -1218,6 +1711,10 @@ document.querySelectorAll('.settings-row').forEach(function (btn) {
 document.querySelectorAll('[data-back]').forEach(function (btn) {
   btn.addEventListener('click', function () { setTab(btn.dataset.back); });
 });
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest && e.target.closest('[data-goto]');
+  if (btn) setTab(btn.dataset.goto);
+});
 
 function renderOfflineBanner() {
   els.offlineBanner.hidden = !state.offlineMode;
@@ -1226,28 +1723,34 @@ function renderOfflineBanner() {
 function renderActiveTab() {
   renderOfflineBanner();
   if (state.tab === 'painel') renderPainel();
+  if (state.tab === 'progresso') renderProgresso();
+  if (state.tab === 'documentos') renderDocuments();
   if (state.tab === 'meta') renderMeta();
+  if (state.tab === 'config') renderConfig();
   if (state.tab === 'modalidades') renderWorkoutTypes();
   if (state.tab === 'locais') renderLocations();
   if (state.tab === 'exercicios') renderExerciseCatalog();
-  if (state.tab === 'registrar' && state.registrarSection === 'peso') { renderWeights(); renderMeasurements(); renderPhotosGallery(); }
-  if (state.tab === 'documentos') renderDocuments();
+  if (state.tab === 'registrar' && state.registrarSection === 'peso') renderWeightForm();
 }
 
-// ── registrar: treino / peso toggle ──
+
+// ── registrar: treino / peso ──
 function setRegistrarSection(section) {
   state.registrarSection = section;
   document.querySelectorAll('.section-tab').forEach(function (btn) {
-    btn.classList.toggle('active', btn.dataset.section === section);
+    var active = btn.dataset.section === section;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
   });
   els.sectionTreino.hidden = section !== 'treino';
   els.sectionPeso.hidden = section !== 'peso';
   els.saveBarTreino.hidden = section !== 'treino';
   updateEditUI();
-  if (section === 'peso') { renderWeights(); renderMeasurements(); renderPhotosGallery(); }
+  if (section === 'peso') renderWeightForm();
+  else renderRegistrar();
 }
 
-// ── editing an existing workout/weight instead of only insert/delete ──
+// ── editar um treino/peso existente ──
 function updateEditUI() {
   var editingTreino = state.editingWorkoutId != null;
   var editingPeso = state.editingWeightId != null;
@@ -1257,7 +1760,7 @@ function updateEditUI() {
   els.btnCancelEdit.hidden = !editingCurrent;
   els.registrarTitle.textContent = state.registrarSection === 'treino'
     ? (editingTreino ? 'Editar treino' : 'Registrar treino')
-    : (editingPeso ? 'Editar peso' : 'Registrar peso');
+    : (editingPeso ? 'Editar peso' : 'Peso e medidas');
   els.modeTabsWrap.hidden = editingTreino;
   els.btnSaveLabel.textContent = editingTreino ? 'Salvar alterações' : 'Salvar treino';
   els.btnSaveWeightLabel.textContent = editingPeso ? 'Salvar alterações' : 'Salvar peso';
@@ -1267,7 +1770,6 @@ function startEditWorkout(w) {
   state.editingWorkoutId = w.id;
   state.editingWeightId = null;
   state.mode = 'manual';
-  stopTimer();
   state.dateVal = w.date;
   state.minsVal = w.minutes;
   state.type = w.type;
@@ -1275,17 +1777,20 @@ function startEditWorkout(w) {
   state.workoutExercises = cloneWorkoutExercises(state.workoutSets[w.id] || []);
   state.registrarSection = 'treino';
   setTab('registrar');
-  renderRegistrar();
   updateEditUI();
 }
 
-function cancelEditWorkout() {
-  state.editingWorkoutId = null;
+function resetWorkoutForm() {
   state.dateVal = todayISO();
   state.minsVal = 60;
   state.type = state.workoutTypes.length ? state.workoutTypes[0].name : '';
   state.local = '';
   state.workoutExercises = [];
+}
+
+function cancelEditWorkout() {
+  state.editingWorkoutId = null;
+  resetWorkoutForm();
   renderRegistrar();
   updateEditUI();
 }
@@ -1293,7 +1798,7 @@ function cancelEditWorkout() {
 // Cópia profunda pra editar sem mutar o cache de state.workoutSets até salvar.
 function cloneWorkoutExercises(exercises) {
   return exercises.map(function (ex) {
-    return { name: ex.name, sets: ex.sets.map(function (s) { return { reps: s.reps, weight: s.weight }; }) };
+    return { name: ex.name, sets: ex.sets.map(function (s) { return { reps: s.reps, weight: s.weight == null ? '' : s.weight }; }) };
   });
 }
 
@@ -1304,7 +1809,6 @@ function startEditWeight(w) {
   state.weightVal = fmtWeight(w.weight_kg);
   state.registrarSection = 'peso';
   setTab('registrar');
-  renderWeights();
   updateEditUI();
 }
 
@@ -1312,7 +1816,7 @@ function cancelEditWeight() {
   state.editingWeightId = null;
   state.weightDateVal = todayISO();
   state.weightVal = '';
-  renderWeights();
+  renderWeightForm();
   updateEditUI();
 }
 
@@ -1325,121 +1829,135 @@ document.querySelectorAll('.section-tab').forEach(function (btn) {
   btn.addEventListener('click', function () { setRegistrarSection(btn.dataset.section); });
 });
 
-// ── painel month navigation ──
-els.monthPrev.addEventListener('click', function () {
-  if (state.painelMonthOffset >= MAX_MONTH_OFFSET) return;
-  state.painelMonthOffset += 1;
-  state.recordsPage = 0;
-  renderPainel();
-});
-els.monthNext.addEventListener('click', function () {
-  if (state.painelMonthOffset <= 0) return;
-  state.painelMonthOffset -= 1;
-  state.recordsPage = 0;
-  renderPainel();
-});
+// ── repetir o último treino (prefill + 1 toque pra salvar) ──
+function lastWorkout() {
+  return state.workouts.length ? state.workouts[0] : null; // já vem data desc, created_at desc
+}
 
-// ── records pagination ──
-els.pagerPrev.addEventListener('click', function () {
-  if (state.recordsPage > 0) {
-    state.recordsPage -= 1;
-    renderPainel();
-  }
-});
-els.pagerNext.addEventListener('click', function () {
-  state.recordsPage += 1;
-  renderPainel();
-});
-
-els.weightsPagerPrev.addEventListener('click', function () {
-  if (state.weightsPage > 0) {
-    state.weightsPage -= 1;
-    renderWeights();
-  }
-});
-els.weightsPagerNext.addEventListener('click', function () {
-  state.weightsPage += 1;
-  renderWeights();
-});
-
-els.inputWeightFilterFrom.addEventListener('change', function (e) {
-  state.weightFilterFrom = e.target.value;
-  state.weightsPage = 0;
-  renderWeights();
-});
-els.inputWeightFilterTo.addEventListener('change', function (e) {
-  state.weightFilterTo = e.target.value;
-  state.weightsPage = 0;
-  renderWeights();
-});
-els.btnClearWeightFilter.addEventListener('click', function () {
-  state.weightFilterFrom = '';
-  state.weightFilterTo = '';
-  state.weightsPage = 0;
-  renderWeights();
-});
-
-els.documentsPagerPrev.addEventListener('click', function () {
-  if (state.documentsPage > 0) {
-    state.documentsPage -= 1;
-    renderDocuments();
-  }
-});
-els.documentsPagerNext.addEventListener('click', function () {
-  state.documentsPage += 1;
-  renderDocuments();
+els.btnRepeatLast.addEventListener('click', function () {
+  var w = lastWorkout();
+  if (!w) return;
+  state.editingWorkoutId = null;
+  state.mode = 'manual';
+  state.dateVal = todayISO();
+  state.minsVal = w.minutes;
+  state.type = state.workoutTypes.some(function (t) { return t.name === w.type; }) ? w.type : state.type;
+  state.local = w.local || '';
+  state.workoutExercises = cloneWorkoutExercises(state.workoutSets[w.id] || []);
+  state.registrarSection = 'treino';
+  setTab('registrar');
+  notify('Treino copiado para hoje. Confira e toque em Salvar.');
 });
 
 // ── mode tabs (Cronômetro / Manual) ──
 els.modeTabs.forEach(function (btn) {
   btn.addEventListener('click', function () {
     state.mode = btn.dataset.mode;
-    if (state.mode === 'manual') stopTimer();
     renderRegistrar();
   });
 });
 
-// ── timer ──
+// ── cronômetro persistente ──
+// O tempo não é mais um contador em memória (que zerava ao fechar o app e
+// atrasava quando o sistema suspendia o PWA): guarda o instante de início
+// no aparelho e calcula "agora − início". Fechar, trocar de app ou
+// recarregar não perde o treino.
+//   { startedAt: ms | null (null = pausado), accumulatedMs, startDate: 'YYYY-MM-DD' }
+var timerStateCache = null;
+function timerState() {
+  if (!timerStateCache) timerStateCache = prefGet('timer') || { startedAt: null, accumulatedMs: 0, startDate: null };
+  return timerStateCache;
+}
+function saveTimerState(t) {
+  timerStateCache = t;
+  if (!t.startedAt && !t.accumulatedMs) prefRemove('timer');
+  else prefSet('timer', t);
+}
+function timerRunning() { return !!timerState().startedAt; }
+function timerElapsedSecs() {
+  var t = timerState();
+  var ms = t.accumulatedMs + (t.startedAt ? Date.now() - t.startedAt : 0);
+  return Math.max(0, Math.floor(ms / 1000));
+}
+function timerActive() { return timerRunning() || timerState().accumulatedMs > 0; }
+
 function startTimerLoop() {
   if (timerHandle) return;
   timerHandle = setInterval(function () {
-    if (state.running) {
-      state.secs += 1;
+    if (timerRunning()) {
       updateClock();
+      if (state.tab === 'painel') renderTimerBanner();
     }
   }, 1000);
 }
 
-function stopTimer() {
-  state.running = false;
-  updateTimerControls();
-}
-
 els.btnToggleRun.addEventListener('click', function () {
-  state.running = !state.running;
-  updateTimerControls();
-});
-
-els.btnResetRun.addEventListener('click', function () {
-  state.running = false;
-  state.secs = 0;
+  var t = timerState();
+  if (t.startedAt) {
+    saveTimerState({ startedAt: null, accumulatedMs: t.accumulatedMs + (Date.now() - t.startedAt), startDate: t.startDate });
+  } else {
+    var startDate = t.startDate || todayISO();
+    saveTimerState({ startedAt: Date.now(), accumulatedMs: t.accumulatedMs, startDate: startDate });
+    // O treino "pertence" ao dia em que começou (um treino que passa da
+    // meia-noite não pula de dia) — a data continua editável antes de salvar.
+    if (state.editingWorkoutId == null) { state.dateVal = startDate; els.inputDate.value = startDate; }
+  }
   updateTimerControls();
   updateClock();
 });
 
+els.btnResetRun.addEventListener('click', async function () {
+  if (timerElapsedSecs() > 60) {
+    var ok = await confirmModal('Zerar o cronômetro? O tempo marcado até agora será descartado.', 'Zerar');
+    if (!ok) return;
+  }
+  saveTimerState({ startedAt: null, accumulatedMs: 0, startDate: null });
+  updateTimerControls();
+  updateClock();
+  renderTimerBanner();
+});
+
+function fmtClock(secs) {
+  var h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  return (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s);
+}
+
 function updateClock() {
-  var mm = Math.floor(state.secs / 60), ss = state.secs % 60;
-  els.clock.textContent = pad(mm) + ':' + pad(ss);
+  els.clock.textContent = fmtClock(timerElapsedSecs());
+}
+
+function fmtTime(ms) {
+  var d = new Date(ms);
+  return pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
 function updateTimerControls() {
-  els.timerDot.classList.toggle('running', state.running);
-  els.timerRunLabel.textContent = state.running ? 'Em andamento' : 'Pausado';
-  els.btnToggleRun.textContent = state.running ? 'Pausar' : 'Iniciar';
-  els.btnToggleRun.classList.toggle('is-running', state.running);
+  var running = timerRunning();
+  var t = timerState();
+  els.timerDot.classList.toggle('running', running);
+  els.timerRunLabel.textContent = running ? 'Em andamento' : (t.accumulatedMs > 0 ? 'Pausado' : 'Pronto para começar');
+  els.btnToggleRun.textContent = running ? 'Pausar' : (t.accumulatedMs > 0 ? 'Continuar' : 'Iniciar');
+  els.btnToggleRun.classList.toggle('is-running', running);
+  els.timerStarted.hidden = !t.startDate;
+  if (t.startDate) {
+    els.timerStarted.textContent = 'Treino de ' + fmtDayLabel(t.startDate) + (running ? ' · rodando desde ' + fmtTime(t.startedAt) : '');
+  }
 }
 
-// ── manual fields ──
+function renderTimerBanner() {
+  var active = timerActive() && state.editingWorkoutId == null;
+  els.timerRunningBanner.hidden = !active;
+  if (!active) return;
+  els.timerRunningText.textContent = (timerRunning() ? 'Treino em andamento · ' : 'Treino pausado · ') + fmtClock(timerElapsedSecs());
+}
+
+els.btnOpenTimer.addEventListener('click', function () {
+  state.mode = 'timer';
+  state.registrarSection = 'treino';
+  setTab('registrar');
+});
+
+// ── campos ──
 els.inputDate.addEventListener('change', function (e) {
   state.dateVal = e.target.value || todayISO();
 });
@@ -1453,45 +1971,63 @@ els.inputLocal.addEventListener('input', function (e) {
 // ── workout type picker ──
 function renderTypeOptions() {
   if (state.workoutTypes.length === 0) {
-    els.typeOptions.innerHTML = '<p class="empty-state">' +
-      (state.workoutTypesLoading ? 'Carregando modalidades…' : 'Nenhuma modalidade cadastrada. Adicione em Configurações › Modalidades.') +
-      '</p>';
+    els.typeOptions.innerHTML = state.workoutTypesLoading
+      ? skeletonRows(1)
+      : '<p class="empty-state">Nenhuma modalidade cadastrada. <button type="button" class="link-btn inline" data-goto="modalidades">Cadastrar agora</button></p>';
     return;
   }
-  els.typeOptions.innerHTML = state.workoutTypes.map(function (t) {
+  els.typeOptions.innerHTML = state.workoutTypes.map(function (t, i) {
     var active = t.name === state.type;
-    return '<button type="button" class="type-option' + (active ? ' active' : '') + '" data-type="' + t.name + '">' +
+    return '<button type="button" class="type-option' + (active ? ' active' : '') + '" data-index="' + i + '" aria-pressed="' + active + '">' +
       '<span class="type-mark"></span>' +
-      '<span class="type-name">' + t.name + '</span>' +
-      '<span class="type-hint">' + t.hint + '</span>' +
+      '<span class="type-name">' + esc(t.name) + '</span>' +
+      '<span class="type-hint">' + esc(t.hint || '') + '</span>' +
       '</button>';
   }).join('');
   els.typeOptions.querySelectorAll('.type-option').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      state.type = btn.dataset.type;
+      state.type = state.workoutTypes[Number(btn.dataset.index)].name;
       renderTypeOptions();
     });
   });
 }
 
 // Sugestões de local via <datalist>, alimentadas pelo catálogo em
-// Configurações > Locais (não mais calculadas a partir do histórico).
+// Configurações > Locais.
 function updateLocalSuggestions() {
   els.localSuggestions.innerHTML = state.locations.map(function (loc) {
-    return '<option value="' + loc.name.replace(/"/g, '&quot;') + '"></option>';
+    return '<option value="' + esc(loc.name) + '"></option>';
   }).join('');
 }
 
 // ── exercícios/séries do treino em edição (rascunho em state.workoutExercises) ──
 function updateExerciseSuggestions() {
   els.exerciseSuggestions.innerHTML = state.exerciseCatalog.map(function (ex) {
-    return '<option value="' + ex.name.replace(/"/g, '&quot;') + '"></option>';
+    return '<option value="' + esc(ex.name) + '"></option>';
   }).join('');
+}
+
+// Última execução de um exercício (pelo nome, sem diferenciar maiúsculas)
+// em qualquer treino anterior — base do "pré-preencher com a última vez".
+function lastExecution(name) {
+  var key = String(name || '').trim().toLowerCase();
+  if (!key) return null;
+  for (var i = 0; i < state.workouts.length; i++) {
+    var w = state.workouts[i];
+    if (w.id === state.editingWorkoutId) continue;
+    var exs = state.workoutSets[w.id] || [];
+    for (var j = 0; j < exs.length; j++) {
+      if (exs[j].name.toLowerCase() === key) return { date: w.date, sets: exs[j].sets };
+    }
+  }
+  return null;
 }
 
 function addExercise() {
   state.workoutExercises.push({ name: '', sets: [{ reps: '', weight: '' }] });
   renderExercisesEditor();
+  var inputs = els.exercisesList.querySelectorAll('.exercise-name-input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
 }
 
 function removeExercise(exerciseIndex) {
@@ -1499,8 +2035,13 @@ function removeExercise(exerciseIndex) {
   renderExercisesEditor();
 }
 
+// "+ Série" copia a série anterior (reps e carga) — no meio do treino, o
+// normal é repetir a mesma série, e digitar de novo com a mão suada é a
+// maior fricção do registro detalhado.
 function addSet(exerciseIndex) {
-  state.workoutExercises[exerciseIndex].sets.push({ reps: '', weight: '' });
+  var sets = state.workoutExercises[exerciseIndex].sets;
+  var prev = sets[sets.length - 1];
+  sets.push(prev ? { reps: prev.reps, weight: prev.weight } : { reps: '', weight: '' });
   renderExercisesEditor();
 }
 
@@ -1511,34 +2052,41 @@ function removeSet(exerciseIndex, setIndex) {
   renderExercisesEditor();
 }
 
+function setsAreBlank(sets) {
+  return sets.every(function (s) { return (s.reps === '' || s.reps == null) && (s.weight === '' || s.weight == null); });
+}
+
 // Reconstrói o HTML só quando a estrutura muda (adicionar/remover exercício
 // ou série) — digitar num campo não passa por aqui (ver o listener de
 // "input" abaixo), senão o cursor pularia do campo a cada tecla.
 function renderExercisesEditor() {
   if (state.workoutExercises.length === 0) {
-    els.exercisesList.innerHTML = '<p class="empty-state">Nenhum exercício adicionado — a duração já é suficiente pra registrar o treino.</p>';
+    els.exercisesList.innerHTML = '<p class="empty-state">Nenhum exercício adicionado. A duração já basta pra registrar o treino.</p>';
     return;
   }
   els.exercisesList.innerHTML = state.workoutExercises.map(function (exercise, ei) {
     var setsHtml = exercise.sets.map(function (set, si) {
       return '<div class="set-row">' +
         '<span class="set-num">' + (si + 1) + '</span>' +
-        '<input type="number" inputmode="numeric" min="1" class="set-reps" placeholder="Reps" value="' +
-        (set.reps === '' || set.reps == null ? '' : set.reps) + '" data-exercise="' + ei + '" data-set="' + si + '" data-field="reps" />' +
+        '<input type="number" inputmode="numeric" min="1" class="set-reps" placeholder="Reps" aria-label="Repetições da série ' + (si + 1) + '" value="' +
+        esc(set.reps === '' || set.reps == null ? '' : set.reps) + '" data-exercise="' + ei + '" data-set="' + si + '" data-field="reps" />' +
         '<span class="set-x">×</span>' +
-        '<input type="text" inputmode="decimal" class="set-weight" placeholder="kg" value="' +
-        (set.weight === '' || set.weight == null ? '' : set.weight) + '" data-exercise="' + ei + '" data-set="' + si + '" data-field="weight" />' +
-        '<button type="button" class="set-remove" data-exercise="' + ei + '" data-set="' + si + '" aria-label="Remover série">' + DELETE_ICON_SVG + '</button>' +
+        '<input type="text" inputmode="decimal" class="set-weight" placeholder="kg" aria-label="Carga da série ' + (si + 1) + '" value="' +
+        esc(set.weight === '' || set.weight == null ? '' : set.weight) + '" data-exercise="' + ei + '" data-set="' + si + '" data-field="weight" />' +
+        '<button type="button" class="set-remove" data-exercise="' + ei + '" data-set="' + si + '" aria-label="Remover série ' + (si + 1) + '">' + DELETE_ICON_SVG + '</button>' +
         '</div>';
     }).join('');
+    var last = lastExecution(exercise.name);
+    var hint = last ? '<div class="exercise-last">Última vez (' + fmtDayLabel(last.date) + '): ' + esc(fmtSetsSummary(last.sets)) + '</div>' : '';
     return '<div class="exercise-card">' +
       '<div class="exercise-card-head">' +
-      '<input type="text" class="exercise-name-input" placeholder="Nome do exercício" list="exercise-suggestions" value="' +
-      (exercise.name || '').replace(/"/g, '&quot;') + '" data-exercise="' + ei + '" data-field="name" />' +
+      '<input type="text" class="exercise-name-input" placeholder="Nome do exercício" aria-label="Nome do exercício" list="exercise-suggestions" value="' +
+      esc(exercise.name || '') + '" data-exercise="' + ei + '" data-field="name" />' +
       '<button type="button" class="record-delete exercise-remove" data-exercise="' + ei + '" aria-label="Remover exercício">' + DELETE_ICON_SVG + '</button>' +
       '</div>' +
+      hint +
       setsHtml +
-      '<button type="button" class="add-set-btn" data-exercise="' + ei + '">+ Série</button>' +
+      '<button type="button" class="add-set-btn" data-exercise="' + ei + '">+ Série (copia a anterior)</button>' +
       '</div>';
   }).join('');
 }
@@ -1552,6 +2100,19 @@ els.exercisesList.addEventListener('input', function (e) {
   } else if (t.dataset.field === 'reps' || t.dataset.field === 'weight') {
     state.workoutExercises[ei].sets[Number(t.dataset.set)][t.dataset.field] = t.value;
   }
+});
+
+// Ao escolher o nome do exercício, se as séries ainda estão em branco,
+// pré-preenche com o que foi feito da última vez.
+els.exercisesList.addEventListener('change', function (e) {
+  var t = e.target;
+  if (t.dataset.field !== 'name') return;
+  var ex = state.workoutExercises[Number(t.dataset.exercise)];
+  var last = lastExecution(ex.name);
+  if (last && setsAreBlank(ex.sets)) {
+    ex.sets = last.sets.map(function (s) { return { reps: s.reps, weight: s.weight == null ? '' : fmtWeight(s.weight) }; });
+  }
+  renderExercisesEditor();
 });
 
 els.exercisesList.addEventListener('click', function (e) {
@@ -1575,7 +2136,7 @@ function collectValidExercises() {
       var sets = ex.sets
         .map(function (s) {
           var reps = parseInt(s.reps, 10);
-          var weight = s.weight === '' || s.weight == null ? null : parseFloat(String(s.weight).replace(',', '.'));
+          var weight = parseDecimal(s.weight);
           if (!reps || reps < 1) return null;
           return { reps: reps, weight: weight != null && !isNaN(weight) && weight >= 0 ? weight : null };
         })
@@ -1586,35 +2147,87 @@ function collectValidExercises() {
     .filter(Boolean);
 }
 
+// ── conquistas: badges calculados na hora a partir dos dados carregados ──
+var ACHIEVEMENTS = [
+  { title: 'Primeiro treino', desc: 'Registre seu primeiro treino.', check: function () { return state.workouts.length >= 1; } },
+  { title: '10 treinos', desc: 'Registre 10 treinos.', check: function () { return state.workouts.length >= 10; } },
+  { title: '50 treinos', desc: 'Registre 50 treinos.', check: function () { return state.workouts.length >= 50; } },
+  { title: '100 treinos', desc: 'Registre 100 treinos.', check: function () { return state.workouts.length >= 100; } },
+  { title: 'Primeiro peso', desc: 'Registre seu primeiro peso.', check: function () { return state.weights.length >= 1; } },
+  { title: '30 registros de peso', desc: 'Registre seu peso 30 vezes.', check: function () { return state.weights.length >= 30; } },
+  { title: 'Sequência de 3 meses', desc: 'Bata a meta mensal 3 meses seguidos.', check: function () { return computeGoalStreak() >= 3; } },
+  { title: 'Sequência de 6 meses', desc: 'Bata a meta mensal 6 meses seguidos.', check: function () { return computeGoalStreak() >= 6; } },
+  { title: 'Primeira foto', desc: 'Envie sua primeira foto de progresso.', check: function () { return state.photos.length >= 1; } },
+];
+
+function unlockedAchievements() {
+  return ACHIEVEMENTS.filter(function (a) { return a.check(); }).map(function (a) { return a.title; });
+}
+
+function currentMonthCount() {
+  var range = monthRange(new Date());
+  return state.workouts.filter(function (w) {
+    var d = parseISO(w.date);
+    return d >= range.start && d <= range.end;
+  }).length;
+}
+
+// Compara antes/depois de uma ação (salvar treino, peso, foto) e comemora
+// o que mudou: meta do mês batida agora ou conquista nova.
+function celebrateChanges(before) {
+  var goalNow = currentMonthCount();
+  if (before.monthCount < state.monthlyGoal && goalNow >= state.monthlyGoal) {
+    celebrate('Meta do mês batida! ' + goalNow + ' de ' + state.monthlyGoal + ' treinos.');
+    return;
+  }
+  var now = unlockedAchievements();
+  var fresh = now.filter(function (t) { return before.achievements.indexOf(t) === -1; });
+  if (fresh.length) celebrate('Conquista desbloqueada: ' + fresh[0] + '!');
+}
+function snapshotProgress() {
+  return { monthCount: currentMonthCount(), achievements: unlockedAchievements() };
+}
+
 // ── save ──
 function liveMinutes() {
-  if (state.mode === 'timer') {
-    return Math.min(MAX_WORKOUT_MINUTES, Math.max(1, Math.round(state.secs / 60)));
+  if (state.mode === 'timer' && state.editingWorkoutId == null) {
+    return Math.min(MAX_WORKOUT_MINUTES, Math.max(1, Math.round(timerElapsedSecs() / 60)));
   }
-  return Math.min(MAX_WORKOUT_MINUTES, Math.max(1, parseInt(state.minsVal, 10) || 0));
+  return parseInt(state.minsVal, 10);
 }
 
 els.btnSave.addEventListener('click', function () {
   if (state.saving) return;
 
   if (!state.type) {
-    showToast('Cadastre uma modalidade em Configurações › Modalidades antes de registrar.');
+    notifyError('Escolha uma modalidade (ou cadastre uma em Configurações › Modalidades).');
     return;
   }
 
+  var usingTimer = state.mode === 'timer' && state.editingWorkoutId == null;
+  if (usingTimer && timerElapsedSecs() < 1) {
+    notifyError('Inicie o cronômetro ou use o modo Manual.');
+    return;
+  }
   var min = liveMinutes();
-  var dateISO = state.mode === 'timer' ? todayISO() : clampDateToToday(state.dateVal || todayISO());
+  if (!usingTimer && (!min || min < 1 || min > MAX_WORKOUT_MINUTES)) {
+    setFieldError(els.inputMins, 'Informe a duração em minutos (1 a ' + MAX_WORKOUT_MINUTES + ').');
+    return;
+  }
+
+  var dateISO = clampDateToToday(state.dateVal || todayISO());
   var local = state.local.trim();
   var isNewLocal = local && !state.locations.some(function (l) { return l.name === local; });
   var exercisesToSave = collectValidExercises();
   var newExerciseNames = exercisesToSave
     .map(function (ex) { return ex.name; })
     .filter(function (name) { return !state.exerciseCatalog.some(function (e) { return e.name === name; }); });
-  var wasTimer = state.mode === 'timer';
   var editingId = state.editingWorkoutId;
+  var before = snapshotProgress();
 
   state.saving = true;
   els.btnSave.disabled = true;
+  els.btnSaveLabel.textContent = 'Salvando…';
 
   var patch = { date: dateISO, type: state.type, minutes: min, local: local };
   var op = (editingId != null ? updateWorkout(editingId, patch) : insertWorkout(patch))
@@ -1627,33 +2240,32 @@ els.btnSave.addEventListener('click', function () {
       state.workoutSets[row.id] = exercisesToSave;
       if (editingId != null) {
         state.workouts = state.workouts.map(function (w) { return w.id === row.id ? row : w; });
+        sortWorkouts();
         state.editingWorkoutId = null;
-        updateEditUI();
-        showToast('Treino atualizado.');
+        resetWorkoutForm();
+        notifySuccess('Treino atualizado.');
       } else {
         state.workouts.unshift(row);
-        state.recordsPage = 0;
-        if (wasTimer) {
-          state.secs = 0;
-          state.running = false;
-          updateTimerControls();
-          updateClock();
-        }
-        showToast(state.type + ' de ' + fmtDuration(min) + ' registrado. Boa!');
+        sortWorkouts();
+        state.recordsPages = 1;
+        if (usingTimer) saveTimerState({ startedAt: null, accumulatedMs: 0, startDate: null });
+        resetWorkoutForm();
+        notifySuccess(row.type + ' de ' + fmtDuration(min) + ' registrado. Boa!');
       }
+      cacheSet(currentUserId(), 'workouts', state.workouts);
+      cacheSet(currentUserId(), 'workoutSets', state.workoutSets);
+      updateEditUI();
+      renderRegistrar();
       updateLocalSuggestions();
-      renderPainel();
+      celebrateChanges(before);
 
-      // Local digitado que ainda não estava no catálogo entra sozinho —
-      // conveniência: quem só digita continua funcionando, e o catálogo em
-      // Configurações fica sempre em dia pra quem quiser revisar/apagar.
+      // Local digitado que ainda não estava no catálogo entra sozinho.
       if (isNewLocal) {
         ensureLocationExists(local)
           .then(function () { return fetchLocations(currentUserId()); })
           .then(function (rows) {
             state.locations = rows;
             updateLocalSuggestions();
-            renderLocations();
           })
           .catch(function (err) { console.error('Falha ao salvar local no catálogo', err); });
       }
@@ -1671,37 +2283,75 @@ els.btnSave.addEventListener('click', function () {
     })
     .catch(function (err) {
       console.error('Falha ao salvar treino', err);
-      showToast('Não foi possível salvar. Tente de novo.');
+      notifyError('Não foi possível salvar. Confira a conexão e tente de novo.');
     })
     .finally(function () {
       state.saving = false;
       els.btnSave.disabled = false;
+      updateEditUI();
     });
 });
 
-async function handleDeleteClick(id) {
-  if (state.deletingId) return;
-  var ok = await confirmModal('Excluir este treino? Essa ação não pode ser desfeita.');
-  if (!ok) return;
-
-  state.deletingId = id;
-  deleteWorkout(id)
-    .then(function () {
-      state.workouts = state.workouts.filter(function (w) { return w.id !== id; });
-      delete state.workoutSets[id];
-      if (state.editingWorkoutId === id) cancelEditWorkout();
-    })
-    .catch(function (err) {
-      console.error('Falha ao excluir treino', err);
-      showToast('Não foi possível excluir. Tente de novo.');
-    })
-    .finally(function () {
-      state.deletingId = null;
-      renderPainel();
-    });
+function sortWorkouts() {
+  state.workouts.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return (b.id || 0) - (a.id || 0);
+  });
 }
 
-// ── weight fields ──
+function handleDeleteWorkout(id) {
+  var idx = state.workouts.findIndex(function (w) { return w.id === id; });
+  if (idx === -1) return;
+  var removed = state.workouts[idx];
+  var removedSets = state.workoutSets[id];
+  if (state.editingWorkoutId === id) cancelEditWorkout();
+  deleteWithUndo({
+    message: 'Treino de ' + fmtDayLabel(removed.date) + ' excluído.',
+    removeLocal: function () {
+      state.workouts = state.workouts.filter(function (w) { return w.id !== id; });
+      delete state.workoutSets[id];
+    },
+    restoreLocal: function () {
+      if (!state.workouts.some(function (w) { return w.id === id; })) state.workouts.push(removed);
+      sortWorkouts();
+      if (removedSets) state.workoutSets[id] = removedSets;
+    },
+    commit: function () {
+      return deleteWorkout(id).then(function () {
+        cacheSet(currentUserId(), 'workouts', state.workouts);
+      });
+    },
+    render: renderPainel,
+  });
+}
+
+// ── render: Registrar (treino) ──
+function renderRegistrar() {
+  var editing = state.editingWorkoutId != null;
+  var timerMode = state.mode === 'timer' && !editing;
+  els.modeTabs.forEach(function (btn) {
+    var active = btn.dataset.mode === state.mode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  els.timerCard.hidden = !timerMode;
+  els.fieldMins.hidden = timerMode;
+
+  // No cronômetro, a data sugerida é o dia em que o treino começou.
+  if (timerMode && timerState().startDate && !editing) state.dateVal = timerState().startDate;
+  els.inputDate.value = state.dateVal;
+  els.inputDate.max = todayISO();
+  els.inputMins.value = state.minsVal;
+  els.inputLocal.value = state.local;
+
+  updateTimerControls();
+  updateClock();
+  renderTypeOptions();
+  renderExercisesEditor();
+}
+
+
+// ── peso: formulário com stepper, pré-preenchido com o último valor ──
 els.inputWeightDate.addEventListener('change', function (e) {
   state.weightDateVal = e.target.value || todayISO();
 });
@@ -1709,16 +2359,41 @@ els.inputWeightValue.addEventListener('input', function (e) {
   state.weightVal = e.target.value;
 });
 
+function stepWeight(delta) {
+  var current = parseDecimal(state.weightVal);
+  if (current == null || isNaN(current)) current = state.weights.length ? Number(state.weights[0].weight_kg) : 70;
+  var next = Math.max(0.1, Math.round((current + delta) * 10) / 10);
+  state.weightVal = fmtWeight(next);
+  els.inputWeightValue.value = state.weightVal;
+  clearFieldError(els.inputWeightValue);
+}
+els.btnWeightMinus.addEventListener('click', function () { stepWeight(-0.1); });
+els.btnWeightPlus.addEventListener('click', function () { stepWeight(0.1); });
+
+function renderWeightForm() {
+  // Pesar todo dia vira: abrir, ajustar ±0,1 e salvar.
+  if (!state.weightVal && state.editingWeightId == null && state.weights.length) {
+    state.weightVal = fmtWeight(state.weights[0].weight_kg);
+  }
+  els.inputWeightDate.value = state.weightDateVal;
+  els.inputWeightDate.max = todayISO();
+  els.inputWeightValue.value = state.weightVal;
+  var last = state.weights[0];
+  els.weightLastHint.textContent = last ? 'Último: ' + fmtWeight(last.weight_kg) + ' kg em ' + fmtDayLabel(last.date) : '';
+  renderMeasurementForm();
+}
+
 els.btnSaveWeight.addEventListener('click', function () {
   if (state.savingWeight) return;
 
   var dateISO = clampDateToToday(state.weightDateVal || todayISO());
-  var weight = parseFloat(String(state.weightVal).replace(',', '.'));
-  if (!weight || weight <= 0 || weight >= 500) {
-    showWeightToast('Informe um peso válido (entre 0 e 500 kg).');
+  var weight = parseDecimal(state.weightVal);
+  if (weight == null || isNaN(weight) || weight <= 0 || weight >= 500) {
+    setFieldError(els.inputWeightValue, 'Informe um peso válido, entre 0 e 500 kg.');
     return;
   }
   var editingId = state.editingWeightId;
+  var before = snapshotProgress();
 
   state.savingWeight = true;
   els.btnSaveWeight.disabled = true;
@@ -1732,19 +2407,24 @@ els.btnSaveWeight.addEventListener('click', function () {
       state.weights = state.weights.filter(function (w) { return w.id !== row.id && w.date !== row.date; });
       state.weights.push(row);
       state.weights.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
-      state.weightsPage = 0;
+      state.weightsPages = 1;
+      cacheSet(currentUserId(), 'weights', state.weights);
+      var target = state.targetWeight;
+      var extra = target ? ' Faltam ' + fmtWeight(Math.abs(row.weight_kg - target)) + ' kg para a meta.' : '';
       if (editingId != null) {
         state.editingWeightId = null;
+        state.weightDateVal = todayISO();
         updateEditUI();
-        showWeightToast('Peso atualizado.');
+        notifySuccess('Peso atualizado.');
       } else {
-        showWeightToast('Peso de ' + fmtWeight(row.weight_kg) + ' kg registrado em ' + fmtDayLabel(row.date) + '.');
+        notifySuccess('Peso de ' + fmtWeight(row.weight_kg) + ' kg registrado em ' + fmtDayLabel(row.date) + '.' + extra);
       }
-      renderWeights();
+      renderWeightForm();
+      celebrateChanges(before);
     })
     .catch(function (err) {
       console.error('Falha ao salvar peso', err);
-      showWeightToast('Não foi possível salvar. Tente de novo.');
+      notifyError('Não foi possível salvar o peso. Tente de novo.');
     })
     .finally(function () {
       state.savingWeight = false;
@@ -1752,25 +2432,22 @@ els.btnSaveWeight.addEventListener('click', function () {
     });
 });
 
-async function handleDeleteWeightClick(id) {
-  if (state.deletingWeightId) return;
-  var ok = await confirmModal('Excluir este registro de peso? Essa ação não pode ser desfeita.');
-  if (!ok) return;
-
-  state.deletingWeightId = id;
-  deleteWeight(id)
-    .then(function () {
-      state.weights = state.weights.filter(function (w) { return w.id !== id; });
-      if (state.editingWeightId === id) cancelEditWeight();
-    })
-    .catch(function (err) {
-      console.error('Falha ao excluir peso', err);
-      showWeightToast('Não foi possível excluir. Tente de novo.');
-    })
-    .finally(function () {
-      state.deletingWeightId = null;
-      renderWeights();
-    });
+function handleDeleteWeight(id) {
+  var removed = state.weights.find(function (w) { return w.id === id; });
+  if (!removed) return;
+  if (state.editingWeightId === id) cancelEditWeight();
+  deleteWithUndo({
+    message: 'Peso de ' + fmtDayLabel(removed.date) + ' excluído.',
+    removeLocal: function () { state.weights = state.weights.filter(function (w) { return w.id !== id; }); },
+    restoreLocal: function () {
+      if (!state.weights.some(function (w) { return w.id === id; })) state.weights.push(removed);
+      state.weights.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+    },
+    commit: function () {
+      return deleteWeight(id).then(function () { cacheSet(currentUserId(), 'weights', state.weights); });
+    },
+    render: renderWeights,
+  });
 }
 
 // ── medidas corporais (cintura / % gordura) ──
@@ -1784,30 +2461,37 @@ els.inputMeasurementBodyFat.addEventListener('input', function (e) {
   state.measurementBodyFatVal = e.target.value;
 });
 
+function renderMeasurementForm() {
+  els.inputMeasurementDate.value = state.measurementDateVal;
+  els.inputMeasurementDate.max = todayISO();
+  els.inputMeasurementWaist.value = state.measurementWaistVal;
+  els.inputMeasurementBodyFat.value = state.measurementBodyFatVal;
+  var editing = state.editingMeasurementId != null;
+  els.btnCancelEditMeasurement.hidden = !editing;
+  els.btnSaveMeasurementLabel.textContent = editing ? 'Salvar alterações' : 'Salvar medidas';
+}
+
 els.btnSaveMeasurement.addEventListener('click', function () {
   if (state.savingMeasurement) return;
 
   var dateISO = clampDateToToday(state.measurementDateVal || todayISO());
-  var waistRaw = String(state.measurementWaistVal || '').trim();
-  var bodyFatRaw = String(state.measurementBodyFatVal || '').trim();
-  var waist = waistRaw ? parseFloat(waistRaw.replace(',', '.')) : null;
-  var bodyFat = bodyFatRaw ? parseFloat(bodyFatRaw.replace(',', '.')) : null;
+  var waist = parseDecimal(state.measurementWaistVal);
+  var bodyFat = parseDecimal(state.measurementBodyFatVal);
 
-  if (waistRaw && (!waist || waist <= 0 || waist >= 300)) {
-    showMeasurementToast('Informe uma cintura válida (entre 0 e 300 cm).');
+  if (waist != null && (isNaN(waist) || waist <= 0 || waist >= 300)) {
+    setFieldError(els.inputMeasurementWaist, 'Informe uma cintura entre 0 e 300 cm.');
     return;
   }
-  if (bodyFatRaw && (!bodyFat || bodyFat <= 0 || bodyFat >= 100)) {
-    showMeasurementToast('Informe um % de gordura válido (entre 0 e 100).');
+  if (bodyFat != null && (isNaN(bodyFat) || bodyFat <= 0 || bodyFat >= 100)) {
+    setFieldError(els.inputMeasurementBodyFat, 'Informe um % de gordura entre 0 e 100.');
     return;
   }
   if (waist == null && bodyFat == null) {
-    showMeasurementToast('Preencha cintura, % de gordura, ou os dois.');
+    setFieldError(els.inputMeasurementWaist, 'Preencha a cintura, o % de gordura ou os dois.');
     return;
   }
 
   var editingId = state.editingMeasurementId;
-
   state.savingMeasurement = true;
   els.btnSaveMeasurement.disabled = true;
 
@@ -1820,20 +2504,21 @@ els.btnSaveMeasurement.addEventListener('click', function () {
       state.measurements = state.measurements.filter(function (m) { return m.id !== row.id && m.date !== row.date; });
       state.measurements.push(row);
       state.measurements.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
-      state.measurementsPage = 0;
+      state.measurementsPages = 1;
+      cacheSet(currentUserId(), 'measurements', state.measurements);
       if (editingId != null) {
         cancelEditMeasurement();
-        showMeasurementToast('Medidas atualizadas.');
+        notifySuccess('Medidas atualizadas.');
       } else {
         state.measurementWaistVal = '';
         state.measurementBodyFatVal = '';
-        showMeasurementToast('Medidas registradas em ' + fmtDayLabel(row.date) + '.');
+        renderMeasurementForm();
+        notifySuccess('Medidas registradas em ' + fmtDayLabel(row.date) + '.');
       }
-      renderMeasurements();
     })
     .catch(function (err) {
       console.error('Falha ao salvar medidas', err);
-      showMeasurementToast('Não foi possível salvar. Tente de novo.');
+      notifyError('Não foi possível salvar as medidas. Tente de novo.');
     })
     .finally(function () {
       state.savingMeasurement = false;
@@ -1846,9 +2531,9 @@ function startEditMeasurement(m) {
   state.measurementDateVal = m.date;
   state.measurementWaistVal = m.waist_cm != null ? fmtWeight(m.waist_cm) : '';
   state.measurementBodyFatVal = m.body_fat_pct != null ? fmtWeight(m.body_fat_pct) : '';
-  els.btnCancelEditMeasurement.hidden = false;
-  els.btnSaveMeasurementLabel.textContent = 'Salvar alterações';
-  renderMeasurements();
+  state.registrarSection = 'peso';
+  setTab('registrar');
+  els.inputMeasurementWaist.focus();
 }
 
 function cancelEditMeasurement() {
@@ -1856,32 +2541,27 @@ function cancelEditMeasurement() {
   state.measurementDateVal = todayISO();
   state.measurementWaistVal = '';
   state.measurementBodyFatVal = '';
-  els.btnCancelEditMeasurement.hidden = true;
-  els.btnSaveMeasurementLabel.textContent = 'Salvar medidas';
-  renderMeasurements();
+  renderMeasurementForm();
 }
 
 els.btnCancelEditMeasurement.addEventListener('click', cancelEditMeasurement);
 
-async function handleDeleteMeasurementClick(id) {
-  if (state.deletingMeasurementId) return;
-  var ok = await confirmModal('Excluir este registro de medidas? Essa ação não pode ser desfeita.');
-  if (!ok) return;
-
-  state.deletingMeasurementId = id;
-  deleteBodyMeasurement(id)
-    .then(function () {
-      state.measurements = state.measurements.filter(function (m) { return m.id !== id; });
-      if (state.editingMeasurementId === id) cancelEditMeasurement();
-    })
-    .catch(function (err) {
-      console.error('Falha ao excluir medidas', err);
-      showMeasurementToast('Não foi possível excluir. Tente de novo.');
-    })
-    .finally(function () {
-      state.deletingMeasurementId = null;
-      renderMeasurements();
-    });
+function handleDeleteMeasurement(id) {
+  var removed = state.measurements.find(function (m) { return m.id === id; });
+  if (!removed) return;
+  if (state.editingMeasurementId === id) cancelEditMeasurement();
+  deleteWithUndo({
+    message: 'Medidas de ' + fmtDayLabel(removed.date) + ' excluídas.',
+    removeLocal: function () { state.measurements = state.measurements.filter(function (m) { return m.id !== id; }); },
+    restoreLocal: function () {
+      if (!state.measurements.some(function (m) { return m.id === id; })) state.measurements.push(removed);
+      state.measurements.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+    },
+    commit: function () {
+      return deleteBodyMeasurement(id).then(function () { cacheSet(currentUserId(), 'measurements', state.measurements); });
+    },
+    render: renderMeasurements,
+  });
 }
 
 // Procura pra trás (registros mais antigos) o valor anterior desse campo —
@@ -1894,103 +2574,83 @@ function findPrevMeasurementValue(sortedList, fromIndex, field) {
 }
 
 function measurementDelta(current, previous) {
-  if (previous == null) return { trendClass: '', label: '—' };
+  if (previous == null) return { trendClass: '', label: '·' };
   var diff = current - previous;
   if (diff > 0.05) return { trendClass: 'weight-up', label: '▲ ' + fmtWeight(diff) };
   if (diff < -0.05) return { trendClass: 'weight-down', label: '▼ ' + fmtWeight(Math.abs(diff)) };
   return { trendClass: '', label: '= 0,0' };
 }
 
-function renderMeasurements() {
-  els.inputMeasurementDate.value = state.measurementDateVal;
-  els.inputMeasurementWaist.value = state.measurementWaistVal;
-  els.inputMeasurementBodyFat.value = state.measurementBodyFatVal;
+function measurementRowHTML(m, prevWaist, prevFat, withActions) {
+  var waistDelta = m.waist_cm != null ? measurementDelta(m.waist_cm, prevWaist) : null;
+  var bodyFatDelta = m.body_fat_pct != null ? measurementDelta(m.body_fat_pct, prevFat) : null;
+  return '<div class="record-row' + (withActions ? ' has-edit" data-swipe-id="' + m.id : '') + '">' +
+    '<span class="record-day">' + fmtDayLabel(m.date) + '</span>' +
+    '<span class="record-mid">' +
+    (m.waist_cm != null ? '<span class="record-type">Cintura ' + fmtWeight(m.waist_cm) + ' cm</span>' : '') +
+    (m.body_fat_pct != null ? '<span class="record-local">Gordura ' + fmtWeight(m.body_fat_pct) + '%</span>' : '') +
+    '</span>' +
+    '<span class="measurement-delta-col">' +
+    (waistDelta ? '<span class="weight-delta ' + waistDelta.trendClass + '">' + waistDelta.label + '</span>' : '') +
+    (bodyFatDelta ? '<span class="weight-delta ' + bodyFatDelta.trendClass + '">' + bodyFatDelta.label + '</span>' : '') +
+    '</span>' +
+    (withActions
+      ? '<button type="button" class="record-edit" data-id="' + m.id + '" aria-label="Editar medidas de ' + fmtDayLabel(m.date) + '">' + EDIT_ICON_SVG + '</button>' +
+        '<button type="button" class="record-delete" data-id="' + m.id + '" aria-label="Excluir medidas de ' + fmtDayLabel(m.date) + '">' + DELETE_ICON_SVG + '</button>'
+      : '') +
+    '</div>';
+}
 
+function renderMeasurements() {
   if (state.measurementsLoading) {
-    els.measurementsList.innerHTML = '<p class="empty-state">Carregando medidas…</p>';
-    els.measurementsPager.hidden = true;
+    els.measurementsList.innerHTML = skeletonRows(2);
+    els.measurementsMore.hidden = true;
     return;
   }
   if (state.measurementsLoadError) {
-    els.measurementsList.innerHTML = '<p class="empty-state">Não foi possível carregar as medidas. Recarregue a página.</p>';
-    els.measurementsPager.hidden = true;
+    els.measurementsList.innerHTML = errorStateHTML('Não foi possível carregar as medidas.', 'own');
+    els.measurementsMore.hidden = true;
     return;
   }
 
-  var sorted = state.measurements; // already sorted date desc
+  var sorted = state.measurements; // já ordenado por data desc
   els.measurementCountNote.textContent = sorted.length + (sorted.length === 1 ? ' registro' : ' registros');
 
   if (sorted.length === 0) {
-    els.measurementsList.innerHTML = '<p class="empty-state">Nenhuma medida registrada ainda.</p>';
-    els.measurementsPager.hidden = true;
-    state.measurementsPage = 0;
+    els.measurementsList.innerHTML = '<p class="empty-state">Nenhuma medida registrada ainda. <button type="button" class="link-btn inline" data-goto-peso>Registrar agora</button></p>';
+    els.measurementsMore.hidden = true;
     return;
   }
 
-  var pageCount = Math.ceil(sorted.length / RECORDS_PAGE_SIZE);
-  if (state.measurementsPage >= pageCount) state.measurementsPage = pageCount - 1;
-  if (state.measurementsPage < 0) state.measurementsPage = 0;
-
-  var start = state.measurementsPage * RECORDS_PAGE_SIZE;
-  var pageItems = sorted.slice(start, start + RECORDS_PAGE_SIZE);
-
-  els.measurementsList.innerHTML = pageItems.map(function (m, i) {
-    var fullIndex = start + i;
-    var waistDelta = m.waist_cm != null
-      ? measurementDelta(m.waist_cm, findPrevMeasurementValue(sorted, fullIndex, 'waist_cm'))
-      : null;
-    var bodyFatDelta = m.body_fat_pct != null
-      ? measurementDelta(m.body_fat_pct, findPrevMeasurementValue(sorted, fullIndex, 'body_fat_pct'))
-      : null;
-
-    return '<div class="record-row has-edit">' +
-      '<span class="record-day">' + fmtDayLabel(m.date) + '</span>' +
-      '<span class="record-mid">' +
-      (m.waist_cm != null ? '<span class="record-type">Cintura ' + fmtWeight(m.waist_cm) + ' cm</span>' : '') +
-      (m.body_fat_pct != null ? '<span class="record-local">Gordura ' + fmtWeight(m.body_fat_pct) + '%</span>' : '') +
-      '</span>' +
-      '<span class="measurement-delta-col">' +
-      (waistDelta ? '<span class="weight-delta ' + waistDelta.trendClass + '">' + waistDelta.label + '</span>' : '') +
-      (bodyFatDelta ? '<span class="weight-delta ' + bodyFatDelta.trendClass + '">' + bodyFatDelta.label + '</span>' : '') +
-      '</span>' +
-      '<button type="button" class="record-edit" data-id="' + m.id + '" aria-label="Editar medidas">' +
-      EDIT_ICON_SVG +
-      '</button>' +
-      '<button type="button" class="record-delete" data-id="' + m.id + '" aria-label="Excluir medidas">' +
-      DELETE_ICON_SVG +
-      '</button>' +
-      '</div>';
+  var shown = Math.min(sorted.length, state.measurementsPages * RECORDS_PAGE_SIZE);
+  els.measurementsList.innerHTML = sorted.slice(0, shown).map(function (m, i) {
+    return measurementRowHTML(m, findPrevMeasurementValue(sorted, i, 'waist_cm'), findPrevMeasurementValue(sorted, i, 'body_fat_pct'), true);
   }).join('');
-
-  els.measurementsList.querySelectorAll('.record-edit').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var m = state.measurements.find(function (x) { return x.id === Number(btn.dataset.id); });
-      if (m) startEditMeasurement(m);
-    });
-  });
-  els.measurementsList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      handleDeleteMeasurementClick(Number(btn.dataset.id));
-    });
-  });
-
-  els.measurementsPager.hidden = pageCount <= 1;
-  els.measurementsPagerNote.textContent = 'Página ' + (state.measurementsPage + 1) + ' de ' + pageCount;
-  els.measurementsPagerPrev.disabled = state.measurementsPage === 0;
-  els.measurementsPagerNext.disabled = state.measurementsPage >= pageCount - 1;
+  renderMoreButton(els.measurementsMore, shown, sorted.length);
 }
 
-els.measurementsPagerPrev.addEventListener('click', function () {
-  if (state.measurementsPage > 0) {
-    state.measurementsPage -= 1;
-    renderMeasurements();
+els.measurementsList.addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-id]');
+  if (!btn) return;
+  var id = Number(btn.dataset.id);
+  if (btn.classList.contains('record-edit')) {
+    var m = state.measurements.find(function (x) { return x.id === id; });
+    if (m) startEditMeasurement(m);
+  } else if (btn.classList.contains('record-delete')) {
+    handleDeleteMeasurement(id);
   }
 });
-els.measurementsPagerNext.addEventListener('click', function () {
-  state.measurementsPage += 1;
-  renderMeasurements();
+attachSwipeToDelete(els.measurementsList, function (id) { handleDeleteMeasurement(Number(id)); });
+els.measurementsMore.addEventListener('click', function () { state.measurementsPages += 1; renderMeasurements(); });
+
+document.addEventListener('click', function (e) {
+  if (e.target.closest && e.target.closest('[data-goto-peso]')) {
+    state.registrarSection = 'peso';
+    setTab('registrar');
+  }
 });
 
+// ── fotos de progresso ──
 var PHOTOS_PAGE_SIZE = 6;
 
 els.btnUploadPhoto.addEventListener('click', function () {
@@ -1998,44 +2658,36 @@ els.btnUploadPhoto.addEventListener('click', function () {
 
   var file = els.inputPhotoFile.files && els.inputPhotoFile.files[0];
   if (!file) {
-    showPhotoToast('Escolha uma foto primeiro.');
+    notifyError('Escolha uma foto primeiro.');
     return;
   }
   if (file.size > MAX_DOCUMENT_BYTES) {
-    showPhotoToast('Arquivo maior que 10MB. Escolha um menor.');
+    notifyError('Arquivo maior que 10MB. Escolha um menor.');
     return;
   }
+  var before = snapshotProgress();
 
   state.uploadingPhoto = true;
   els.btnUploadPhoto.disabled = true;
+  els.btnUploadPhoto.textContent = 'Enviando…';
 
   uploadProgressPhoto(file, todayISO())
     .then(function (photo) {
       state.photos.unshift(photo);
-      state.photosPage = 0;
+      state.photosPages = 1;
       els.inputPhotoFile.value = '';
-      renderPhotosGallery();
-      showPhotoToast('Foto enviada.');
+      notifySuccess('Foto enviada. Veja em Progresso › Galeria.');
+      celebrateChanges(before);
     })
     .catch(function (err) {
       console.error('Falha ao enviar foto', err);
-      showPhotoToast('Não foi possível enviar. Tente de novo.');
+      notifyError('Não foi possível enviar a foto. Tente de novo.');
     })
     .finally(function () {
       state.uploadingPhoto = false;
       els.btnUploadPhoto.disabled = false;
+      els.btnUploadPhoto.textContent = 'Enviar foto';
     });
-});
-
-els.photosPagerPrev.addEventListener('click', function () {
-  if (state.photosPage > 0) {
-    state.photosPage -= 1;
-    renderPhotosGallery();
-  }
-});
-els.photosPagerNext.addEventListener('click', function () {
-  state.photosPage += 1;
-  renderPhotosGallery();
 });
 
 async function handleDeletePhotoClick(photo) {
@@ -2047,10 +2699,11 @@ async function handleDeletePhotoClick(photo) {
   deleteProgressPhoto(photo)
     .then(function () {
       state.photos = state.photos.filter(function (p) { return p.id !== photo.id; });
+      notify('Foto excluída.');
     })
     .catch(function (err) {
       console.error('Falha ao excluir foto', err);
-      showPhotoToast('Não foi possível excluir. Tente de novo.');
+      notifyError('Não foi possível excluir a foto. Tente de novo.');
     })
     .finally(function () {
       state.deletingPhotoId = null;
@@ -2059,41 +2712,36 @@ async function handleDeletePhotoClick(photo) {
 }
 
 // Renderiza os tiles na hora (sem esperar a imagem) e busca as URLs
-// assinadas da página inteira numa chamada só, preenchendo o <img src>
-// assim que a resposta chega — evita 1 chamada de rede por miniatura.
+// assinadas de todas as miniaturas visíveis numa chamada só.
 function renderPhotosGallery() {
   els.photosCountNote.textContent = state.photos.length + (state.photos.length === 1 ? ' foto' : ' fotos');
+  els.btnOpenCompare.hidden = state.photos.length < 2;
 
   if (state.photosLoading) {
-    els.photosGallery.innerHTML = '<p class="empty-state">Carregando fotos…</p>';
-    els.photosPager.hidden = true;
+    els.photosGallery.innerHTML = skeletonRows(1);
+    els.photosMore.hidden = true;
     return;
   }
   if (state.photosLoadError) {
-    els.photosGallery.innerHTML = '<p class="empty-state">Não foi possível carregar as fotos. Recarregue a página.</p>';
-    els.photosPager.hidden = true;
+    els.photosGallery.innerHTML = errorStateHTML('Não foi possível carregar as fotos.', 'own');
+    els.photosMore.hidden = true;
     return;
   }
   if (state.photos.length === 0) {
-    els.photosGallery.innerHTML = '<p class="empty-state">Nenhuma foto enviada ainda.</p>';
-    els.photosPager.hidden = true;
-    state.photosPage = 0;
+    els.photosGallery.innerHTML = '<p class="empty-state">Nenhuma foto enviada ainda. <button type="button" class="link-btn inline" data-goto-peso>Enviar a primeira</button></p>';
+    els.photosMore.hidden = true;
     return;
   }
 
-  var pageCount = Math.ceil(state.photos.length / PHOTOS_PAGE_SIZE);
-  if (state.photosPage >= pageCount) state.photosPage = pageCount - 1;
-  if (state.photosPage < 0) state.photosPage = 0;
-
-  var start = state.photosPage * PHOTOS_PAGE_SIZE;
-  var pageItems = state.photos.slice(start, start + PHOTOS_PAGE_SIZE);
+  var shown = Math.min(state.photos.length, state.photosPages * PHOTOS_PAGE_SIZE);
+  var pageItems = state.photos.slice(0, shown);
 
   els.photosGallery.innerHTML = pageItems.map(function (p) {
     return '<div class="photo-tile">' +
-      '<div class="photo-thumb-wrap"><img class="photo-thumb" data-path="' + p.file_path + '" alt="Foto de ' + fmtDayLabel(p.taken_at) + '" /></div>' +
+      '<button type="button" class="photo-thumb-wrap" data-path="' + esc(p.file_path) + '" aria-label="Abrir foto de ' + fmtDayLabel(p.taken_at) + '"><img class="photo-thumb" data-path="' + esc(p.file_path) + '" alt="Foto de ' + fmtDayLabel(p.taken_at) + '" /></button>' +
       '<div class="photo-tile-foot">' +
       '<span class="photo-date">' + fmtDayLabel(p.taken_at) + '</span>' +
-      '<button type="button" class="photo-delete" data-id="' + p.id + '" aria-label="Excluir foto">' + DELETE_ICON_SVG + '</button>' +
+      '<button type="button" class="photo-delete" data-id="' + p.id + '" aria-label="Excluir foto de ' + fmtDayLabel(p.taken_at) + '">' + DELETE_ICON_SVG + '</button>' +
       '</div>' +
       '</div>';
   }).join('');
@@ -2101,7 +2749,6 @@ function renderPhotosGallery() {
   var paths = pageItems.map(function (p) { return p.file_path; });
   progressPhotoSignedUrls(paths)
     .then(function (map) {
-      state.photoSignedUrls = map;
       els.photosGallery.querySelectorAll('.photo-thumb').forEach(function (img) {
         var url = map[img.dataset.path];
         if (url) img.src = url;
@@ -2109,126 +2756,327 @@ function renderPhotosGallery() {
     })
     .catch(function (err) { console.error('Falha ao gerar URLs das fotos', err); });
 
-  els.photosGallery.querySelectorAll('.photo-thumb').forEach(function (img) {
-    img.addEventListener('click', function () {
-      if (img.src) window.open(img.src, '_blank', 'noopener');
-    });
-  });
-  els.photosGallery.querySelectorAll('.photo-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var photo = state.photos.find(function (p) { return p.id === Number(btn.dataset.id); });
-      if (photo) handleDeletePhotoClick(photo);
-    });
-  });
-
-  els.photosPager.hidden = pageCount <= 1;
-  els.photosPagerNote.textContent = 'Página ' + (state.photosPage + 1) + ' de ' + pageCount;
-  els.photosPagerPrev.disabled = state.photosPage === 0;
-  els.photosPagerNext.disabled = state.photosPage >= pageCount - 1;
+  renderMoreButton(els.photosMore, shown, state.photos.length);
 }
 
-els.btnUploadDocument.addEventListener('click', function () {
-  if (state.uploadingDocument) return;
-
-  var file = els.inputDocumentFile.files && els.inputDocumentFile.files[0];
-  if (!file) {
-    showDocumentToast('Escolha um arquivo primeiro.');
+els.photosGallery.addEventListener('click', function (e) {
+  var del = e.target.closest('.photo-delete');
+  if (del) {
+    var photo = state.photos.find(function (p) { return p.id === Number(del.dataset.id); });
+    if (photo) handleDeletePhotoClick(photo);
     return;
   }
-  if (file.size > MAX_DOCUMENT_BYTES) {
-    showDocumentToast('Arquivo maior que 10MB. Escolha um menor.');
-    return;
+  var open = e.target.closest('.photo-thumb-wrap');
+  if (open) {
+    var img = open.querySelector('img');
+    if (img && img.src) window.open(img.src, '_blank', 'noopener');
   }
+});
+els.photosMore.addEventListener('click', function () { state.photosPages += 1; renderPhotosGallery(); });
 
-  state.uploadingDocument = true;
-  els.btnUploadDocument.disabled = true;
+// ── comparador antes/depois ──
+function photoOptionLabel(p) { return fmtFullDayLabel(p.taken_at); }
 
-  uploadDocument(file)
-    .then(function (doc) {
-      state.documents.unshift(doc);
-      state.documentsPage = 0;
-      els.inputDocumentFile.value = '';
-      renderDocuments();
-      showDocumentToast(doc.file_name + ' enviado.');
+els.btnOpenCompare.addEventListener('click', function () {
+  var asc = state.photos.slice().sort(function (a, b) { return a.taken_at < b.taken_at ? -1 : a.taken_at > b.taken_at ? 1 : 0; });
+  var options = asc.map(function (p, i) { return '<option value="' + i + '">' + photoOptionLabel(p) + '</option>'; }).join('');
+  els.compareBefore.innerHTML = options;
+  els.compareAfter.innerHTML = options;
+  els.compareBefore.value = '0';
+  els.compareAfter.value = String(asc.length - 1);
+  els.compareRange.value = 50;
+  compareState.photos = asc;
+  updateCompareImages();
+  applyCompareSplit();
+  openDialog(els.compareModal);
+});
+var compareState = { photos: [] };
+
+function updateCompareImages() {
+  var before = compareState.photos[Number(els.compareBefore.value)];
+  var after = compareState.photos[Number(els.compareAfter.value)];
+  if (!before || !after) return;
+  els.compareImgBefore.removeAttribute('src');
+  els.compareImgAfter.removeAttribute('src');
+  progressPhotoSignedUrls([before.file_path, after.file_path])
+    .then(function (map) {
+      els.compareImgBefore.src = map[before.file_path] || '';
+      els.compareImgAfter.src = map[after.file_path] || '';
     })
     .catch(function (err) {
-      console.error('Falha ao enviar documento', err);
-      showDocumentToast('Não foi possível enviar. Tente de novo.');
-    })
-    .finally(function () {
-      state.uploadingDocument = false;
-      els.btnUploadDocument.disabled = false;
+      console.error('Falha ao carregar fotos do comparador', err);
+      notifyError('Não foi possível carregar as fotos.');
     });
+}
+function applyCompareSplit() {
+  var pct = Number(els.compareRange.value);
+  els.compareAfterClip.style.clipPath = 'inset(0 0 0 ' + pct + '%)';
+  els.compareDivider.style.left = pct + '%';
+}
+els.compareBefore.addEventListener('change', updateCompareImages);
+els.compareAfter.addEventListener('change', updateCompareImages);
+els.compareRange.addEventListener('input', applyCompareSplit);
+els.compareClose.addEventListener('click', function () {
+  openDialogs.forEach(function (d) { d.close('done'); });
 });
 
-async function handleDeleteDocumentClick(doc) {
-  if (state.deletingDocumentId) return;
-  var ok = await confirmModal('Excluir "' + doc.file_name + '"? Essa ação não pode ser desfeita.');
-  if (!ok) return;
-
-  state.deletingDocumentId = doc.id;
-  deleteDocument(doc)
-    .then(function () {
-      state.documents = state.documents.filter(function (d) { return d.id !== doc.id; });
-    })
-    .catch(function (err) {
-      console.error('Falha ao excluir documento', err);
-      showDocumentToast('Não foi possível excluir. Tente de novo.');
-    })
-    .finally(function () {
-      state.deletingDocumentId = null;
-      renderDocuments();
-    });
+// ── render: Progresso ──
+function renderProgresso() {
+  renderOfflineBanner();
+  renderTargetWeightNote();
+  renderWeights();
+  renderMeasurements();
+  renderPhotosGallery();
+  renderEvolution();
+  renderAchievements();
 }
 
-async function handleViewDocumentClick(path, linkEl) {
-  var original = linkEl.textContent;
-  linkEl.textContent = '…';
-  try {
-    var url = await documentSignedUrl(path);
-    window.open(url, '_blank', 'noopener');
-  } catch (err) {
-    console.error('Falha ao gerar link do documento', err);
-    showDocumentToast('Não foi possível abrir o exame.');
-  } finally {
-    linkEl.textContent = original;
+function renderTargetWeightNote() {
+  var target = state.targetWeight;
+  if (!target || !state.weights.length) { els.targetWeightNote.textContent = ''; return; }
+  var diff = state.weights[0].weight_kg - target;
+  els.targetWeightNote.textContent = Math.abs(diff) < 0.05
+    ? 'Meta de ' + fmtWeight(target) + ' kg batida!'
+    : 'Meta ' + fmtWeight(target) + ' kg · faltam ' + fmtWeight(Math.abs(diff)) + ' kg';
+}
+
+function renderAchievements() {
+  var unlockedCount = 0;
+  els.achievementsGrid.innerHTML = ACHIEVEMENTS.map(function (a) {
+    var unlocked = a.check();
+    if (unlocked) unlockedCount++;
+    return '<div class="achievement-tile' + (unlocked ? ' unlocked' : '') + '">' +
+      '<div class="achievement-title">' + (unlocked ? '★ ' : '') + a.title + '</div>' +
+      '<div class="achievement-desc">' + a.desc + '</div>' +
+      '</div>';
+  }).join('');
+  els.achievementsCountNote.textContent = unlockedCount + ' de ' + ACHIEVEMENTS.length;
+}
+
+function renderEvolution() {
+  if (state.loading || state.loadError) {
+    els.evolutionList.innerHTML = state.loading ? skeletonRows(2) : '';
+    return;
   }
+  var now = new Date();
+  var goal = state.monthlyGoal;
+  var months = [];
+  for (var i = EVOLUTION_MONTHS - 1; i >= 0; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth(), label: MONTHS_PT[d.getMonth()] + '/' + String(d.getFullYear()).slice(2) });
+  }
+  els.evolutionList.innerHTML = months.map(function (m) {
+    var mCount = state.workouts.filter(function (w) {
+      var d = parseISO(w.date);
+      return d.getFullYear() === m.year && d.getMonth() === m.month;
+    }).length;
+    var barPct = goal ? Math.min(100, Math.round((mCount / goal) * 100)) : 0;
+    var isCurrent = m.year === now.getFullYear() && m.month === now.getMonth();
+    return '<div class="evolution-row' + (isCurrent ? ' is-current' : '') + (mCount >= goal ? ' hit-goal' : '') + '">' +
+      '<span class="evolution-label">' + m.label + '</span>' +
+      '<div class="evolution-bar"><div class="evolution-bar-fill" style="width:' + barPct + '%"></div></div>' +
+      '<span class="evolution-count">' + mCount + '</span>' +
+      '</div>';
+  }).join('');
 }
 
-// ── render: Registrar screen ──
-function renderRegistrar() {
-  els.modeTabs.forEach(function (btn) {
-    btn.classList.toggle('active', btn.dataset.mode === state.mode);
+// Gráfico SVG simples da tendência de peso, com a linha da meta (se houver).
+// Cores via `style` (não atributos) pra resolver var() e acompanhar o dark mode.
+function buildWeightChartHTML(weights, targetKg) {
+  var asc = weights.slice().sort(function (a, b) {
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
   });
-  els.timerCard.hidden = state.mode !== 'timer';
-  els.manualFields.hidden = state.mode !== 'manual';
+  if (asc.length < 2) {
+    return '<p class="empty-state">Registre pelo menos 2 pesos para ver o gráfico.</p>';
+  }
 
-  els.inputDate.value = state.dateVal;
-  els.inputMins.value = state.minsVal;
-  els.inputLocal.value = state.local;
+  var recent = asc.slice(-WEIGHT_CHART_MAX_POINTS);
+  var values = recent.map(function (w) { return Number(w.weight_kg); });
+  if (targetKg) values.push(Number(targetKg));
+  var min = Math.min.apply(null, values);
+  var max = Math.max.apply(null, values);
+  if (min === max) { min -= 1; max += 1; }
 
-  updateTimerControls();
-  updateClock();
-  renderTypeOptions();
-  renderExercisesEditor();
+  var W = 300, H = 100, PAD = 6;
+  var n = recent.length;
+  function yOf(kg) { return H - PAD - ((kg - min) / (max - min)) * (H - PAD * 2); }
+  var pts = recent.map(function (w, i) {
+    var x = (i / (n - 1)) * (W - PAD * 2) + PAD;
+    return { x: x, y: yOf(Number(w.weight_kg)) };
+  });
+  var pathD = pts.map(function (p, i) {
+    return (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1);
+  }).join(' ');
+  var last = pts[pts.length - 1];
+  var first = recent[0];
+  var lastWeight = recent[n - 1];
+  var targetLine = targetKg
+    ? '<line x1="0" x2="' + W + '" y1="' + yOf(Number(targetKg)).toFixed(1) + '" y2="' + yOf(Number(targetKg)).toFixed(1) + '" style="stroke:var(--good);stroke-width:1;stroke-dasharray:4 3" />'
+    : '';
+
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" class="weight-chart" role="img" aria-label="Peso de ' +
+    fmtWeight(first.weight_kg) + ' kg em ' + fmtDayLabel(first.date) + ' para ' + fmtWeight(lastWeight.weight_kg) + ' kg em ' + fmtDayLabel(lastWeight.date) + '">' +
+    targetLine +
+    '<path d="' + pathD + '" fill="none" style="stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round" />' +
+    '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="3.5" style="fill:var(--accent)" />' +
+    '</svg>' +
+    '<div class="chart-caption">' +
+    '<span>' + fmtDayLabel(first.date) + ' · ' + fmtWeight(first.weight_kg) + ' kg</span>' +
+    (targetKg ? '<span class="chart-caption-target">meta ' + fmtWeight(targetKg) + ' kg</span>' : '') +
+    '<span class="chart-caption-current">' + fmtDayLabel(lastWeight.date) + ' · ' + fmtWeight(lastWeight.weight_kg) + ' kg</span>' +
+    '</div>';
 }
 
-// ── reminder banners (shown on Painel when the app opens) ──
+// Filtro "De/Até" do histórico de peso — no cliente, sem consulta extra.
+function filterWeightsByDate(list) {
+  var from = state.weightFilterFrom;
+  var to = state.weightFilterTo;
+  if (!from && !to) return list;
+  return list.filter(function (w) {
+    return (!from || w.date >= from) && (!to || w.date <= to);
+  });
+}
+
+els.inputWeightFilterFrom.addEventListener('change', function (e) {
+  state.weightFilterFrom = e.target.value;
+  state.weightsPages = 1;
+  renderWeights();
+});
+els.inputWeightFilterTo.addEventListener('change', function (e) {
+  state.weightFilterTo = e.target.value;
+  state.weightsPages = 1;
+  renderWeights();
+});
+els.btnClearWeightFilter.addEventListener('click', function () {
+  state.weightFilterFrom = '';
+  state.weightFilterTo = '';
+  state.weightsPages = 1;
+  renderWeights();
+});
+
+function weightDeltaLabel(w, prev) {
+  if (!prev) return { trendClass: '', label: '·' };
+  var diff = w.weight_kg - prev.weight_kg;
+  if (diff > 0.05) return { trendClass: 'weight-up', label: '▲ ' + fmtWeight(diff) };
+  if (diff < -0.05) return { trendClass: 'weight-down', label: '▼ ' + fmtWeight(Math.abs(diff)) };
+  return { trendClass: '', label: '= 0,0' };
+}
+
+function renderWeights() {
+  els.inputWeightFilterFrom.value = state.weightFilterFrom;
+  els.inputWeightFilterTo.value = state.weightFilterTo;
+  els.inputWeightFilterFrom.max = todayISO();
+  els.inputWeightFilterTo.max = todayISO();
+  els.btnClearWeightFilter.hidden = !state.weightFilterFrom && !state.weightFilterTo;
+
+  if (state.weightsLoading) {
+    els.weightsList.innerHTML = skeletonRows(3);
+    els.weightsMore.hidden = true;
+    els.weightChartWrap.innerHTML = '';
+    return;
+  }
+  if (state.weightsLoadError) {
+    els.weightsList.innerHTML = errorStateHTML('Não foi possível carregar os pesos.', 'own');
+    els.weightsMore.hidden = true;
+    els.weightChartWrap.innerHTML = '';
+    return;
+  }
+
+  var sorted = filterWeightsByDate(state.weights); // já ordenado por data desc
+  var filterActive = !!(state.weightFilterFrom || state.weightFilterTo);
+  els.weightChartWrap.innerHTML = buildWeightChartHTML(sorted, state.targetWeight);
+  els.weightCountNote.textContent = sorted.length + (sorted.length === 1 ? ' registro' : ' registros');
+  renderTargetWeightNote();
+
+  if (sorted.length === 0) {
+    els.weightsList.innerHTML = '<p class="empty-state">' +
+      (filterActive ? 'Nenhum peso registrado nesse período.' : 'Nenhum peso registrado ainda. <button type="button" class="link-btn inline" data-goto-peso>Registrar agora</button>') +
+      '</p>';
+    els.weightsMore.hidden = true;
+    return;
+  }
+
+  var shown = Math.min(sorted.length, state.weightsPages * RECORDS_PAGE_SIZE);
+  els.weightsList.innerHTML = sorted.slice(0, shown).map(function (w, i) {
+    var d = weightDeltaLabel(w, sorted[i + 1]);
+    return '<div class="record-row has-edit" data-swipe-id="' + w.id + '">' +
+      '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
+      '<span class="weight-value">' + fmtWeight(w.weight_kg) + ' kg</span>' +
+      '<span class="weight-delta ' + d.trendClass + '">' + d.label + '</span>' +
+      '<button type="button" class="record-edit" data-id="' + w.id + '" aria-label="Editar peso de ' + fmtDayLabel(w.date) + '">' + EDIT_ICON_SVG + '</button>' +
+      '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir peso de ' + fmtDayLabel(w.date) + '">' + DELETE_ICON_SVG + '</button>' +
+      '</div>';
+  }).join('');
+  renderMoreButton(els.weightsMore, shown, sorted.length);
+}
+
+els.weightsList.addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-id]');
+  if (!btn) return;
+  var id = Number(btn.dataset.id);
+  if (btn.classList.contains('record-edit')) {
+    var w = state.weights.find(function (x) { return x.id === id; });
+    if (w) startEditWeight(w);
+  } else if (btn.classList.contains('record-delete')) {
+    handleDeleteWeight(id);
+  }
+});
+attachSwipeToDelete(els.weightsList, function (id) { handleDeleteWeight(Number(id)); });
+els.weightsMore.addEventListener('click', function () { state.weightsPages += 1; renderWeights(); });
+
+
+// ── painel: navegação entre meses ──
+els.monthPrev.addEventListener('click', function () {
+  if (state.painelMonthOffset >= MAX_MONTH_OFFSET) return;
+  state.painelMonthOffset += 1;
+  state.recordsPages = 1;
+  state.dayFilter = null;
+  renderPainel();
+});
+els.monthNext.addEventListener('click', function () {
+  if (state.painelMonthOffset <= 0) return;
+  state.painelMonthOffset -= 1;
+  state.recordsPages = 1;
+  state.dayFilter = null;
+  renderPainel();
+});
+els.recordsMore.addEventListener('click', function () {
+  state.recordsPages += 1;
+  renderPainel();
+});
+els.btnClearDayFilter.addEventListener('click', function () {
+  state.dayFilter = null;
+  renderPainel();
+});
+
+// ── lembretes no Painel ──
+// Dispensar vale pro dia inteiro (salvo no aparelho), e cada lembrete tem
+// uma ação direta em vez de só um aviso.
+function dismissedToday() {
+  var saved = prefGet('dismissed') || {};
+  return saved.date === todayISO() ? saved.ids || {} : {};
+}
+function dismissReminder(id) {
+  var ids = dismissedToday();
+  ids[id] = true;
+  prefSet('dismissed', { date: todayISO(), ids: ids });
+}
+
 function computeReminders() {
   var reminders = [];
 
   if (state.painelMonthOffset === 0 && !state.loading && !state.loadError) {
-    var range = monthRange(new Date());
     var goal = state.monthlyGoal;
-    var count = state.workouts.filter(function (w) {
-      var d = parseISO(w.date);
-      return d >= range.start && d <= range.end;
-    }).length;
+    var count = currentMonthCount();
     if (goal && count < goal) {
       var missing = goal - count;
+      var now = new Date();
+      var daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1;
       reminders.push({
         id: 'goal',
-        text: 'Faltam ' + missing + (missing === 1 ? ' treino' : ' treinos') + ' para bater a meta deste mês.',
+        text: 'Faltam ' + missing + (missing === 1 ? ' treino' : ' treinos') + ' para a meta, com ' + daysLeft + (daysLeft === 1 ? ' dia' : ' dias') + ' pela frente.',
+        action: 'Registrar treino',
+        run: function () { state.registrarSection = 'treino'; setTab('registrar'); },
       });
     }
   }
@@ -2237,11 +3085,17 @@ function computeReminders() {
     var today = todayISO();
     var hasToday = state.weights.some(function (w) { return w.date === today; });
     if (!hasToday) {
-      reminders.push({ id: 'weight', text: 'Você ainda não registrou seu peso hoje.' });
+      reminders.push({
+        id: 'weight',
+        text: 'Você ainda não registrou seu peso hoje.',
+        action: 'Registrar peso',
+        run: function () { state.registrarSection = 'peso'; setTab('registrar'); els.inputWeightValue.focus(); },
+      });
     }
   }
 
-  return reminders.filter(function (r) { return !state.dismissedReminders[r.id]; });
+  var dismissed = dismissedToday();
+  return reminders.filter(function (r) { return !dismissed[r.id]; });
 }
 
 function renderReminders() {
@@ -2249,23 +3103,28 @@ function renderReminders() {
   els.reminderBanners.hidden = reminders.length === 0;
   els.reminderBanners.innerHTML = reminders.map(function (r) {
     return '<div class="reminder-banner">' +
-      '<span>' + r.text + '</span>' +
-      '<button type="button" class="reminder-banner-dismiss" data-id="' + r.id + '" aria-label="Dispensar">×</button>' +
+      '<span class="reminder-text">' + esc(r.text) + '</span>' +
+      '<button type="button" class="banner-action" data-run="' + r.id + '">' + esc(r.action) + '</button>' +
+      '<button type="button" class="reminder-banner-dismiss" data-id="' + r.id + '" aria-label="Dispensar por hoje">×</button>' +
       '</div>';
   }).join('');
   els.reminderBanners.querySelectorAll('.reminder-banner-dismiss').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      state.dismissedReminders[btn.dataset.id] = true;
+      dismissReminder(btn.dataset.id);
       renderReminders();
+    });
+  });
+  els.reminderBanners.querySelectorAll('[data-run]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var r = reminders.find(function (x) { return x.id === btn.dataset.run; });
+      if (r) r.run();
     });
   });
 }
 
-// ── render: Painel screen ──
-// Grade mensal estilo GitHub — mostra de relance em quais dias houve
-// treino, sem exigir clique ou navegação extra. 3 níveis (0/1/2+ treinos
-// naquele dia) usando os mesmos tons de accent já usados no resto do app,
-// em vez de uma paleta nova só pra isso.
+// ── calendário do mês: cada dia é um botão ──
+// Dia com treino → filtra os registros daquele dia. Dia sem treino (até
+// hoje) → abre o Registrar já com a data preenchida.
 var WEEKDAY_LABELS_PT = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
 function buildCalendarHeatmapHTML(monthWorkouts, viewDate) {
@@ -2289,38 +3148,109 @@ function buildCalendarHeatmapHTML(monthWorkouts, viewDate) {
     var dateStr = year + '-' + pad(month + 1) + '-' + pad(d);
     var count = countByDay[d] || 0;
     var level = count === 0 ? 0 : count === 1 ? 1 : 2;
-    var label = fmtDayLabel(dateStr) + (count ? ' · ' + count + (count === 1 ? ' treino' : ' treinos') : ' · sem treino');
+    var future = dateStr > today;
+    var label = fmtDayLabel(dateStr) + (count ? ', ' + count + (count === 1 ? ' treino' : ' treinos') : ', sem treino') +
+      (future ? '' : count ? '. Toque para ver.' : '. Toque para registrar.');
     cells.push(
-      '<span class="cal-cell cal-level-' + level + (dateStr === today ? ' cal-today' : '') + '" title="' + label + '">' +
-      d +
-      '</span>'
+      '<button type="button" class="cal-cell cal-level-' + level + (dateStr === today ? ' cal-today' : '') +
+      (state.dayFilter === dateStr ? ' cal-selected' : '') + '" data-date="' + dateStr + '" data-count="' + count + '"' +
+      (future ? ' disabled' : '') + ' aria-label="' + label + '">' + d + '</button>'
     );
   }
 
   return (
-    '<div class="cal-weekdays">' + WEEKDAY_LABELS_PT.map(function (l) { return '<span>' + l + '</span>'; }).join('') + '</div>' +
+    '<div class="cal-weekdays" aria-hidden="true">' + WEEKDAY_LABELS_PT.map(function (l) { return '<span>' + l + '</span>'; }).join('') + '</div>' +
     '<div class="cal-grid">' + cells.join('') + '</div>'
   );
 }
 
+els.calendarHeatmap.addEventListener('click', function (e) {
+  var cell = e.target.closest('button.cal-cell');
+  if (!cell || cell.disabled) return;
+  var date = cell.dataset.date;
+  if (Number(cell.dataset.count) > 0) {
+    state.dayFilter = state.dayFilter === date ? null : date;
+    renderPainel();
+    els.recordsList.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
+  } else {
+    state.editingWorkoutId = null;
+    state.mode = 'manual';
+    state.dateVal = date;
+    state.registrarSection = 'treino';
+    setTab('registrar');
+    notify('Registrando treino de ' + fmtDayLabel(date) + '.');
+  }
+});
+
+function workoutRowHTML(w, withActions) {
+  var exercisesSummary = fmtExercisesSummary(state.workoutSets[w.id]);
+  return '<div class="record-row' + (withActions ? ' has-edit" data-swipe-id="' + w.id : '') + '">' +
+    '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
+    '<span class="record-mid"><span class="record-type">' + esc(w.type) + '</span>' +
+    '<span class="record-local">' + esc(w.local || 'Sem local') + '</span>' +
+    (exercisesSummary ? '<span class="record-exercises">' + esc(exercisesSummary) + '</span>' : '') +
+    '</span>' +
+    '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
+    (withActions
+      ? '<button type="button" class="record-edit" data-id="' + w.id + '" aria-label="Editar treino de ' + fmtDayLabel(w.date) + '">' + EDIT_ICON_SVG + '</button>' +
+        '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir treino de ' + fmtDayLabel(w.date) + '">' + DELETE_ICON_SVG + '</button>'
+      : '') +
+    '</div>';
+}
+
+els.recordsList.addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-id]');
+  if (!btn) return;
+  var id = Number(btn.dataset.id);
+  if (btn.classList.contains('record-edit')) {
+    var w = state.workouts.find(function (x) { return x.id === id; });
+    if (w) startEditWorkout(w);
+  } else if (btn.classList.contains('record-delete')) {
+    handleDeleteWorkout(id);
+  }
+});
+attachSwipeToDelete(els.recordsList, function (id) { handleDeleteWorkout(Number(id)); });
+
+function renderPainelAchievements() {
+  var unlocked = ACHIEVEMENTS.filter(function (a) { return a.check(); });
+  var next = ACHIEVEMENTS.find(function (a) { return !a.check(); });
+  els.painelAchievementsNote.textContent = unlocked.length + ' de ' + ACHIEVEMENTS.length;
+  var chips = unlocked.slice(-3).reverse().map(function (a) {
+    return '<span class="achievement-chip unlocked">★ ' + a.title + '</span>';
+  });
+  if (next) chips.push('<span class="achievement-chip">Próxima: ' + next.title + '</span>');
+  els.painelAchievements.innerHTML = chips.join('') +
+    '<button type="button" class="link-btn inline" data-goto="progresso">Ver todas</button>';
+}
+
 function renderPainel() {
+  renderOfflineBanner();
+  renderTimerBanner();
   renderReminders();
   var viewDate = viewedMonthDate();
-  els.monthLabel.textContent = MONTHS_PT[viewDate.getMonth()] + ' ' + viewDate.getFullYear();
+  els.monthLabel.textContent = MONTHS_FULL_PT[viewDate.getMonth()] + ' ' + viewDate.getFullYear();
   els.monthPrev.disabled = state.painelMonthOffset >= MAX_MONTH_OFFSET;
   els.monthNext.disabled = state.painelMonthOffset <= 0;
 
+  var last = lastWorkout();
+  els.repeatCard.hidden = !last || state.painelMonthOffset !== 0;
+  if (last) {
+    els.repeatDesc.textContent = last.type + ' · ' + fmtDuration(last.minutes) + (last.local ? ' · ' + last.local : '');
+  }
+
   if (state.loading) {
-    els.recordsList.innerHTML = '<p class="empty-state">Carregando treinos…</p>';
-    els.splitsList.innerHTML = '';
+    els.recordsList.innerHTML = skeletonRows(3);
+    els.splitsList.innerHTML = skeletonRows(1);
     els.calendarHeatmap.innerHTML = '';
+    els.recordsMore.hidden = true;
     return;
   }
 
   if (state.loadError) {
-    els.recordsList.innerHTML = '<p class="empty-state">Não foi possível carregar os treinos. Recarregue a página.</p>';
+    els.recordsList.innerHTML = errorStateHTML('Não foi possível carregar os treinos.', 'own');
     els.splitsList.innerHTML = '';
     els.calendarHeatmap.innerHTML = '';
+    els.recordsMore.hidden = true;
     return;
   }
 
@@ -2339,12 +3269,18 @@ function renderPainel() {
   els.monthCount.textContent = count;
   els.monthGoalSuffix.textContent = 'de ' + goal;
   els.goalBar.style.width = goalPct + '%';
+  els.goalBarWrap.setAttribute('aria-valuenow', String(goalPct));
   els.goalPct.textContent = goalPct + '% da meta';
   els.goalMeta.textContent = 'meta ' + goal + (goal === 1 ? ' treino/mês' : ' treinos/mês');
   els.sessionCountNote.textContent = count + ' neste mês';
 
-  // breakdown by type — só as modalidades usadas no mês (não o catálogo
-  // inteiro, que pode crescer bastante e não teria nada a mostrar aqui).
+  var streak = computeGoalStreak();
+  els.painelStreakNote.classList.toggle('is-active', streak > 0);
+  els.painelStreakNote.textContent = streak > 0
+    ? streak + (streak === 1 ? ' mês seguido batendo a meta' : ' meses seguidos batendo a meta')
+    : 'Bata a meta este mês para começar uma sequência.';
+
+  // divisão por modalidade (só as usadas no mês)
   var totalMinutes = monthWorkouts.reduce(function (a, w) { return a + w.minutes; }, 0);
   var typesInMonth = [];
   var seenTypes = {};
@@ -2362,7 +3298,7 @@ function renderPainel() {
         .reduce(function (a, w) { return a + w.minutes; }, 0);
       var pct = totalMinutes ? Math.round((min / totalMinutes) * 100) : 0;
       return '<div class="split-row">' +
-        '<div class="split-top"><span class="split-name">' + typeName + '</span>' +
+        '<div class="split-top"><span class="split-name">' + esc(typeName) + '</span>' +
         '<span class="split-value">' + fmtDuration(min) + '</span></div>' +
         '<div class="split-bar"><div class="split-bar-fill" style="width:' + pct + '%"></div>' +
         '<span class="split-pct">' + pct + '%</span></div>' +
@@ -2370,134 +3306,255 @@ function renderPainel() {
     }).join('');
   }
 
-  // recent records (this month, most recent first), paginated 5 at a time
-  if (monthWorkouts.length === 0) {
-    els.recordsList.innerHTML = '<p class="empty-state">Nenhum treino registrado neste mês ainda.</p>';
-    els.recordsPager.hidden = true;
-    state.recordsPage = 0;
+  // registros do mês (ou do dia selecionado no calendário), mais recentes primeiro
+  var list = state.dayFilter
+    ? monthWorkouts.filter(function (w) { return w.date === state.dayFilter; })
+    : monthWorkouts;
+  els.dayFilter.hidden = !state.dayFilter;
+  if (state.dayFilter) {
+    els.dayFilterLabel.textContent = 'Treinos de ' + fmtFullDayLabel(state.dayFilter);
+  }
+
+  if (list.length === 0) {
+    els.recordsList.innerHTML = state.painelMonthOffset === 0
+      ? '<p class="empty-state">Nenhum treino neste mês ainda. <button type="button" class="link-btn inline" data-goto="registrar">Registrar o primeiro</button></p>'
+      : '<p class="empty-state">Nenhum treino registrado neste mês.</p>';
+    els.recordsMore.hidden = true;
   } else {
-    var pageCount = Math.ceil(monthWorkouts.length / RECORDS_PAGE_SIZE);
-    if (state.recordsPage >= pageCount) state.recordsPage = pageCount - 1;
-    if (state.recordsPage < 0) state.recordsPage = 0;
+    var shown = Math.min(list.length, state.recordsPages * RECORDS_PAGE_SIZE);
+    els.recordsList.innerHTML = list.slice(0, shown).map(function (w) { return workoutRowHTML(w, true); }).join('');
+    renderMoreButton(els.recordsMore, shown, list.length);
+  }
 
-    var start = state.recordsPage * RECORDS_PAGE_SIZE;
-    var pageItems = monthWorkouts.slice(start, start + RECORDS_PAGE_SIZE);
+  renderPainelAchievements();
+}
 
-    els.recordsList.innerHTML = pageItems.map(function (w) {
-      var exercisesSummary = fmtExercisesSummary(state.workoutSets[w.id]);
-      return '<div class="record-row has-edit">' +
-        '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
-        '<span class="record-mid"><span class="record-type">' + w.type + '</span>' +
-        '<span class="record-local">' + (w.local || 'Sem local') + '</span>' +
-        (exercisesSummary ? '<span class="record-exercises">' + exercisesSummary + '</span>' : '') +
-        '</span>' +
-        '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
-        '<button type="button" class="record-edit" data-id="' + w.id + '" aria-label="Editar treino">' +
-        EDIT_ICON_SVG +
-        '</button>' +
-        '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir treino">' +
-        DELETE_ICON_SVG +
-        '</button>' +
-        '</div>';
-    }).join('');
 
-    els.recordsList.querySelectorAll('.record-edit').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var w = state.workouts.find(function (x) { return x.id === Number(btn.dataset.id); });
-        if (w) startEditWorkout(w);
-      });
+// ── Exames (do próprio usuário) ──
+els.btnUploadDocument.addEventListener('click', function () {
+  if (state.uploadingDocument) return;
+
+  var file = els.inputDocumentFile.files && els.inputDocumentFile.files[0];
+  if (!file) {
+    notifyError('Escolha um arquivo primeiro.');
+    return;
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) {
+    notifyError('Arquivo maior que 10MB. Escolha um menor.');
+    return;
+  }
+
+  state.uploadingDocument = true;
+  els.btnUploadDocument.disabled = true;
+  els.btnUploadDocument.textContent = 'Enviando…';
+
+  uploadDocument(file)
+    .then(function (doc) {
+      state.documents.unshift(doc);
+      state.documentsPages = 1;
+      els.inputDocumentFile.value = '';
+      renderDocuments();
+      notifySuccess(doc.file_name + ' enviado.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao enviar documento', err);
+      notifyError('Não foi possível enviar o exame. Tente de novo.');
+    })
+    .finally(function () {
+      state.uploadingDocument = false;
+      els.btnUploadDocument.disabled = false;
+      els.btnUploadDocument.textContent = 'Enviar exame';
     });
-    els.recordsList.querySelectorAll('.record-delete').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        handleDeleteClick(Number(btn.dataset.id));
-      });
-    });
+});
 
-    els.recordsPager.hidden = pageCount <= 1;
-    els.pagerNote.textContent = 'Página ' + (state.recordsPage + 1) + ' de ' + pageCount;
-    els.pagerPrev.disabled = state.recordsPage === 0;
-    els.pagerNext.disabled = state.recordsPage >= pageCount - 1;
+async function handleDeleteDocumentClick(doc) {
+  if (state.deletingDocumentId) return;
+  var ok = await confirmModal('Excluir "' + doc.file_name + '"? Essa ação não pode ser desfeita.');
+  if (!ok) return;
+
+  state.deletingDocumentId = doc.id;
+  deleteDocument(doc)
+    .then(function () {
+      state.documents = state.documents.filter(function (d) { return d.id !== doc.id; });
+      notify('Exame excluído.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir documento', err);
+      notifyError('Não foi possível excluir o exame. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingDocumentId = null;
+      renderDocuments();
+    });
+}
+
+async function handleViewDocumentClick(path, linkEl) {
+  var original = linkEl.textContent;
+  linkEl.textContent = '…';
+  try {
+    var url = await documentSignedUrl(path);
+    window.open(url, '_blank', 'noopener');
+  } catch (err) {
+    console.error('Falha ao gerar link do documento', err);
+    notifyError('Não foi possível abrir o exame.');
+  } finally {
+    linkEl.textContent = original;
   }
 }
 
-// ── conquistas: badges calculados na hora a partir dos dados já carregados
-// (sem tabela nova nem consulta extra — "leve" no sentido literal) ──
-var ACHIEVEMENTS = [
-  { title: 'Primeiro treino', desc: 'Registre seu primeiro treino.', check: function () { return state.workouts.length >= 1; } },
-  { title: '10 treinos', desc: 'Registre 10 treinos.', check: function () { return state.workouts.length >= 10; } },
-  { title: '50 treinos', desc: 'Registre 50 treinos.', check: function () { return state.workouts.length >= 50; } },
-  { title: '100 treinos', desc: 'Registre 100 treinos.', check: function () { return state.workouts.length >= 100; } },
-  { title: 'Primeiro peso', desc: 'Registre seu primeiro peso.', check: function () { return state.weights.length >= 1; } },
-  { title: '30 registros de peso', desc: 'Registre seu peso 30 vezes.', check: function () { return state.weights.length >= 30; } },
-  { title: 'Sequência de 3 meses', desc: 'Bata a meta mensal 3 meses seguidos.', check: function () { return computeGoalStreak() >= 3; } },
-  { title: 'Sequência de 6 meses', desc: 'Bata a meta mensal 6 meses seguidos.', check: function () { return computeGoalStreak() >= 6; } },
-  { title: 'Primeira foto', desc: 'Envie sua primeira foto de progresso.', check: function () { return state.photos.length >= 1; } },
-];
+function renderDocuments() {
+  if (state.documentsLoading) {
+    els.documentsList.innerHTML = skeletonRows(2);
+    els.documentsMore.hidden = true;
+    return;
+  }
+  if (state.documentsLoadError) {
+    els.documentsList.innerHTML = errorStateHTML('Não foi possível carregar os exames.', 'documents');
+    els.documentsMore.hidden = true;
+    return;
+  }
 
-function renderAchievements() {
-  var unlockedCount = 0;
-  els.achievementsGrid.innerHTML = ACHIEVEMENTS.map(function (a) {
-    var unlocked = a.check();
-    if (unlocked) unlockedCount++;
-    return '<div class="achievement-tile' + (unlocked ? ' unlocked' : '') + '">' +
-      '<div class="achievement-title">' + a.title + '</div>' +
-      '<div class="achievement-desc">' + a.desc + '</div>' +
+  var sorted = state.documents; // já ordenado por uploaded_at desc
+  els.documentCountNote.textContent = sorted.length + (sorted.length === 1 ? ' exame' : ' exames');
+
+  if (sorted.length === 0) {
+    els.documentsList.innerHTML = '<p class="empty-state">Nenhum exame enviado ainda.</p>';
+    els.documentsMore.hidden = true;
+    return;
+  }
+
+  var shown = Math.min(sorted.length, state.documentsPages * RECORDS_PAGE_SIZE);
+  els.documentsList.innerHTML = sorted.slice(0, shown).map(function (doc) {
+    var ai = state.aiSummaries[doc.id];
+    return '<div class="record-row">' +
+      '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
+      '<span class="record-mid"><span class="record-type">' + esc(doc.file_name) + '</span>' +
+      '<span class="record-local">' + fmtFileSize(doc.file_size) +
+      (ai ? ' · <button type="button" class="ai-badge ai-badge-btn" data-ai-id="' + doc.id + '">Lido por IA em ' + fmtDayLabel(ai.generated_at.slice(0, 10)) + '</button>' : '') +
+      '</span></span>' +
+      '<a class="record-dur doc-view-link" href="#" data-path="' + esc(doc.file_path) + '">Ver</a>' +
+      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir exame ' + esc(doc.file_name) + '">' + DELETE_ICON_SVG + '</button>' +
       '</div>';
   }).join('');
-  els.achievementsCountNote.textContent = unlockedCount + ' de ' + ACHIEVEMENTS.length;
+  renderMoreButton(els.documentsMore, shown, sorted.length);
 }
 
-// ── render: Meta screen ──
+els.documentsList.addEventListener('click', function (e) {
+  var link = e.target.closest('.doc-view-link');
+  if (link) {
+    e.preventDefault();
+    handleViewDocumentClick(link.dataset.path, link);
+    return;
+  }
+  var ai = e.target.closest('[data-ai-id]');
+  if (ai) {
+    var summary = state.aiSummaries[Number(ai.dataset.aiId)];
+    if (summary) {
+      els.aiSummaryBody.innerHTML = '<p class="doc-ai-meta">Gerado em ' + fmtFullDayLabel(summary.generated_at.slice(0, 10)) +
+        ' a pedido do seu médico. É um apoio à leitura, não um diagnóstico.</p>' +
+        '<p class="doc-ai-text">' + esc(summary.summary).replace(/\n/g, '<br>') + '</p>';
+      openDialog(els.aiSummaryModal);
+    }
+    return;
+  }
+  var del = e.target.closest('.record-delete');
+  if (del) {
+    var doc = state.documents.find(function (d) { return d.id === Number(del.dataset.id); });
+    if (doc) handleDeleteDocumentClick(doc);
+  }
+});
+els.documentsMore.addEventListener('click', function () { state.documentsPages += 1; renderDocuments(); });
+els.aiSummaryClose.addEventListener('click', function () { openDialogs.forEach(function (d) { d.close('done'); }); });
+
+function loadDocuments() {
+  var userId = currentUserId();
+  state.documentsLoading = true;
+  state.documentsLoadError = false;
+  renderActiveTab();
+  return fetchDocuments(userId)
+    .then(function (rows) {
+      state.documents = rows;
+      state.documentsLoading = false;
+      return fetchAiSummaries(rows.map(function (d) { return d.id; }))
+        .then(function (map) { state.aiSummaries = map; })
+        .catch(function (err) { console.error('Falha ao carregar leituras de IA', err); });
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar documentos', err);
+      state.documentsLoading = false;
+      state.documentsLoadError = true;
+    })
+    .finally(renderActiveTab);
+}
+RETRY_HANDLERS.documents = loadDocuments;
+
+// ── Configurações: resumo semanal + feedback ──
+function renderConfig() {
+  els.toggleWeeklySummary.checked = !!state.weeklySummaryEmail;
+  if (document.activeElement !== els.inputMyName) els.inputMyName.value = displayName(state.profile) || '';
+}
+
+els.btnSaveMyName.addEventListener('click', function () {
+  var nome = els.inputMyName.value.trim();
+  if (nome.length > 120) {
+    setFieldError(els.inputMyName, 'Use no máximo 120 caracteres.');
+    return;
+  }
+  els.btnSaveMyName.disabled = true;
+  supabase.rpc('pandafit_atualizar_meu_nome', { p_nome: nome })
+    .then(function (res) {
+      if (res.error) throw res.error;
+      state.profile.nome = res.data || null;
+      renderAccountIdentity();
+      notifySuccess(nome ? 'Nome salvo. É assim que seu médico vai encontrar você.' : 'Nome removido.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar nome', err);
+      notifyError('Não foi possível salvar o nome. Tente de novo.');
+    })
+    .finally(function () { els.btnSaveMyName.disabled = false; });
+});
+
+els.toggleWeeklySummary.addEventListener('change', function () {
+  var on = els.toggleWeeklySummary.checked;
+  els.toggleWeeklySummary.disabled = true;
+  upsertSettings({ weekly_summary_email: on })
+    .then(function () {
+      state.weeklySummaryEmail = on;
+      notifySuccess(on ? 'Pronto: você recebe o resumo toda segunda.' : 'Resumo semanal desativado.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar preferência de resumo', err);
+      els.toggleWeeklySummary.checked = !on;
+      notifyError('Não foi possível salvar a preferência. Tente de novo.');
+    })
+    .finally(function () { els.toggleWeeklySummary.disabled = false; });
+});
+
+els.btnSendFeedback.addEventListener('click', function () {
+  var message = els.inputFeedback.value.trim();
+  if (message.length < 3) {
+    setFieldError(els.inputFeedback, 'Escreva um pouco mais pra gente entender.');
+    return;
+  }
+  els.btnSendFeedback.disabled = true;
+  insertFeedback(message)
+    .then(function () {
+      els.inputFeedback.value = '';
+      notifySuccess('Obrigado! Sua sugestão chegou.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao enviar feedback', err);
+      notifyError('Não foi possível enviar agora. Tente de novo.');
+    })
+    .finally(function () { els.btnSendFeedback.disabled = false; });
+});
+
+// ── Metas ──
 function renderMeta() {
   els.inputGoal.value = state.monthlyGoal;
   els.inputTargetWeight.value = state.targetWeight != null ? fmtWeight(state.targetWeight) : '';
   renderTargetWeightProgress();
-
-  if (state.loading || state.loadError) {
-    els.evolutionList.innerHTML = '';
-    return;
-  }
-
-  var now = new Date();
-  var goal = state.monthlyGoal;
-  var range = monthRange(now);
-  var monthCount = state.workouts.filter(function (w) {
-    var d = parseISO(w.date);
-    return d >= range.start && d <= range.end;
-  }).length;
-  var pct = goal ? Math.min(100, Math.round((monthCount / goal) * 100)) : 0;
-
-  els.metaProgressBar.style.width = pct + '%';
-  els.metaProgressPct.textContent = pct + '% da meta';
-  els.metaProgressCount.textContent = monthCount + ' de ' + goal + (goal === 1 ? ' treino' : ' treinos');
-
-  var streak = computeGoalStreak();
-  els.metaStreakNote.classList.toggle('is-active', streak > 0);
-  els.metaStreakNote.textContent = streak > 0
-    ? streak + (streak === 1 ? ' mês seguido batendo a meta' : ' meses seguidos batendo a meta')
-    : 'Ainda sem sequência — bata a meta este mês para começar.';
-
-  renderAchievements();
-
-  var months = [];
-  for (var i = EVOLUTION_MONTHS - 1; i >= 0; i--) {
-    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ year: d.getFullYear(), month: d.getMonth(), label: MONTHS_PT[d.getMonth()] + '/' + String(d.getFullYear()).slice(2) });
-  }
-
-  els.evolutionList.innerHTML = months.map(function (m) {
-    var mCount = state.workouts.filter(function (w) {
-      var d = parseISO(w.date);
-      return d.getFullYear() === m.year && d.getMonth() === m.month;
-    }).length;
-    var barPct = goal ? Math.min(100, Math.round((mCount / goal) * 100)) : 0;
-    var isCurrent = m.year === now.getFullYear() && m.month === now.getMonth();
-    return '<div class="evolution-row' + (isCurrent ? ' is-current' : '') + '">' +
-      '<span class="evolution-label">' + m.label + '</span>' +
-      '<div class="evolution-bar"><div class="evolution-bar-fill" style="width:' + barPct + '%"></div></div>' +
-      '<span class="evolution-count">' + mCount + '</span>' +
-      '</div>';
-  }).join('');
 }
 
 function renderTargetWeightProgress() {
@@ -2506,7 +3563,7 @@ function renderTargetWeightProgress() {
     els.targetWeightCaption.hidden = true;
     return;
   }
-  var latest = state.weights[0]; // sorted date desc
+  var latest = state.weights[0]; // data desc
   var diff = latest.weight_kg - target;
   els.targetWeightCaption.hidden = false;
   els.targetWeightCurrent.textContent = 'atual ' + fmtWeight(latest.weight_kg) + ' kg';
@@ -2515,13 +3572,40 @@ function renderTargetWeightProgress() {
     : 'faltam ' + fmtWeight(Math.abs(diff)) + ' kg para ' + fmtWeight(target) + ' kg';
 }
 
+els.btnSaveGoal.addEventListener('click', function () {
+  if (state.savingGoal) return;
+
+  var val = parseInt(els.inputGoal.value, 10);
+  if (!val || val < 1 || val > 30) {
+    setFieldError(els.inputGoal, 'Escolha uma meta entre 1 e 30 treinos por mês.');
+    return;
+  }
+
+  state.savingGoal = true;
+  els.btnSaveGoal.disabled = true;
+
+  upsertSettings({ monthly_goal: val })
+    .then(function () {
+      state.monthlyGoal = val;
+      cacheSet(currentUserId(), 'settings', { monthly_goal: val, target_weight_kg: state.targetWeight, weekly_summary_email: state.weeklySummaryEmail });
+      notifySuccess('Meta atualizada para ' + val + (val === 1 ? ' treino/mês.' : ' treinos/mês.'));
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar meta', err);
+      notifyError('Não foi possível salvar a meta. Tente de novo.');
+    })
+    .finally(function () {
+      state.savingGoal = false;
+      els.btnSaveGoal.disabled = false;
+    });
+});
+
 els.btnSaveTargetWeight.addEventListener('click', function () {
   if (state.savingTargetWeight) return;
 
-  var raw = String(els.inputTargetWeight.value).trim();
-  var kg = raw === '' ? null : parseFloat(raw.replace(',', '.'));
-  if (raw !== '' && (!kg || kg <= 0 || kg >= 500)) {
-    showTargetWeightToast('Informe um peso válido (entre 0 e 500 kg), ou deixe em branco para remover a meta.');
+  var kg = parseDecimal(els.inputTargetWeight.value);
+  if (kg != null && (isNaN(kg) || kg <= 0 || kg >= 500)) {
+    setFieldError(els.inputTargetWeight, 'Informe um peso entre 0 e 500 kg, ou deixe em branco para remover a meta.');
     return;
   }
 
@@ -2532,250 +3616,15 @@ els.btnSaveTargetWeight.addEventListener('click', function () {
     .then(function () {
       state.targetWeight = kg;
       renderTargetWeightProgress();
-      showTargetWeightToast(kg ? 'Meta de peso atualizada para ' + fmtWeight(kg) + ' kg.' : 'Meta de peso removida.');
+      notifySuccess(kg ? 'Meta de peso atualizada para ' + fmtWeight(kg) + ' kg.' : 'Meta de peso removida.');
     })
     .catch(function (err) {
       console.error('Falha ao salvar meta de peso', err);
-      showTargetWeightToast('Não foi possível salvar. Tente de novo.');
+      notifyError('Não foi possível salvar. Tente de novo.');
     })
     .finally(function () {
       state.savingTargetWeight = false;
       els.btnSaveTargetWeight.disabled = false;
-    });
-});
-
-// Simple SVG line chart of the weight trend. `var()` colors are set via the
-// `style` attribute (not presentation attributes) so they resolve like any
-// other CSS and repaint automatically when the dark-mode media query flips.
-function buildWeightChartHTML(weights) {
-  var asc = weights.slice().sort(function (a, b) {
-    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
-  });
-  if (asc.length < 2) {
-    return '<p class="empty-state">Registre pelo menos 2 pesos para ver o gráfico.</p>';
-  }
-
-  var recent = asc.slice(-WEIGHT_CHART_MAX_POINTS);
-  var values = recent.map(function (w) { return w.weight_kg; });
-  var min = Math.min.apply(null, values);
-  var max = Math.max.apply(null, values);
-  if (min === max) { min -= 1; max += 1; }
-
-  var W = 300, H = 100, PAD = 6;
-  var n = recent.length;
-  var pts = recent.map(function (w, i) {
-    var x = n === 1 ? W / 2 : (i / (n - 1)) * (W - PAD * 2) + PAD;
-    var y = H - PAD - ((w.weight_kg - min) / (max - min)) * (H - PAD * 2);
-    return { x: x, y: y };
-  });
-  var pathD = pts.map(function (p, i) {
-    return (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1);
-  }).join(' ');
-  var last = pts[pts.length - 1];
-  var first = recent[0];
-  var lastWeight = recent[n - 1];
-
-  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" class="weight-chart">' +
-    '<path d="' + pathD + '" fill="none" style="stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round" />' +
-    '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="3.5" style="fill:var(--accent)" />' +
-    '</svg>' +
-    '<div class="chart-caption">' +
-    '<span>' + fmtDayLabel(first.date) + ' · ' + fmtWeight(first.weight_kg) + ' kg</span>' +
-    '<span class="chart-caption-current">' + fmtDayLabel(lastWeight.date) + ' · ' + fmtWeight(lastWeight.weight_kg) + ' kg</span>' +
-    '</div>';
-}
-
-function renderWeightChart(weights) {
-  var wrap = els.weightChartWrap;
-  if (state.weightsLoading || state.weightsLoadError) {
-    wrap.innerHTML = '';
-    return;
-  }
-  wrap.innerHTML = buildWeightChartHTML(weights);
-}
-
-// Filtro "De/Até" do histórico de peso — aplica no cliente sobre o que já
-// está carregado, sem consulta extra.
-function filterWeightsByDate(list) {
-  var from = state.weightFilterFrom;
-  var to = state.weightFilterTo;
-  if (!from && !to) return list;
-  return list.filter(function (w) {
-    return (!from || w.date >= from) && (!to || w.date <= to);
-  });
-}
-
-// ── render: Peso screen ──
-function renderWeights() {
-  els.inputWeightDate.value = state.weightDateVal;
-  els.inputWeightValue.value = state.weightVal;
-  els.inputWeightFilterFrom.value = state.weightFilterFrom;
-  els.inputWeightFilterTo.value = state.weightFilterTo;
-  els.btnClearWeightFilter.hidden = !state.weightFilterFrom && !state.weightFilterTo;
-
-  if (state.weightsLoading) {
-    els.weightsList.innerHTML = '<p class="empty-state">Carregando pesos…</p>';
-    els.weightsPager.hidden = true;
-    renderWeightChart([]);
-    return;
-  }
-
-  if (state.weightsLoadError) {
-    els.weightsList.innerHTML = '<p class="empty-state">Não foi possível carregar os pesos. Recarregue a página.</p>';
-    els.weightsPager.hidden = true;
-    renderWeightChart([]);
-    return;
-  }
-
-  var sorted = filterWeightsByDate(state.weights); // já ordenado por data desc
-  var filterActive = !!(state.weightFilterFrom || state.weightFilterTo);
-  renderWeightChart(sorted);
-  els.weightCountNote.textContent = sorted.length + (sorted.length === 1 ? ' registro' : ' registros');
-
-  if (sorted.length === 0) {
-    els.weightsList.innerHTML = '<p class="empty-state">' +
-      (filterActive ? 'Nenhum peso registrado nesse período.' : 'Nenhum peso registrado ainda.') +
-      '</p>';
-    els.weightsPager.hidden = true;
-    state.weightsPage = 0;
-    return;
-  }
-
-  var pageCount = Math.ceil(sorted.length / RECORDS_PAGE_SIZE);
-  if (state.weightsPage >= pageCount) state.weightsPage = pageCount - 1;
-  if (state.weightsPage < 0) state.weightsPage = 0;
-
-  var start = state.weightsPage * RECORDS_PAGE_SIZE;
-  var pageItems = sorted.slice(start, start + RECORDS_PAGE_SIZE);
-
-  els.weightsList.innerHTML = pageItems.map(function (w, i) {
-    var prev = sorted[start + i + 1]; // next-older entry, chronologically
-    var trendClass = '';
-    var deltaLabel = '—';
-    if (prev) {
-      var diff = w.weight_kg - prev.weight_kg;
-      if (diff > 0.05) { trendClass = 'weight-up'; deltaLabel = '▲ ' + fmtWeight(diff); }
-      else if (diff < -0.05) { trendClass = 'weight-down'; deltaLabel = '▼ ' + fmtWeight(Math.abs(diff)); }
-      else { deltaLabel = '= 0,0'; }
-    }
-    return '<div class="record-row has-edit">' +
-      '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
-      '<span class="weight-value">' + fmtWeight(w.weight_kg) + ' kg</span>' +
-      '<span class="weight-delta ' + trendClass + '">' + deltaLabel + '</span>' +
-      '<button type="button" class="record-edit" data-id="' + w.id + '" aria-label="Editar peso">' +
-      EDIT_ICON_SVG +
-      '</button>' +
-      '<button type="button" class="record-delete" data-id="' + w.id + '" aria-label="Excluir peso">' +
-      DELETE_ICON_SVG +
-      '</button>' +
-      '</div>';
-  }).join('');
-
-  els.weightsList.querySelectorAll('.record-edit').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var w = state.weights.find(function (x) { return x.id === Number(btn.dataset.id); });
-      if (w) startEditWeight(w);
-    });
-  });
-  els.weightsList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      handleDeleteWeightClick(Number(btn.dataset.id));
-    });
-  });
-
-  els.weightsPager.hidden = pageCount <= 1;
-  els.weightsPagerNote.textContent = 'Página ' + (state.weightsPage + 1) + ' de ' + pageCount;
-  els.weightsPagerPrev.disabled = state.weightsPage === 0;
-  els.weightsPagerNext.disabled = state.weightsPage >= pageCount - 1;
-}
-
-// ── render: Exames screen ──
-function renderDocuments() {
-  if (state.documentsLoading) {
-    els.documentsList.innerHTML = '<p class="empty-state">Carregando exames…</p>';
-    els.documentsPager.hidden = true;
-    return;
-  }
-
-  if (state.documentsLoadError) {
-    els.documentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os exames. Recarregue a página.</p>';
-    els.documentsPager.hidden = true;
-    return;
-  }
-
-  var sorted = state.documents; // already sorted uploaded_at desc
-  els.documentCountNote.textContent = sorted.length + (sorted.length === 1 ? ' exame' : ' exames');
-
-  if (sorted.length === 0) {
-    els.documentsList.innerHTML = '<p class="empty-state">Nenhum exame enviado ainda.</p>';
-    els.documentsPager.hidden = true;
-    state.documentsPage = 0;
-    return;
-  }
-
-  var pageCount = Math.ceil(sorted.length / RECORDS_PAGE_SIZE);
-  if (state.documentsPage >= pageCount) state.documentsPage = pageCount - 1;
-  if (state.documentsPage < 0) state.documentsPage = 0;
-
-  var start = state.documentsPage * RECORDS_PAGE_SIZE;
-  var pageItems = sorted.slice(start, start + RECORDS_PAGE_SIZE);
-
-  els.documentsList.innerHTML = pageItems.map(function (doc) {
-    return '<div class="record-row">' +
-      '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
-      '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
-      '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
-      '<a class="record-dur doc-view-link" href="#" data-path="' + doc.file_path + '">Ver</a>' +
-      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir exame">' +
-      DELETE_ICON_SVG +
-      '</button>' +
-      '</div>';
-  }).join('');
-
-  els.documentsList.querySelectorAll('.doc-view-link').forEach(function (link) {
-    link.addEventListener('click', function (e) {
-      e.preventDefault();
-      handleViewDocumentClick(link.dataset.path, link);
-    });
-  });
-  els.documentsList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var doc = state.documents.find(function (d) { return d.id === Number(btn.dataset.id); });
-      if (doc) handleDeleteDocumentClick(doc);
-    });
-  });
-
-  els.documentsPager.hidden = pageCount <= 1;
-  els.documentsPagerNote.textContent = 'Página ' + (state.documentsPage + 1) + ' de ' + pageCount;
-  els.documentsPagerPrev.disabled = state.documentsPage === 0;
-  els.documentsPagerNext.disabled = state.documentsPage >= pageCount - 1;
-}
-
-els.btnSaveGoal.addEventListener('click', function () {
-  if (state.savingGoal) return;
-
-  var val = parseInt(els.inputGoal.value, 10);
-  if (!val || val < 1) val = 1;
-  if (val > 30) val = 30;
-  els.inputGoal.value = val;
-
-  state.savingGoal = true;
-  els.btnSaveGoal.disabled = true;
-
-  upsertSettings({ monthly_goal: val })
-    .then(function () {
-      state.monthlyGoal = val;
-      renderPainel();
-      renderMeta();
-      showGoalToast('Meta atualizada para ' + val + (val === 1 ? ' treino/mês.' : ' treinos/mês.'));
-    })
-    .catch(function (err) {
-      console.error('Falha ao salvar meta', err);
-      showGoalToast('Não foi possível salvar a meta. Tente de novo.');
-    })
-    .finally(function () {
-      state.savingGoal = false;
-      els.btnSaveGoal.disabled = false;
     });
 });
 
@@ -2785,7 +3634,7 @@ els.btnExportWorkouts.addEventListener('click', function () {
     return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
   });
   var rows = sorted.map(function (w) { return [w.date, w.type, w.minutes, w.local || '']; });
-  downloadCSV('pandafit-treinos.csv', ['Data', 'Tipo', 'Duração (min)', 'Local'], rows);
+  downloadCSV('pandafit-treinos-' + todayISO() + '.csv', ['Data', 'Tipo', 'Duração (min)', 'Local'], rows);
 });
 
 els.btnExportWeights.addEventListener('click', function () {
@@ -2793,76 +3642,147 @@ els.btnExportWeights.addEventListener('click', function () {
     return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
   });
   var rows = sorted.map(function (w) { return [w.date, w.weight_kg]; });
-  downloadCSV('pandafit-pesos.csv', ['Data', 'Peso (kg)'], rows);
+  downloadCSV('pandafit-pesos-' + todayISO() + '.csv', ['Data', 'Peso (kg)'], rows);
 });
 
-// ── relatório para o médico (impressão nativa do navegador → "Salvar
-// como PDF" no diálogo de impressão, sem depender de nenhuma lib externa) ──
+// ── relatório para o médico ──
+// PDF de verdade (jsPDF carregado sob demanda só quando a pessoa toca no
+// botão), compartilhável pelo menu nativo do celular. window.print() fica
+// como plano B (sem rede / lib indisponível), porque no PWA do iOS o
+// diálogo de impressão é instável.
 var REPORT_RECENT_LIMIT = 15;
+var JSPDF_URL = 'https://esm.sh/jspdf@2.5.2';
+
+function reportData() {
+  var recentWeights = state.weights.slice(0, REPORT_RECENT_LIMIT);
+  var recentMeasurements = state.measurements.slice(0, REPORT_RECENT_LIMIT);
+  var recentWorkouts = state.workouts.slice(0, REPORT_RECENT_LIMIT);
+  return {
+    name: (state.profile && (state.profile.nome || state.profile.email)) || '',
+    generatedAt: fmtFullDayLabel(todayISO()),
+    weights: recentWeights,
+    measurements: recentMeasurements,
+    workouts: recentWorkouts,
+  };
+}
+
+async function buildReportPdf() {
+  var mod = await import(JSPDF_URL);
+  var JsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
+  var data = reportData();
+  var doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  var y = 18;
+  var left = 16;
+  var pageH = 297;
+
+  function ensure(space) { if (y + space > pageH - 16) { doc.addPage(); y = 18; } }
+  function heading(text) { ensure(14); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(text, left, y); y += 7; }
+  function para(text) { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); var lines = doc.splitTextToSize(text, 178); ensure(lines.length * 5); doc.text(lines, left, y); y += lines.length * 5 + 2; }
+  function table(headers, rows, widths) {
+    if (!rows.length) { para('Nenhum registro ainda.'); return; }
+    ensure(8);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    var x = left;
+    headers.forEach(function (h, i) { doc.text(h, x, y); x += widths[i]; });
+    y += 2; doc.setDrawColor(200); doc.line(left, y, left + 178, y); y += 4;
+    doc.setFont('helvetica', 'normal');
+    rows.forEach(function (r) {
+      ensure(6);
+      var cx = left;
+      r.forEach(function (c, i) { doc.text(String(c).slice(0, 48), cx, y); cx += widths[i]; });
+      y += 5.5;
+    });
+    y += 3;
+  }
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+  doc.text('PandaFit - Relatório de acompanhamento', left, y); y += 7;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  doc.text((data.name ? data.name + ' | ' : '') + 'Gerado em ' + data.generatedAt, left, y); y += 10;
+
+  heading('Peso');
+  if (data.weights.length) para('Peso mais recente: ' + fmtWeight(data.weights[0].weight_kg) + ' kg (' + fmtFullDayLabel(data.weights[0].date) + ').' +
+    (state.targetWeight ? ' Meta: ' + fmtWeight(state.targetWeight) + ' kg.' : ''));
+  table(['Data', 'Peso (kg)'], data.weights.map(function (w) { return [fmtFullDayLabel(w.date), fmtWeight(w.weight_kg)]; }), [40, 40]);
+
+  heading('Medidas corporais');
+  table(['Data', 'Cintura (cm)', '% de gordura'], data.measurements.map(function (m) {
+    return [fmtFullDayLabel(m.date), m.waist_cm != null ? fmtWeight(m.waist_cm) : '-', m.body_fat_pct != null ? fmtWeight(m.body_fat_pct) + '%' : '-'];
+  }), [40, 40, 40]);
+
+  heading('Treinos recentes');
+  para('Meta mensal: ' + state.monthlyGoal + ' treinos. Neste mês: ' + currentMonthCount() + '.');
+  table(['Data', 'Tipo', 'Duração', 'Local'], data.workouts.map(function (w) {
+    return [fmtFullDayLabel(w.date), w.type, fmtDuration(w.minutes), w.local || '-'];
+  }), [30, 55, 30, 63]);
+
+  return doc.output('blob');
+}
+
+els.btnPrintReport.addEventListener('click', async function () {
+  var btn = els.btnPrintReport;
+  btn.disabled = true;
+  btn.textContent = 'Gerando…';
+  try {
+    var blob = await buildReportPdf();
+    var fileName = 'pandafit-relatorio-' + todayISO() + '.pdf';
+    var file = new File([blob], fileName, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Relatório PandaFit' });
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === 'AbortError') return;
+        throw shareErr;
+      }
+    } else {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }
+    notifySuccess('Relatório gerado.');
+  } catch (err) {
+    console.error('Falha ao gerar PDF, usando impressão do navegador', err);
+    els.printReport.innerHTML = buildPrintReportHTML();
+    document.body.classList.add('printing-report');
+    window.print();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Gerar PDF';
+  }
+});
 
 function buildPrintReportTable(headers, rows) {
   if (rows.length === 0) return '<p class="print-report-empty">Nenhum registro ainda.</p>';
   return '<table><thead><tr>' +
-    headers.map(function (h) { return '<th>' + h + '</th>'; }).join('') +
+    headers.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') +
     '</tr></thead><tbody>' +
     rows.map(function (cells) {
-      return '<tr>' + cells.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
+      return '<tr>' + cells.map(function (c) { return '<td>' + esc(c) + '</td>'; }).join('') + '</tr>';
     }).join('') +
     '</tbody></table>';
 }
 
 function buildPrintReportHTML() {
-  var name = (state.profile && (state.profile.nome || state.profile.email)) || '';
-  var generatedAt = fmtFullDayLabel(todayISO());
-
-  var recentWeights = state.weights.slice(0, REPORT_RECENT_LIMIT); // already sorted date desc
-  var weightSummary = recentWeights.length
-    ? 'Peso mais recente: ' + fmtWeight(recentWeights[0].weight_kg) + ' kg (registrado em ' + fmtFullDayLabel(recentWeights[0].date) + ').'
-    : '';
-
-  var recentMeasurements = state.measurements.slice(0, REPORT_RECENT_LIMIT); // already sorted date desc
-  var latestWaist = recentMeasurements.find(function (m) { return m.waist_cm != null; });
-  var latestBodyFat = recentMeasurements.find(function (m) { return m.body_fat_pct != null; });
-  var measurementSummaryParts = [];
-  if (latestWaist) measurementSummaryParts.push('cintura ' + fmtWeight(latestWaist.waist_cm) + ' cm (' + fmtFullDayLabel(latestWaist.date) + ')');
-  if (latestBodyFat) measurementSummaryParts.push('% de gordura ' + fmtWeight(latestBodyFat.body_fat_pct) + '% (' + fmtFullDayLabel(latestBodyFat.date) + ')');
-  var measurementSummary = measurementSummaryParts.length ? 'Mais recente: ' + measurementSummaryParts.join(', ') + '.' : '';
-
-  var recentWorkouts = state.workouts.slice()
-    .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; })
-    .slice(0, REPORT_RECENT_LIMIT);
-  var workoutSummary = recentWorkouts.length
-    ? 'Últimos ' + recentWorkouts.length + (recentWorkouts.length === 1 ? ' treino registrado.' : ' treinos registrados.')
-    : '';
-
-  return '<h1>PandaFit — Relatório de acompanhamento</h1>' +
-    '<p class="print-report-meta">' + (name ? name + ' · ' : '') + 'Gerado em ' + generatedAt + '</p>' +
-    '<section>' +
-    '<h2>Peso</h2>' +
-    (weightSummary ? '<p class="print-report-summary">' + weightSummary + '</p>' : '') +
-    buildPrintReportTable(['Data', 'Peso (kg)'], recentWeights.map(function (w) { return [fmtFullDayLabel(w.date), fmtWeight(w.weight_kg)]; })) +
-    '</section>' +
-    '<section>' +
-    '<h2>Medidas corporais</h2>' +
-    (measurementSummary ? '<p class="print-report-summary">' + measurementSummary + '</p>' : '') +
-    buildPrintReportTable(['Data', 'Cintura (cm)', '% de gordura'], recentMeasurements.map(function (m) {
-      return [fmtFullDayLabel(m.date), m.waist_cm != null ? fmtWeight(m.waist_cm) : '—', m.body_fat_pct != null ? fmtWeight(m.body_fat_pct) + '%' : '—'];
+  var data = reportData();
+  return '<h1>PandaFit · Relatório de acompanhamento</h1>' +
+    '<p class="print-report-meta">' + (data.name ? esc(data.name) + ' · ' : '') + 'Gerado em ' + data.generatedAt + '</p>' +
+    '<section><h2>Peso</h2>' +
+    buildPrintReportTable(['Data', 'Peso (kg)'], data.weights.map(function (w) { return [fmtFullDayLabel(w.date), fmtWeight(w.weight_kg)]; })) +
+    '</section><section><h2>Medidas corporais</h2>' +
+    buildPrintReportTable(['Data', 'Cintura (cm)', '% de gordura'], data.measurements.map(function (m) {
+      return [fmtFullDayLabel(m.date), m.waist_cm != null ? fmtWeight(m.waist_cm) : '-', m.body_fat_pct != null ? fmtWeight(m.body_fat_pct) + '%' : '-'];
     })) +
-    '</section>' +
-    '<section>' +
-    '<h2>Treinos recentes</h2>' +
-    (workoutSummary ? '<p class="print-report-summary">' + workoutSummary + '</p>' : '') +
-    buildPrintReportTable(['Data', 'Tipo', 'Duração', 'Local'], recentWorkouts.map(function (w) {
-      return [fmtFullDayLabel(w.date), w.type, fmtDuration(w.minutes), w.local || '—'];
+    '</section><section><h2>Treinos recentes</h2>' +
+    buildPrintReportTable(['Data', 'Tipo', 'Duração', 'Local'], data.workouts.map(function (w) {
+      return [fmtFullDayLabel(w.date), w.type, fmtDuration(w.minutes), w.local || '-'];
     })) +
     '</section>';
 }
-
-els.btnPrintReport.addEventListener('click', function () {
-  els.printReport.innerHTML = buildPrintReportHTML();
-  document.body.classList.add('printing-report');
-  window.print();
-});
 
 window.addEventListener('afterprint', function () {
   document.body.classList.remove('printing-report');
@@ -2875,11 +3795,11 @@ els.btnCreateType.addEventListener('click', function () {
   var name = els.inputTypeName.value.trim();
   var hint = els.inputTypeHint.value.trim();
   if (!name) {
-    showTypeFormToast('Informe um nome para a modalidade.');
+    setFieldError(els.inputTypeName, 'Informe um nome para a modalidade.');
     return;
   }
   if (state.workoutTypes.some(function (t) { return t.name.toLowerCase() === name.toLowerCase(); })) {
-    showTypeFormToast('Essa modalidade já está cadastrada.');
+    setFieldError(els.inputTypeName, 'Essa modalidade já está cadastrada.');
     return;
   }
 
@@ -2892,13 +3812,13 @@ els.btnCreateType.addEventListener('click', function () {
       if (!state.type) state.type = row.name;
       els.inputTypeName.value = '';
       els.inputTypeHint.value = '';
-      showTypeFormToast('Modalidade cadastrada.');
+      notifySuccess('Modalidade cadastrada.');
       renderWorkoutTypes();
       renderTypeOptions();
     })
     .catch(function (err) {
       console.error('Falha ao cadastrar modalidade', err);
-      showTypeFormToast('Não foi possível cadastrar. Tente de novo.');
+      notifyError('Não foi possível cadastrar. Tente de novo.');
     })
     .finally(function () {
       state.creatingWorkoutType = false;
@@ -2906,37 +3826,32 @@ els.btnCreateType.addEventListener('click', function () {
     });
 });
 
+function catalogRowHTML(item, sub, label) {
+  return '<div class="user-row">' +
+    '<div class="user-info">' +
+    '<span class="user-name">' + esc(item.name) + '</span>' +
+    (sub ? '<span class="user-email">' + esc(sub) + '</span>' : '') +
+    '</div>' +
+    '<button type="button" class="record-delete" data-id="' + item.id + '" aria-label="Excluir ' + label + ' ' + esc(item.name) + '">' + DELETE_ICON_SVG + '</button>' +
+    '</div>';
+}
+
 function renderWorkoutTypes() {
   els.typesCountNote.textContent = state.workoutTypes.length + (state.workoutTypes.length === 1 ? ' modalidade' : ' modalidades');
-
-  if (state.workoutTypesLoading) {
-    els.typesList.innerHTML = '<p class="empty-state">Carregando modalidades…</p>';
-    return;
-  }
+  if (state.workoutTypesLoading) { els.typesList.innerHTML = skeletonRows(2); return; }
   if (state.workoutTypes.length === 0) {
     els.typesList.innerHTML = '<p class="empty-state">Nenhuma modalidade cadastrada ainda.</p>';
     return;
   }
-
-  els.typesList.innerHTML = state.workoutTypes.map(function (t) {
-    return '<div class="user-row">' +
-      '<div class="user-info">' +
-      '<span class="user-name">' + t.name + '</span>' +
-      (t.hint ? '<span class="user-email">' + t.hint + '</span>' : '') +
-      '</div>' +
-      '<button type="button" class="record-delete" data-id="' + t.id + '" aria-label="Excluir modalidade">' +
-      DELETE_ICON_SVG +
-      '</button>' +
-      '</div>';
-  }).join('');
-
-  els.typesList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var t = state.workoutTypes.find(function (x) { return x.id === Number(btn.dataset.id); });
-      if (t) handleDeleteWorkoutTypeClick(t);
-    });
-  });
+  els.typesList.innerHTML = state.workoutTypes.map(function (t) { return catalogRowHTML(t, t.hint, 'modalidade'); }).join('');
 }
+
+els.typesList.addEventListener('click', function (e) {
+  var btn = e.target.closest('.record-delete');
+  if (!btn) return;
+  var t = state.workoutTypes.find(function (x) { return x.id === Number(btn.dataset.id); });
+  if (t) handleDeleteWorkoutTypeClick(t);
+});
 
 async function handleDeleteWorkoutTypeClick(t) {
   if (state.deletingWorkoutTypeId) return;
@@ -2949,10 +3864,11 @@ async function handleDeleteWorkoutTypeClick(t) {
       state.workoutTypes = state.workoutTypes.filter(function (x) { return x.id !== t.id; });
       if (state.type === t.name) state.type = state.workoutTypes.length ? state.workoutTypes[0].name : '';
       renderTypeOptions();
+      notify('Modalidade excluída.');
     })
     .catch(function (err) {
       console.error('Falha ao excluir modalidade', err);
-      showTypeFormToast('Não foi possível excluir. Tente de novo.');
+      notifyError('Não foi possível excluir. Tente de novo.');
     })
     .finally(function () {
       state.deletingWorkoutTypeId = null;
@@ -2966,11 +3882,11 @@ els.btnCreateLocation.addEventListener('click', function () {
 
   var name = els.inputLocationName.value.trim();
   if (!name) {
-    showLocationFormToast('Informe um nome para o local.');
+    setFieldError(els.inputLocationName, 'Informe um nome para o local.');
     return;
   }
   if (state.locations.some(function (l) { return l.name.toLowerCase() === name.toLowerCase(); })) {
-    showLocationFormToast('Esse local já está cadastrado.');
+    setFieldError(els.inputLocationName, 'Esse local já está cadastrado.');
     return;
   }
 
@@ -2981,13 +3897,13 @@ els.btnCreateLocation.addEventListener('click', function () {
     .then(function (row) {
       state.locations.push(row);
       els.inputLocationName.value = '';
-      showLocationFormToast('Local cadastrado.');
+      notifySuccess('Local cadastrado.');
       renderLocations();
       updateLocalSuggestions();
     })
     .catch(function (err) {
       console.error('Falha ao cadastrar local', err);
-      showLocationFormToast('Não foi possível cadastrar. Tente de novo.');
+      notifyError('Não foi possível cadastrar. Tente de novo.');
     })
     .finally(function () {
       state.creatingLocation = false;
@@ -2997,34 +3913,20 @@ els.btnCreateLocation.addEventListener('click', function () {
 
 function renderLocations() {
   els.locationsCountNote.textContent = state.locations.length + (state.locations.length === 1 ? ' local' : ' locais');
-
-  if (state.locationsLoading) {
-    els.locationsList.innerHTML = '<p class="empty-state">Carregando locais…</p>';
-    return;
-  }
+  if (state.locationsLoading) { els.locationsList.innerHTML = skeletonRows(2); return; }
   if (state.locations.length === 0) {
     els.locationsList.innerHTML = '<p class="empty-state">Nenhum local cadastrado ainda.</p>';
     return;
   }
-
-  els.locationsList.innerHTML = state.locations.map(function (l) {
-    return '<div class="user-row">' +
-      '<div class="user-info">' +
-      '<span class="user-name">' + l.name + '</span>' +
-      '</div>' +
-      '<button type="button" class="record-delete" data-id="' + l.id + '" aria-label="Excluir local">' +
-      DELETE_ICON_SVG +
-      '</button>' +
-      '</div>';
-  }).join('');
-
-  els.locationsList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var l = state.locations.find(function (x) { return x.id === Number(btn.dataset.id); });
-      if (l) handleDeleteLocationClick(l);
-    });
-  });
+  els.locationsList.innerHTML = state.locations.map(function (l) { return catalogRowHTML(l, '', 'local'); }).join('');
 }
+
+els.locationsList.addEventListener('click', function (e) {
+  var btn = e.target.closest('.record-delete');
+  if (!btn) return;
+  var l = state.locations.find(function (x) { return x.id === Number(btn.dataset.id); });
+  if (l) handleDeleteLocationClick(l);
+});
 
 async function handleDeleteLocationClick(l) {
   if (state.deletingLocationId) return;
@@ -3036,10 +3938,11 @@ async function handleDeleteLocationClick(l) {
     .then(function () {
       state.locations = state.locations.filter(function (x) { return x.id !== l.id; });
       updateLocalSuggestions();
+      notify('Local excluído.');
     })
     .catch(function (err) {
       console.error('Falha ao excluir local', err);
-      showLocationFormToast('Não foi possível excluir. Tente de novo.');
+      notifyError('Não foi possível excluir. Tente de novo.');
     })
     .finally(function () {
       state.deletingLocationId = null;
@@ -3047,16 +3950,17 @@ async function handleDeleteLocationClick(l) {
     });
 }
 
+// ── Exercícios (catálogo) ──
 els.btnCreateExercise.addEventListener('click', function () {
   if (state.creatingExercise) return;
 
   var name = els.inputExerciseCatalogName.value.trim();
   if (!name) {
-    showExerciseFormToast('Informe um nome para o exercício.');
+    setFieldError(els.inputExerciseCatalogName, 'Informe um nome para o exercício.');
     return;
   }
   if (state.exerciseCatalog.some(function (e) { return e.name.toLowerCase() === name.toLowerCase(); })) {
-    showExerciseFormToast('Esse exercício já está cadastrado.');
+    setFieldError(els.inputExerciseCatalogName, 'Esse exercício já está cadastrado.');
     return;
   }
 
@@ -3067,13 +3971,13 @@ els.btnCreateExercise.addEventListener('click', function () {
     .then(function (row) {
       state.exerciseCatalog.push(row);
       els.inputExerciseCatalogName.value = '';
-      showExerciseFormToast('Exercício cadastrado.');
+      notifySuccess('Exercício cadastrado.');
       renderExerciseCatalog();
       updateExerciseSuggestions();
     })
     .catch(function (err) {
       console.error('Falha ao cadastrar exercício', err);
-      showExerciseFormToast('Não foi possível cadastrar. Tente de novo.');
+      notifyError('Não foi possível cadastrar. Tente de novo.');
     })
     .finally(function () {
       state.creatingExercise = false;
@@ -3083,34 +3987,20 @@ els.btnCreateExercise.addEventListener('click', function () {
 
 function renderExerciseCatalog() {
   els.exercisesCountNote.textContent = state.exerciseCatalog.length + (state.exerciseCatalog.length === 1 ? ' exercício' : ' exercícios');
-
-  if (state.exerciseCatalogLoading) {
-    els.exercisesCatalogList.innerHTML = '<p class="empty-state">Carregando exercícios…</p>';
-    return;
-  }
+  if (state.exerciseCatalogLoading) { els.exercisesCatalogList.innerHTML = skeletonRows(2); return; }
   if (state.exerciseCatalog.length === 0) {
     els.exercisesCatalogList.innerHTML = '<p class="empty-state">Nenhum exercício cadastrado ainda.</p>';
     return;
   }
-
-  els.exercisesCatalogList.innerHTML = state.exerciseCatalog.map(function (ex) {
-    return '<div class="user-row">' +
-      '<div class="user-info">' +
-      '<span class="user-name">' + ex.name + '</span>' +
-      '</div>' +
-      '<button type="button" class="record-delete" data-id="' + ex.id + '" aria-label="Excluir exercício">' +
-      DELETE_ICON_SVG +
-      '</button>' +
-      '</div>';
-  }).join('');
-
-  els.exercisesCatalogList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var ex = state.exerciseCatalog.find(function (x) { return x.id === Number(btn.dataset.id); });
-      if (ex) handleDeleteExerciseClick(ex);
-    });
-  });
+  els.exercisesCatalogList.innerHTML = state.exerciseCatalog.map(function (ex) { return catalogRowHTML(ex, '', 'exercício'); }).join('');
 }
+
+els.exercisesCatalogList.addEventListener('click', function (e) {
+  var btn = e.target.closest('.record-delete');
+  if (!btn) return;
+  var ex = state.exerciseCatalog.find(function (x) { return x.id === Number(btn.dataset.id); });
+  if (ex) handleDeleteExerciseClick(ex);
+});
 
 async function handleDeleteExerciseClick(ex) {
   if (state.deletingExerciseId) return;
@@ -3122,16 +4012,76 @@ async function handleDeleteExerciseClick(ex) {
     .then(function () {
       state.exerciseCatalog = state.exerciseCatalog.filter(function (x) { return x.id !== ex.id; });
       updateExerciseSuggestions();
+      notify('Exercício excluído.');
     })
     .catch(function (err) {
       console.error('Falha ao excluir exercício', err);
-      showExerciseFormToast('Não foi possível excluir. Tente de novo.');
+      notifyError('Não foi possível excluir. Tente de novo.');
     })
     .finally(function () {
       state.deletingExerciseId = null;
       renderExerciseCatalog();
     });
 }
+
+// ── Quem vê meus dados (LGPD) ──
+function loadDoctors() {
+  state.doctorsLoading = true;
+  state.doctorsLoadError = false;
+  renderDoctors();
+  fetchMyDoctors()
+    .then(function (rows) { state.doctors = rows; })
+    .catch(function (err) {
+      console.error('Falha ao carregar médicos vinculados', err);
+      state.doctorsLoadError = true;
+    })
+    .finally(function () {
+      state.doctorsLoading = false;
+      renderDoctors();
+    });
+}
+RETRY_HANDLERS.doctors = loadDoctors;
+
+function renderDoctors() {
+  if (state.doctorsLoading) { els.doctorsList.innerHTML = skeletonRows(1); els.doctorsCountNote.textContent = ''; return; }
+  if (state.doctorsLoadError) { els.doctorsList.innerHTML = errorStateHTML('Não foi possível carregar os médicos.', 'doctors'); return; }
+  els.doctorsCountNote.textContent = state.doctors.length + (state.doctors.length === 1 ? ' médico' : ' médicos');
+  if (state.doctors.length === 0) {
+    els.doctorsList.innerHTML = '<p class="empty-state">Nenhum médico conectado. Hoje só você vê seus dados.</p>';
+    return;
+  }
+  els.doctorsList.innerHTML = state.doctors.map(function (d) {
+    return '<div class="user-row">' +
+      '<div class="user-info">' +
+      '<span class="user-name">' + esc(d.nome || d.email) + '</span>' +
+      '<span class="user-email">' + esc(d.email) + ' · conectado em ' + fmtFullDayLabel(String(d.vinculado_em).slice(0, 10)) + '</span>' +
+      '</div>' +
+      '<button type="button" class="export-btn revoke-btn" data-medico-id="' + esc(d.medico_id) + '">Remover acesso</button>' +
+      '</div>';
+  }).join('');
+}
+
+els.doctorsList.addEventListener('click', async function (e) {
+  var btn = e.target.closest('[data-medico-id]');
+  if (!btn) return;
+  var doctor = state.doctors.find(function (d) { return d.medico_id === btn.dataset.medicoId; });
+  if (!doctor) return;
+  var ok = await confirmModal('Remover o acesso de ' + (doctor.nome || doctor.email) + ' aos seus dados? Para reconectar, só o administrador.', 'Remover');
+  if (!ok) return;
+  btn.disabled = true;
+  revokeDoctor(doctor.medico_id)
+    .then(function () {
+      state.doctors = state.doctors.filter(function (d) { return d.medico_id !== doctor.medico_id; });
+      renderDoctors();
+      notifySuccess('Acesso removido.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao revogar médico', err);
+      btn.disabled = false;
+      notifyError('Não foi possível remover o acesso. Tente de novo.');
+    });
+});
+
 
 // ── admin: Usuários ──
 els.roleOptions.querySelectorAll('.role-option').forEach(function (btn) {
@@ -3141,6 +4091,19 @@ els.roleOptions.querySelectorAll('.role-option').forEach(function (btn) {
       b.classList.toggle('active', b === btn);
     });
   });
+});
+
+// Senha provisória forte, sem caracteres ambíguos (0/O, 1/l/I).
+els.btnGeneratePassword.addEventListener('click', function () {
+  var alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  var bytes = new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  var pwd = Array.prototype.map.call(bytes, function (b) { return alphabet[b % alphabet.length]; }).join('');
+  els.inputUserPassword.value = pwd;
+  els.inputUserPassword.type = 'text';
+  var toggle = document.querySelector('[data-toggle-password="input-user-password"]');
+  if (toggle) { toggle.textContent = 'Ocultar'; toggle.setAttribute('aria-label', 'Ocultar senha'); }
+  clearFieldError(els.inputUserPassword);
 });
 
 function loadUsers() {
@@ -3160,6 +4123,7 @@ function loadUsers() {
     })
     .finally(renderUsers);
 }
+RETRY_HANDLERS.users = loadUsers;
 
 els.btnCreateUser.addEventListener('click', function () {
   if (state.creatingUser) return;
@@ -3169,12 +4133,12 @@ els.btnCreateUser.addEventListener('click', function () {
   var password = els.inputUserPassword.value;
   var role = state.newUserRole;
 
-  if (!email || !email.includes('@')) {
-    showUserFormToast('Informe um e-mail válido.');
+  if (!email || email.indexOf('@') === -1) {
+    setFieldError(els.inputUserEmail, 'Informe um e-mail válido.');
     return;
   }
-  if (!password || password.length < 6) {
-    showUserFormToast('A senha precisa ter pelo menos 6 caracteres.');
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    setFieldError(els.inputUserPassword, 'A senha provisória precisa ter pelo menos ' + MIN_PASSWORD_LENGTH + ' caracteres.');
     return;
   }
 
@@ -3183,18 +4147,18 @@ els.btnCreateUser.addEventListener('click', function () {
 
   callAdminUsers('invite', { nome: nome, email: email, password: password, role: role })
     .then(function (body) {
-      showUserFormToast(
-        (body.contaExistente ? 'Conta existente vinculada ao PandaFit como ' : 'Usuário cadastrado como ')
-        + roleLabel(role) + '.'
-      );
+      notifySuccess(body.contaExistente
+        ? 'Conta existente conectada ao PandaFit como ' + roleLabel(role) + '. A senha dela não foi alterada.'
+        : 'Usuário cadastrado como ' + roleLabel(role) + '. Envie a senha provisória por um canal seguro; ela será trocada no 1º acesso.');
       els.inputUserNome.value = '';
       els.inputUserEmail.value = '';
       els.inputUserPassword.value = '';
+      els.inputUserPassword.type = 'password';
       loadUsers();
     })
     .catch(function (err) {
       console.error('Falha ao cadastrar usuário', err);
-      showUserFormToast(err.message || 'Não foi possível cadastrar. Tente de novo.');
+      notifyError(err.message || 'Não foi possível cadastrar. Tente de novo.');
     })
     .finally(function () {
       state.creatingUser = false;
@@ -3205,18 +4169,9 @@ els.btnCreateUser.addEventListener('click', function () {
 function renderUsers() {
   els.usersCountNote.textContent = state.users.length + (state.users.length === 1 ? ' usuário' : ' usuários');
 
-  if (state.usersLoading) {
-    els.usersList.innerHTML = '<p class="empty-state">Carregando usuários…</p>';
-    return;
-  }
-  if (state.usersLoadError) {
-    els.usersList.innerHTML = '<p class="empty-state">Não foi possível carregar os usuários. Recarregue a página.</p>';
-    return;
-  }
-  if (state.users.length === 0) {
-    els.usersList.innerHTML = '<p class="empty-state">Nenhum usuário cadastrado ainda.</p>';
-    return;
-  }
+  if (state.usersLoading) { els.usersList.innerHTML = skeletonRows(3); return; }
+  if (state.usersLoadError) { els.usersList.innerHTML = errorStateHTML('Não foi possível carregar os usuários.', 'users'); return; }
+  if (state.users.length === 0) { els.usersList.innerHTML = '<p class="empty-state">Nenhum usuário cadastrado ainda.</p>'; return; }
 
   var medicos = state.users.filter(function (u) { return u.role === 'medico'; });
   var pacientesElegiveis = state.users.filter(function (u) { return u.role === 'usuario' || u.role === 'admin'; });
@@ -3225,24 +4180,24 @@ function renderUsers() {
     var isSelf = u.id === currentUserId();
     var row = '<div class="user-row">' +
       '<div class="user-info">' +
-      '<span class="user-name">' + (u.nome || u.email) + (isSelf ? ' (você)' : '') + '</span>' +
-      '<span class="user-email">' + u.email + '</span>' +
+      (displayName(u)
+        ? '<span class="user-name">' + esc(displayName(u)) + (isSelf ? ' (você)' : '') + '</span>'
+        : '<span class="user-name is-missing">Nome não cadastrado' + (isSelf ? ' (você)' : '') + '</span>') +
+      '<span class="user-email">' + esc(u.email) + '</span>' +
+      '<button type="button" class="link-btn user-edit-name" data-id="' + esc(u.id) + '">' + (displayName(u) ? 'Editar nome' : 'Adicionar nome') + '</button>' +
       '</div>' +
-      '<select class="user-role-select" data-id="' + u.id + '" ' + (isSelf ? 'disabled' : '') + '>' +
+      '<select class="user-role-select" data-id="' + esc(u.id) + '" aria-label="Papel de ' + esc(u.nome || u.email) + '" ' + (isSelf ? 'disabled' : '') + '>' +
       '<option value="usuario"' + (u.role === 'usuario' ? ' selected' : '') + '>Usuário</option>' +
       '<option value="medico"' + (u.role === 'medico' ? ' selected' : '') + '>Médico</option>' +
       '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>Admin</option>' +
       '</select>' +
-      '<button type="button" class="record-delete" data-id="' + u.id + '" aria-label="Revogar acesso" ' + (isSelf ? 'disabled' : '') + '>' +
+      '<button type="button" class="record-delete user-revoke" data-id="' + esc(u.id) + '" aria-label="Revogar acesso de ' + esc(u.nome || u.email) + '" ' + (isSelf ? 'disabled' : '') + '>' +
       DELETE_ICON_SVG +
       '</button>' +
       '</div>';
 
     // Vínculo paciente↔médico: cada médico é um chip que liga/desliga o
     // acesso dele aos dados deste paciente (ver pandafit_medico_pacientes).
-    // Inclui admin: a conta admin também registra os próprios treinos/peso
-    // (ela usa o app como usuario também, ver README) e pode ser
-    // acompanhada por um médico como qualquer outro paciente.
     if (u.role === 'usuario' || u.role === 'admin') {
       var linkedIds = state.userLinks
         .filter(function (l) { return l.usuario_id === u.id; })
@@ -3255,20 +4210,16 @@ function renderUsers() {
           : '<div class="link-chips">' +
             medicos.map(function (m) {
               var active = linkedIds.indexOf(m.id) !== -1;
-              var key = m.id + ':' + u.id;
-              var busy = state.savingLinkFor === key;
-              return '<button type="button" class="link-chip' + (active ? ' active' : '') + '" ' +
-                'data-medico-id="' + m.id + '" data-usuario-id="' + u.id + '" data-linked="' + active + '" ' +
-                (busy ? 'disabled' : '') + '>' + (m.nome || m.email) + '</button>';
+              var busy = state.savingLinkFor === m.id + ':' + u.id;
+              return '<button type="button" class="link-chip' + (active ? ' active' : '') + '" aria-pressed="' + active + '" ' +
+                'data-medico-id="' + esc(m.id) + '" data-usuario-id="' + esc(u.id) + '" data-linked="' + active + '" ' +
+                (busy ? 'disabled' : '') + '>' + esc(m.nome || m.email) + '</button>';
             }).join('') +
             '</div>') +
         '</div>';
     }
 
-    // Mesma coisa na direção oposta: na própria linha do médico, um chip
-    // por paciente elegível — mesmo vínculo, só invertendo quem é o "dono"
-    // do clique. Aparece já na criação do médico, sem precisar ir até a
-    // linha de cada paciente pra conectar o primeiro.
+    // Mesma coisa na direção oposta, na linha do médico.
     if (u.role === 'medico') {
       var linkedPacienteIds = state.userLinks
         .filter(function (l) { return l.medico_id === u.id; })
@@ -3281,12 +4232,11 @@ function renderUsers() {
           : '<div class="link-chips">' +
             pacientesElegiveis.map(function (p) {
               var active = linkedPacienteIds.indexOf(p.id) !== -1;
-              var key = u.id + ':' + p.id;
-              var busy = state.savingLinkFor === key;
+              var busy = state.savingLinkFor === u.id + ':' + p.id;
               var isSelfPaciente = p.id === currentUserId();
-              return '<button type="button" class="link-chip' + (active ? ' active' : '') + '" ' +
-                'data-medico-id="' + u.id + '" data-usuario-id="' + p.id + '" data-linked="' + active + '" ' +
-                (busy ? 'disabled' : '') + '>' + (p.nome || p.email) + (isSelfPaciente ? ' (você)' : '') + '</button>';
+              return '<button type="button" class="link-chip' + (active ? ' active' : '') + '" aria-pressed="' + active + '" ' +
+                'data-medico-id="' + esc(u.id) + '" data-usuario-id="' + esc(p.id) + '" data-linked="' + active + '" ' +
+                (busy ? 'disabled' : '') + '>' + esc(p.nome || p.email) + (isSelfPaciente ? ' (você)' : '') + '</button>';
             }).join('') +
             '</div>') +
         '</div>';
@@ -3294,80 +4244,103 @@ function renderUsers() {
 
     return row;
   }).join('');
-
-  els.usersList.querySelectorAll('.user-role-select').forEach(function (select) {
-    select.addEventListener('change', function () {
-      var userId = select.dataset.id;
-      var role = select.value;
-      select.disabled = true;
-      callAdminUsers('update_role', { userId: userId, role: role })
-        .then(function () {
-          showUserFormToast('Papel atualizado.');
-          loadUsers();
-        })
-        .catch(function (err) {
-          console.error('Falha ao atualizar papel', err);
-          showUserFormToast(err.message || 'Não foi possível atualizar. Tente de novo.');
-          loadUsers();
-        });
-    });
-  });
-
-  els.usersList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var userId = btn.dataset.id;
-      var u = state.users.find(function (x) { return x.id === userId; });
-      confirmModal('Revogar o acesso de ' + (u ? (u.nome || u.email) : 'este usuário') + ' ao PandaFit?')
-        .then(function (ok) {
-          if (!ok) return;
-          return callAdminUsers('revoke', { userId: userId });
-        })
-        .then(function (result) {
-          if (result) loadUsers();
-        })
-        .catch(function (err) {
-          console.error('Falha ao revogar acesso', err);
-          showUserFormToast(err.message || 'Não foi possível revogar. Tente de novo.');
-        });
-    });
-  });
-
-  els.usersList.querySelectorAll('.link-chip').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var medicoId = btn.dataset.medicoId;
-      var usuarioId = btn.dataset.usuarioId;
-      var linked = btn.dataset.linked === 'true';
-      var key = medicoId + ':' + usuarioId;
-      if (state.savingLinkFor) return;
-
-      state.savingLinkFor = key;
-      renderUsers();
-      callAdminUsers('set_link', { medicoId: medicoId, usuarioId: usuarioId, linked: !linked })
-        .then(function () {
-          state.userLinks = linked
-            ? state.userLinks.filter(function (l) { return !(l.medico_id === medicoId && l.usuario_id === usuarioId); })
-            : state.userLinks.concat([{ medico_id: medicoId, usuario_id: usuarioId }]);
-        })
-        .catch(function (err) {
-          console.error('Falha ao atualizar vínculo paciente/médico', err);
-          showUserFormToast(err.message || 'Não foi possível atualizar o vínculo. Tente de novo.');
-        })
-        .finally(function () {
-          state.savingLinkFor = null;
-          renderUsers();
-        });
-    });
-  });
 }
+
+els.usersList.addEventListener('change', function (e) {
+  var select = e.target.closest('.user-role-select');
+  if (!select) return;
+  select.disabled = true;
+  callAdminUsers('update_role', { userId: select.dataset.id, role: select.value })
+    .then(function () { notifySuccess('Papel atualizado.'); })
+    .catch(function (err) {
+      console.error('Falha ao atualizar papel', err);
+      notifyError(err.message || 'Não foi possível atualizar. Tente de novo.');
+    })
+    .finally(loadUsers);
+});
+
+els.usersList.addEventListener('click', function (e) {
+  var editName = e.target.closest('.user-edit-name');
+  if (editName) {
+    var target = state.users.find(function (x) { return x.id === editName.dataset.id; });
+    if (!target) return;
+    var info = editName.closest('.user-info');
+    info.innerHTML = '<label class="field"><span class="field-label">Nome de ' + esc(target.email) + '</span>' +
+      '<input type="text" class="user-name-input" maxlength="120" value="' + esc(displayName(target) || '') + '" /></label>' +
+      '<span class="inline-actions"><button type="button" class="link-btn user-name-save" data-id="' + esc(target.id) + '">Salvar</button>' +
+      '<button type="button" class="link-btn user-name-cancel">Cancelar</button></span>';
+    info.querySelector('input').focus();
+    return;
+  }
+  if (e.target.closest('.user-name-cancel')) { renderUsers(); return; }
+  var saveName = e.target.closest('.user-name-save');
+  if (saveName) {
+    var input = saveName.closest('.user-info').querySelector('.user-name-input');
+    saveName.disabled = true;
+    callAdminUsers('update_name', { userId: saveName.dataset.id, nome: input.value })
+      .then(function (body) {
+        var u = state.users.find(function (x) { return x.id === saveName.dataset.id; });
+        if (u) u.nome = body.nome;
+        if (state.profile && state.profile.id === saveName.dataset.id) { state.profile.nome = body.nome; renderAccountIdentity(); }
+        notifySuccess('Nome atualizado.');
+        renderUsers();
+      })
+      .catch(function (err) {
+        console.error('Falha ao atualizar nome', err);
+        notifyError(err.message || 'Não foi possível atualizar o nome.');
+        saveName.disabled = false;
+      });
+    return;
+  }
+
+  var revoke = e.target.closest('.user-revoke');
+  if (revoke) {
+    var userId = revoke.dataset.id;
+    var u = state.users.find(function (x) { return x.id === userId; });
+    confirmModal('Revogar o acesso de ' + (u ? (u.nome || u.email) : 'este usuário') + ' ao PandaFit?', 'Revogar')
+      .then(function (ok) {
+        if (!ok) return null;
+        return callAdminUsers('revoke', { userId: userId });
+      })
+      .then(function (result) {
+        if (result) { notifySuccess('Acesso revogado.'); loadUsers(); }
+      })
+      .catch(function (err) {
+        console.error('Falha ao revogar acesso', err);
+        notifyError(err.message || 'Não foi possível revogar. Tente de novo.');
+      });
+    return;
+  }
+
+  var chip = e.target.closest('.link-chip');
+  if (!chip || state.savingLinkFor) return;
+  var medicoId = chip.dataset.medicoId;
+  var usuarioId = chip.dataset.usuarioId;
+  var linked = chip.dataset.linked === 'true';
+  state.savingLinkFor = medicoId + ':' + usuarioId;
+  renderUsers();
+  callAdminUsers('set_link', { medicoId: medicoId, usuarioId: usuarioId, linked: !linked })
+    .then(function () {
+      state.userLinks = linked
+        ? state.userLinks.filter(function (l) { return !(l.medico_id === medicoId && l.usuario_id === usuarioId); })
+        : state.userLinks.concat([{ medico_id: medicoId, usuario_id: usuarioId }]);
+    })
+    .catch(function (err) {
+      console.error('Falha ao atualizar vínculo paciente/médico', err);
+      notifyError(err.message || 'Não foi possível atualizar o vínculo. Tente de novo.');
+    })
+    .finally(function () {
+      state.savingLinkFor = null;
+      renderUsers();
+    });
+});
 
 // ── medico: Pacientes ──
 function loadPatients() {
   state.patientsLoading = true;
   state.patientsLoadError = false;
   renderPatientsList();
-  // Não filtra por role = 'usuario': o admin também pode ser paciente de um
-  // médico (ele também registra os próprios treinos/peso, ver README). A
-  // RLS de pandafit_usuarios já restringe o que volta aqui a quem está
+  // A RLS de pandafit_usuarios já restringe o que volta aqui a quem está
   // vinculado a este médico — só precisa excluir outro médico da lista.
   supabase
     .from('pandafit_usuarios')
@@ -3385,59 +4358,101 @@ function loadPatients() {
     })
     .finally(renderPatientsList);
 }
+RETRY_HANDLERS.patients = loadPatients;
+
+function visitKey(patientId) { return 'visita_' + patientId; }
 
 function renderPatientsList() {
   els.patientsCountNote.textContent = state.patients.length + (state.patients.length === 1 ? ' paciente' : ' pacientes');
 
-  if (state.patientsLoading) {
-    els.patientsList.innerHTML = '<p class="empty-state">Carregando pacientes…</p>';
-    return;
-  }
-  if (state.patientsLoadError) {
-    els.patientsList.innerHTML = '<p class="empty-state">Não foi possível carregar os pacientes. Recarregue a página.</p>';
-    return;
-  }
+  if (state.patientsLoading) { els.patientsList.innerHTML = skeletonRows(3); return; }
+  if (state.patientsLoadError) { els.patientsList.innerHTML = errorStateHTML('Não foi possível carregar os pacientes.', 'patients'); return; }
   if (state.patients.length === 0) {
-    els.patientsList.innerHTML = '<p class="empty-state">Nenhum paciente cadastrado ainda.</p>';
+    els.patientsList.innerHTML = '<p class="empty-state">Nenhum paciente conectado a você ainda. O administrador faz essa conexão.</p>';
     return;
   }
 
-  els.patientsList.innerHTML = state.patients.map(function (p) {
-    return '<button type="button" class="patient-row" data-id="' + p.id + '">' +
-      '<span class="user-info"><span class="user-name">' + (p.nome || p.email) + '</span>' +
-      '<span class="user-email">' + p.email + '</span></span>' +
-      '<span class="patient-row-arrow">›</span>' +
+  var query = normalizeSearch(els.inputPatientSearch.value);
+  var list = state.patients
+    .filter(function (p) {
+      return !query || normalizeSearch((displayName(p) || '') + ' ' + p.email).indexOf(query) !== -1;
+    })
+    .sort(function (a, b) {
+      // Com nome primeiro, em ordem alfabética; sem nome no fim, pelo e-mail.
+      var na = displayName(a), nb = displayName(b);
+      if (na && !nb) return -1;
+      if (!na && nb) return 1;
+      return (na || a.email).localeCompare(nb || b.email, 'pt-BR', { sensitivity: 'base' });
+    });
+
+  if (list.length === 0) {
+    els.patientsList.innerHTML = '<p class="empty-state">Nenhum paciente encontrado para essa busca.</p>';
+    return;
+  }
+
+  els.patientsList.innerHTML = list.map(function (p) {
+    var lastVisit = (prefGet(visitKey(p.id)) || {}).last;
+    var nome = displayName(p);
+    return '<button type="button" class="patient-row" data-id="' + esc(p.id) + '">' +
+      '<span class="user-info">' +
+      (nome
+        ? '<span class="user-name">' + esc(nome) + '</span>'
+        : '<span class="user-name is-missing">Nome não cadastrado</span>') +
+      '<span class="user-email">' + esc(p.email) + (lastVisit ? ' · última visita ' + fmtDayLabel(lastVisit) : '') + '</span></span>' +
+      '<span class="patient-row-arrow" aria-hidden="true">›</span>' +
       '</button>';
   }).join('');
-
-  els.patientsList.querySelectorAll('.patient-row').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var patient = state.patients.find(function (p) { return p.id === btn.dataset.id; });
-      if (patient) openPatientDetail(patient);
-    });
-  });
 }
+
+// Busca sem acento e sem diferenciar maiúsculas ("joao" acha "João").
+function normalizeSearch(text) {
+  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+els.inputPatientSearch.addEventListener('input', renderPatientsList);
+
+els.patientsList.addEventListener('click', function (e) {
+  var btn = e.target.closest('.patient-row');
+  if (!btn) return;
+  var patient = state.patients.find(function (p) { return p.id === btn.dataset.id; });
+  if (patient) openPatientDetail(patient);
+});
 
 function openPatientDetail(patient) {
   state.selectedPatient = patient;
-  els.pacientesTitle.textContent = patient.nome || patient.email;
+  // "Desde a última visita": lembra (neste aparelho) quando este médico
+  // abriu este paciente; abrir de novo no mesmo dia mantém a mesma base.
+  var visits = prefGet(visitKey(patient.id)) || {};
+  var today = todayISO();
+  if (visits.last && visits.last < today) visits.prev = visits.last;
+  visits.last = today;
+  prefSet(visitKey(patient.id), visits);
+  state.patientPrevVisit = visits.prev || null;
+  els.sincePeriod.value = state.patientPrevVisit ? 'last' : '30';
+  var nome = displayName(patient);
+  els.pacientesTitle.textContent = nome || 'Nome não cadastrado';
+  els.pacientesSubtitle.textContent = patient.email;
+  els.pacientesSubtitle.hidden = false;
   els.pacientesListView.hidden = true;
   els.pacientesDetailView.hidden = false;
+  window.scrollTo(0, 0);
   loadPatientDetail(patient.id);
 }
+RETRY_HANDLERS.patient = function () { if (state.selectedPatient) loadPatientDetail(state.selectedPatient.id); };
 
 els.btnBackToPatients.addEventListener('click', function () {
   state.selectedPatient = null;
+  els.pacientesTitle.textContent = 'Pacientes';
+  els.pacientesSubtitle.hidden = true;
   els.pacientesListView.hidden = false;
   els.pacientesDetailView.hidden = true;
+  renderPatientsList();
 });
 
 function loadPatientDetail(patientId) {
-  els.patientDocumentsList.innerHTML = '<p class="empty-state">Carregando…</p>';
-  els.patientWeightsList.innerHTML = '<p class="empty-state">Carregando…</p>';
-  els.patientMeasurementsList.innerHTML = '<p class="empty-state">Carregando…</p>';
-  els.patientPhotosGallery.innerHTML = '<p class="empty-state">Carregando…</p>';
-  els.patientWorkoutsList.innerHTML = '<p class="empty-state">Carregando…</p>';
+  [els.patientDocumentsList, els.patientWeightsList, els.patientMeasurementsList, els.patientPhotosGallery, els.patientWorkoutsList]
+    .forEach(function (el) { el.innerHTML = skeletonRows(2); });
+  els.sinceGrid.innerHTML = skeletonRows(1);
   els.patientWeightChartWrap.innerHTML = '';
   els.patientDocsNote.textContent = '';
   els.patientWeightsNote.textContent = '';
@@ -3447,57 +4462,97 @@ function loadPatientDetail(patientId) {
 
   Promise.all([
     fetchDocuments(patientId).catch(function () { return null; }),
-    fetchWeights(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
-    fetchWorkouts(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
+    fetchWeights(patientId, PATIENT_SINCE_LIMIT).catch(function () { return null; }),
+    fetchWorkouts(patientId, PATIENT_SINCE_LIMIT).catch(function () { return null; }),
     fetchWorkoutSets(patientId).catch(function () { return {}; }),
     fetchProgressPhotos(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
-    fetchBodyMeasurements(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
+    fetchBodyMeasurements(patientId, PATIENT_SINCE_LIMIT).catch(function () { return null; }),
   ]).then(function (results) {
+    if (!state.selectedPatient || state.selectedPatient.id !== patientId) return;
     state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2], sets: results[3], photos: results[4], measurements: results[5] };
+    renderSinceCard();
     renderPatientDocuments(results[0]);
-    renderPatientWeights(results[1]);
-    renderPatientWorkouts(results[2], results[3]);
+    renderPatientWeights(results[1] && results[1].slice(0, PATIENT_RECENT_LIMIT));
+    renderPatientWorkouts(results[2] && results[2].slice(0, PATIENT_RECENT_LIMIT), results[3]);
     renderPatientPhotos(results[4]);
-    renderPatientMeasurements(results[5]);
+    renderPatientMeasurements(results[5] && results[5].slice(0, PATIENT_RECENT_LIMIT));
   });
 }
 
-// Somente leitura — mesmo padrão de renderPatientWeights.
+// ── cartão "Desde a última visita" (visão do médico orientada a decisão) ──
+function sinceStartDate() {
+  var v = els.sincePeriod.value;
+  if (v === 'last' && state.patientPrevVisit) return state.patientPrevVisit;
+  var days = v === '90' ? 90 : 30;
+  var d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+function signed(n, unit) {
+  if (Math.abs(n) < 0.05) return 'estável';
+  return (n > 0 ? '+' : '−') + fmtWeight(Math.abs(n)) + ' ' + unit;
+}
+
+function renderSinceCard() {
+  var det = state.patientDetail;
+  if (!det) return;
+  var since = sinceStartDate();
+  var today = todayISO();
+  var days = Math.max(1, Math.round((parseISO(today) - parseISO(since)) / 86400000));
+  var tiles = [];
+
+  // peso: último registro vs o último registro anterior (ou igual) ao início do período
+  if (det.weights && det.weights.length) {
+    var latestW = det.weights[0];
+    var baseW = det.weights.find(function (w) { return w.date <= since; }) || det.weights[det.weights.length - 1];
+    tiles.push({ label: 'Peso', value: fmtWeight(latestW.weight_kg) + ' kg', sub: baseW.id !== latestW.id ? signed(latestW.weight_kg - baseW.weight_kg, 'kg') + ' desde ' + fmtDayLabel(baseW.date) : 'sem comparação' });
+  } else {
+    tiles.push({ label: 'Peso', value: 'sem registro', sub: '' });
+  }
+
+  var waists = (det.measurements || []).filter(function (m) { return m.waist_cm != null; });
+  if (waists.length) {
+    var latestM = waists[0];
+    var baseM = waists.find(function (m) { return m.date <= since; }) || waists[waists.length - 1];
+    tiles.push({ label: 'Cintura', value: fmtWeight(latestM.waist_cm) + ' cm', sub: baseM !== latestM ? signed(latestM.waist_cm - baseM.waist_cm, 'cm') : 'sem comparação' });
+  }
+
+  var workoutsIn = (det.workouts || []).filter(function (w) { return w.date >= since; });
+  var perWeek = workoutsIn.length / (days / 7);
+  tiles.push({ label: 'Treinos', value: String(workoutsIn.length), sub: perWeek.toFixed(1).replace('.', ',') + ' por semana' });
+
+  var newDocs = (det.documents || []).filter(function (d) { return d.uploaded_at.slice(0, 10) >= since; });
+  tiles.push({ label: 'Exames novos', value: String(newDocs.length), sub: newDocs.length ? 'marcados como "novo" abaixo' : 'nenhum' });
+
+  var newPhotos = (det.photos || []).filter(function (p) { return p.taken_at >= since; });
+  tiles.push({ label: 'Fotos novas', value: String(newPhotos.length), sub: '' });
+
+  var periodLabel = els.sincePeriod.value === 'last' && state.patientPrevVisit
+    ? 'Desde ' + fmtFullDayLabel(state.patientPrevVisit) + ' (' + days + (days === 1 ? ' dia' : ' dias') + ')'
+    : 'Últimos ' + days + ' dias';
+  els.sinceGrid.innerHTML = '<p class="since-period-label">' + periodLabel + (state.patientPrevVisit ? '' : ' · primeira visita neste aparelho') + '</p>' +
+    tiles.map(function (t) {
+      return '<div class="since-tile"><span class="since-label">' + t.label + '</span>' +
+        '<span class="since-value">' + t.value + '</span>' +
+        (t.sub ? '<span class="since-sub">' + t.sub + '</span>' : '') + '</div>';
+    }).join('');
+}
+els.sincePeriod.addEventListener('change', renderSinceCard);
+
 function renderPatientMeasurements(measurements) {
-  if (measurements == null) {
-    els.patientMeasurementsList.innerHTML = '<p class="empty-state">Não foi possível carregar as medidas.</p>';
-    return;
-  }
+  if (measurements == null) { els.patientMeasurementsList.innerHTML = errorStateHTML('Não foi possível carregar as medidas.', 'patient'); return; }
   els.patientMeasurementsNote.textContent = measurements.length + (measurements.length === 1 ? ' registro' : ' registros');
-  if (measurements.length === 0) {
-    els.patientMeasurementsList.innerHTML = '<p class="empty-state">Nenhuma medida registrada.</p>';
-    return;
-  }
+  if (measurements.length === 0) { els.patientMeasurementsList.innerHTML = '<p class="empty-state">Nenhuma medida registrada.</p>'; return; }
   els.patientMeasurementsList.innerHTML = measurements.map(function (m, i) {
-    var waistDelta = m.waist_cm != null
-      ? measurementDelta(m.waist_cm, findPrevMeasurementValue(measurements, i, 'waist_cm'))
-      : null;
-    var bodyFatDelta = m.body_fat_pct != null
-      ? measurementDelta(m.body_fat_pct, findPrevMeasurementValue(measurements, i, 'body_fat_pct'))
-      : null;
-    return '<div class="record-row">' +
-      '<span class="record-day">' + fmtDayLabel(m.date) + '</span>' +
-      '<span class="record-mid">' +
-      (m.waist_cm != null ? '<span class="record-type">Cintura ' + fmtWeight(m.waist_cm) + ' cm</span>' : '') +
-      (m.body_fat_pct != null ? '<span class="record-local">Gordura ' + fmtWeight(m.body_fat_pct) + '%</span>' : '') +
-      '</span>' +
-      '<span class="measurement-delta-col">' +
-      (waistDelta ? '<span class="weight-delta ' + waistDelta.trendClass + '">' + waistDelta.label + '</span>' : '') +
-      (bodyFatDelta ? '<span class="weight-delta ' + bodyFatDelta.trendClass + '">' + bodyFatDelta.label + '</span>' : '') +
-      '</span>' +
-      '</div>';
+    return measurementRowHTML(m, findPrevMeasurementValue(measurements, i, 'waist_cm'), findPrevMeasurementValue(measurements, i, 'body_fat_pct'), false);
   }).join('');
 }
 
 function renderPatientDocuments(documents) {
   if (documents == null) {
     els.patientDocsSummary.hidden = true;
-    els.patientDocumentsList.innerHTML = '<p class="empty-state">Não foi possível carregar os exames.</p>';
+    els.patientDocumentsList.innerHTML = errorStateHTML('Não foi possível carregar os exames.', 'patient');
     return;
   }
   els.patientDocsNote.textContent = documents.length + (documents.length === 1 ? ' exame' : ' exames');
@@ -3507,23 +4562,21 @@ function renderPatientDocuments(documents) {
     return;
   }
 
-  // Resumo: total de espaço ocupado + data do envio mais recente (a lista
-  // já vem ordenada por uploaded_at desc — ver fetchDocuments).
   var totalBytes = documents.reduce(function (a, d) { return a + d.file_size; }, 0);
   els.patientDocsSummary.hidden = false;
   els.patientDocsSummary.textContent = fmtFileSize(totalBytes) + ' ao todo · último envio em ' + fmtDayLabel(documents[0].uploaded_at.slice(0, 10));
 
+  var since = sinceStartDate();
   els.patientDocumentsList.innerHTML = documents.map(function (doc) {
     var canAnalyze = AI_ANALYZABLE_TYPES.indexOf(doc.file_type) !== -1;
+    var isNew = doc.uploaded_at.slice(0, 10) >= since;
     return '<div class="record-row has-edit">' +
       '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
-      '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
+      '<span class="record-mid"><span class="record-type">' + (isNew ? '<span class="new-badge">novo</span> ' : '') + esc(doc.file_name) + '</span>' +
       '<span class="record-local">' + fmtFileSize(doc.file_size) + '</span></span>' +
-      '<a class="record-dur doc-view-link" href="#" data-path="' + doc.file_path + '">Ver</a>' +
-      '<a class="record-dur doc-download-link" href="#" data-path="' + doc.file_path + '" data-name="' + doc.file_name.replace(/"/g, '&quot;') + '">Baixar</a>' +
-      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir exame">' +
-      DELETE_ICON_SVG +
-      '</button>' +
+      '<a class="record-dur doc-view-link" href="#" data-path="' + esc(doc.file_path) + '">Ver</a>' +
+      '<a class="record-dur doc-download-link" href="#" data-path="' + esc(doc.file_path) + '" data-name="' + esc(doc.file_name) + '">Baixar</a>' +
+      '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir exame ' + esc(doc.file_name) + '">' + DELETE_ICON_SVG + '</button>' +
       '</div>' +
       (canAnalyze
         ? '<div class="doc-ai-row">' +
@@ -3532,30 +4585,21 @@ function renderPatientDocuments(documents) {
           '</div>'
         : '');
   }).join('');
-  els.patientDocumentsList.querySelectorAll('.doc-view-link').forEach(function (link) {
-    link.addEventListener('click', function (e) {
-      e.preventDefault();
-      handleViewDocumentClick(link.dataset.path, link);
-    });
-  });
-  els.patientDocumentsList.querySelectorAll('.doc-download-link').forEach(function (link) {
-    link.addEventListener('click', function (e) {
-      e.preventDefault();
-      handleDownloadDocumentClick(link.dataset.path, link.dataset.name, link);
-    });
-  });
-  els.patientDocumentsList.querySelectorAll('.doc-ai-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      handleAnalyzeDocumentClick(Number(btn.dataset.id), btn);
-    });
-  });
-  els.patientDocumentsList.querySelectorAll('.record-delete').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var doc = documents.find(function (d) { return d.id === Number(btn.dataset.id); });
-      if (doc) handleDeletePatientDocumentClick(doc);
-    });
-  });
 }
+
+els.patientDocumentsList.addEventListener('click', function (e) {
+  var view = e.target.closest('.doc-view-link');
+  if (view) { e.preventDefault(); handleViewDocumentClick(view.dataset.path, view); return; }
+  var down = e.target.closest('.doc-download-link');
+  if (down) { e.preventDefault(); handleDownloadDocumentClick(down.dataset.path, down.dataset.name, down); return; }
+  var ai = e.target.closest('.doc-ai-btn');
+  if (ai) { handleAnalyzeDocumentClick(Number(ai.dataset.id), ai); return; }
+  var del = e.target.closest('.record-delete');
+  if (del && state.patientDetail) {
+    var doc = state.patientDetail.documents.find(function (d) { return d.id === Number(del.dataset.id); });
+    if (doc) handleDeletePatientDocumentClick(doc);
+  }
+});
 
 async function handleDownloadDocumentClick(path, fileName, linkEl) {
   var original = linkEl.textContent;
@@ -3565,7 +4609,7 @@ async function handleDownloadDocumentClick(path, fileName, linkEl) {
     window.open(url, '_blank', 'noopener');
   } catch (err) {
     console.error('Falha ao gerar link de download', err);
-    showDocumentToast('Não foi possível baixar o exame.');
+    notifyError('Não foi possível baixar o exame.');
   } finally {
     linkEl.textContent = original;
   }
@@ -3573,8 +4617,7 @@ async function handleDownloadDocumentClick(path, fileName, linkEl) {
 
 // Chama a edge function pandafit-analyze-document (Claude via API da
 // Anthropic) pra gerar — ou reaproveitar do cache — um resumo do exame,
-// como apoio à leitura do médico. Nunca substitui o julgamento clínico
-// (ver o texto fixo que a própria function inclui no resumo).
+// como apoio à leitura do médico. Nunca substitui o julgamento clínico.
 async function handleAnalyzeDocumentClick(documentId, btn) {
   var resultEl = btn.nextElementSibling;
   var originalLabel = btn.textContent;
@@ -3583,12 +4626,13 @@ async function handleAnalyzeDocumentClick(documentId, btn) {
 
   try {
     var res = await callAnalyzeDocument(documentId);
-    resultEl.innerHTML = '<p class="doc-ai-text">' + escapeHtml(res.summary).replace(/\n/g, '<br>') + '</p>';
+    resultEl.innerHTML = '<p class="doc-ai-text">' + esc(res.summary).replace(/\n/g, '<br>') + '</p>' +
+      '<p class="doc-ai-meta">O paciente vê um selo "Lido por IA" neste exame e pode abrir este resumo.</p>';
     resultEl.hidden = false;
     btn.textContent = 'Gerar de novo';
   } catch (err) {
     console.error('Falha ao gerar resumo com IA', err);
-    resultEl.innerHTML = '<p class="doc-ai-error">' + escapeHtml(err.message || 'Não foi possível gerar o resumo. Tente de novo.') + '</p>';
+    resultEl.innerHTML = '<p class="doc-ai-error">' + esc(err.message || 'Não foi possível gerar o resumo. Tente de novo.') + '</p>';
     resultEl.hidden = false;
     btn.textContent = originalLabel;
   } finally {
@@ -3607,10 +4651,12 @@ async function handleDeletePatientDocumentClick(doc) {
       var remaining = state.patientDetail.documents.filter(function (d) { return d.id !== doc.id; });
       state.patientDetail.documents = remaining;
       renderPatientDocuments(remaining);
+      renderSinceCard();
+      notify('Exame excluído.');
     })
     .catch(function (err) {
       console.error('Falha ao excluir documento do paciente', err);
-      showDocumentToast('Não foi possível excluir. Tente de novo.');
+      notifyError('Não foi possível excluir. Tente de novo.');
     })
     .finally(function () {
       state.deletingPatientDocumentId = null;
@@ -3619,49 +4665,31 @@ async function handleDeletePatientDocumentClick(doc) {
 
 function renderPatientWeights(weights) {
   if (weights == null) {
-    els.patientWeightsList.innerHTML = '<p class="empty-state">Não foi possível carregar o peso.</p>';
+    els.patientWeightsList.innerHTML = errorStateHTML('Não foi possível carregar o peso.', 'patient');
     els.patientWeightChartWrap.innerHTML = '';
     return;
   }
-  els.patientWeightChartWrap.innerHTML = buildWeightChartHTML(weights);
+  els.patientWeightChartWrap.innerHTML = buildWeightChartHTML(weights, null);
   els.patientWeightsNote.textContent = weights.length + (weights.length === 1 ? ' registro' : ' registros');
-  if (weights.length === 0) {
-    els.patientWeightsList.innerHTML = '<p class="empty-state">Nenhum peso registrado.</p>';
-    return;
-  }
+  if (weights.length === 0) { els.patientWeightsList.innerHTML = '<p class="empty-state">Nenhum peso registrado.</p>'; return; }
   els.patientWeightsList.innerHTML = weights.map(function (w, i) {
-    var prev = weights[i + 1];
-    var trendClass = '';
-    var deltaLabel = '—';
-    if (prev) {
-      var diff = w.weight_kg - prev.weight_kg;
-      if (diff > 0.05) { trendClass = 'weight-up'; deltaLabel = '▲ ' + fmtWeight(diff); }
-      else if (diff < -0.05) { trendClass = 'weight-down'; deltaLabel = '▼ ' + fmtWeight(Math.abs(diff)); }
-      else { deltaLabel = '= 0,0'; }
-    }
+    var d = weightDeltaLabel(w, weights[i + 1]);
     return '<div class="record-row">' +
       '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
       '<span class="weight-value">' + fmtWeight(w.weight_kg) + ' kg</span>' +
-      '<span class="weight-delta ' + trendClass + '">' + deltaLabel + '</span>' +
+      '<span class="weight-delta ' + d.trendClass + '">' + d.label + '</span>' +
       '</div>';
   }).join('');
 }
 
-// Somente leitura — o médico vê a galeria de progresso do paciente, mas
-// não tem botão de excluir (só o dono da conta gerencia as próprias fotos).
+// Somente leitura — o médico acompanha a galeria, mas não exclui fotos.
 function renderPatientPhotos(photos) {
-  if (photos == null) {
-    els.patientPhotosGallery.innerHTML = '<p class="empty-state">Não foi possível carregar as fotos.</p>';
-    return;
-  }
+  if (photos == null) { els.patientPhotosGallery.innerHTML = errorStateHTML('Não foi possível carregar as fotos.', 'patient'); return; }
   els.patientPhotosNote.textContent = photos.length + (photos.length === 1 ? ' foto' : ' fotos');
-  if (photos.length === 0) {
-    els.patientPhotosGallery.innerHTML = '<p class="empty-state">Nenhuma foto enviada.</p>';
-    return;
-  }
+  if (photos.length === 0) { els.patientPhotosGallery.innerHTML = '<p class="empty-state">Nenhuma foto enviada.</p>'; return; }
   els.patientPhotosGallery.innerHTML = photos.map(function (p) {
     return '<div class="photo-tile">' +
-      '<div class="photo-thumb-wrap"><img class="photo-thumb" data-path="' + p.file_path + '" alt="Foto de ' + fmtDayLabel(p.taken_at) + '" /></div>' +
+      '<button type="button" class="photo-thumb-wrap" aria-label="Abrir foto de ' + fmtDayLabel(p.taken_at) + '"><img class="photo-thumb" data-path="' + esc(p.file_path) + '" alt="Foto de ' + fmtDayLabel(p.taken_at) + '" /></button>' +
       '<div class="photo-tile-foot"><span class="photo-date">' + fmtDayLabel(p.taken_at) + '</span></div>' +
       '</div>';
   }).join('');
@@ -3675,46 +4703,36 @@ function renderPatientPhotos(photos) {
       });
     })
     .catch(function (err) { console.error('Falha ao gerar URLs das fotos do paciente', err); });
-
-  els.patientPhotosGallery.querySelectorAll('.photo-thumb').forEach(function (img) {
-    img.addEventListener('click', function () {
-      if (img.src) window.open(img.src, '_blank', 'noopener');
-    });
-  });
 }
 
+els.patientPhotosGallery.addEventListener('click', function (e) {
+  var open = e.target.closest('.photo-thumb-wrap');
+  if (!open) return;
+  var img = open.querySelector('img');
+  if (img && img.src) window.open(img.src, '_blank', 'noopener');
+});
+
 function renderPatientWorkouts(workouts, sets) {
-  if (workouts == null) {
-    els.patientWorkoutsList.innerHTML = '<p class="empty-state">Não foi possível carregar os treinos.</p>';
-    return;
-  }
+  if (workouts == null) { els.patientWorkoutsList.innerHTML = errorStateHTML('Não foi possível carregar os treinos.', 'patient'); return; }
   els.patientWorkoutsNote.textContent = workouts.length + (workouts.length === 1 ? ' treino' : ' treinos');
-  if (workouts.length === 0) {
-    els.patientWorkoutsList.innerHTML = '<p class="empty-state">Nenhum treino registrado.</p>';
-    return;
-  }
+  if (workouts.length === 0) { els.patientWorkoutsList.innerHTML = '<p class="empty-state">Nenhum treino registrado.</p>'; return; }
   els.patientWorkoutsList.innerHTML = workouts.map(function (w) {
     var exercisesSummary = fmtExercisesSummary(sets && sets[w.id]);
     return '<div class="record-row">' +
       '<span class="record-day">' + fmtDayLabel(w.date) + '</span>' +
-      '<span class="record-mid"><span class="record-type">' + w.type + '</span>' +
-      '<span class="record-local">' + (w.local || 'Sem local') + '</span>' +
-      (exercisesSummary ? '<span class="record-exercises">' + exercisesSummary + '</span>' : '') +
+      '<span class="record-mid"><span class="record-type">' + esc(w.type) + '</span>' +
+      '<span class="record-local">' + esc(w.local || 'Sem local') + '</span>' +
+      (exercisesSummary ? '<span class="record-exercises">' + esc(exercisesSummary) + '</span>' : '') +
       '</span>' +
       '<span class="record-dur">' + fmtDuration(w.minutes) + '</span>' +
       '</div>';
   }).join('');
 }
 
+// ── cache offline + carregamento dos dados do próprio usuário ──
 // Mostra o cache local na hora (se houver) enquanto a rede responde. Se a
-// rede falhar e havia cache, mantém os dados antigos na tela com um aviso
-// de "offline" em vez de zerar tudo com a mensagem de erro genérica — só
-// aciona onLoadError quando não havia nada em cache pra cair de volta.
-//
-// offlineResources rastreia QUAIS dos ~7 recursos (treinos, pesos, meta...)
-// estão hoje servidos do cache por falha de rede — o banner de "offline"
-// reflete se esse conjunto está vazio ou não, em vez de uma única flag
-// booleana que 7 fetches concorrentes ficariam pisando um no do outro.
+// rede falhar e havia cache, mantém os dados antigos na tela com o aviso
+// de "offline" — só aciona onLoadError quando não havia nada em cache.
 var offlineResources = {};
 
 function recomputeOfflineMode() {
@@ -3730,7 +4748,7 @@ function loadWithCache(userId, cacheKey, fetchPromise, applyRows, opts) {
   }
 
   if (cached != null) {
-    applyRows(cached);
+    applyRows(cached, true);
     renderExtra();
   }
 
@@ -3738,8 +4756,9 @@ function loadWithCache(userId, cacheKey, fetchPromise, applyRows, opts) {
     .then(function (rows) {
       delete offlineResources[cacheKey];
       recomputeOfflineMode();
-      applyRows(rows);
+      applyRows(rows, false);
       cacheSet(userId, cacheKey, rows);
+      return { fromNetwork: true, rows: rows };
     })
     .catch(function (err) {
       console.error('Falha ao carregar ' + cacheKey, err);
@@ -3749,40 +4768,47 @@ function loadWithCache(userId, cacheKey, fetchPromise, applyRows, opts) {
       } else if (opts.onLoadError) {
         opts.onLoadError();
       }
+      return { fromNetwork: false, rows: null };
     })
     .finally(renderExtra);
 }
 
-// ── init (own tracking data — usuario and admin roles) ──
 function startOwnData() {
-  var userId = currentUserId();
-
-  els.inputDate.value = state.dateVal;
   els.inputDate.max = todayISO();
-  els.inputWeightDate.value = state.weightDateVal;
   els.inputWeightDate.max = todayISO();
-  els.inputWeightFilterFrom.max = todayISO();
-  els.inputWeightFilterTo.max = todayISO();
-  els.inputMeasurementDate.value = state.measurementDateVal;
   els.inputMeasurementDate.max = todayISO();
+  // Cronômetro que ficou rodando (app fechado no meio do treino): já abre
+  // no modo cronômetro, e o Painel mostra o aviso "Treino em andamento".
+  if (timerActive()) state.mode = 'timer';
   startTimerLoop();
   renderRegistrar();
   renderActiveTab();
+  loadOwnData();
+}
 
-  loadWithCache(userId, 'workouts', fetchWorkouts(userId),
-    function (rows) { state.workouts = rows; state.loading = false; updateLocalSuggestions(); },
+function loadOwnData() {
+  var userId = currentUserId();
+  state.loading = !state.workouts.length;
+  state.loadError = false;
+  if (state.weightsLoadError) { state.weightsLoading = true; state.weightsLoadError = false; }
+  if (state.measurementsLoadError) { state.measurementsLoading = true; state.measurementsLoadError = false; }
+  if (state.photosLoadError) { state.photosLoading = true; state.photosLoadError = false; }
+
+  var pWorkouts = loadWithCache(userId, 'workouts', fetchWorkouts(userId),
+    function (rows) { state.workouts = rows; state.loading = false; },
     { onLoadError: function () { state.loading = false; state.loadError = true; }, afterRender: updateLocalSuggestions });
 
   loadWithCache(userId, 'workoutSets', fetchWorkoutSets(userId),
     function (byWorkout) { state.workoutSets = byWorkout; });
 
-  loadWithCache(userId, 'settings', fetchSettings(userId),
+  var pSettings = loadWithCache(userId, 'settings', fetchSettings(userId),
     function (row) {
       state.monthlyGoal = row ? row.monthly_goal : DEFAULT_MONTHLY_GOAL;
       state.targetWeight = row ? row.target_weight_kg : null;
+      state.weeklySummaryEmail = !!(row && row.weekly_summary_email);
     });
 
-  loadWithCache(userId, 'weights', fetchWeights(userId),
+  var pWeights = loadWithCache(userId, 'weights', fetchWeights(userId),
     function (rows) { state.weights = rows; state.weightsLoading = false; },
     { onLoadError: function () { state.weightsLoading = false; state.weightsLoadError = true; } });
 
@@ -3790,17 +4816,7 @@ function startOwnData() {
     function (rows) { state.measurements = rows; state.measurementsLoading = false; },
     { onLoadError: function () { state.measurementsLoading = false; state.measurementsLoadError = true; } });
 
-  fetchDocuments(userId)
-    .then(function (rows) {
-      state.documents = rows;
-      state.documentsLoading = false;
-    })
-    .catch(function (err) {
-      console.error('Falha ao carregar documentos', err);
-      state.documentsLoading = false;
-      state.documentsLoadError = true;
-    })
-    .finally(renderActiveTab);
+  loadDocuments();
 
   fetchProgressPhotos(userId)
     .then(function (rows) {
@@ -3815,9 +4831,8 @@ function startOwnData() {
     .finally(renderActiveTab);
 
   // Conta nova (sem nenhuma modalidade ainda) recebe as 3 clássicas de
-  // largada — ver seedDefaultWorkoutTypes(). Só roda de fato quando a rede
-  // responde vazio, nunca a partir do cache offline.
-  loadWithCache(userId, 'workoutTypes',
+  // largada. Só roda de fato quando a rede responde vazio, nunca do cache.
+  var pTypes = loadWithCache(userId, 'workoutTypes',
     fetchWorkoutTypes(userId).then(function (rows) { return rows.length > 0 ? rows : seedDefaultWorkoutTypes(userId); }),
     function (rows) {
       state.workoutTypesLoading = false;
@@ -3833,9 +4848,107 @@ function startOwnData() {
   loadWithCache(userId, 'exerciseCatalog', fetchExercises(userId),
     function (rows) { state.exerciseCatalogLoading = false; state.exerciseCatalog = rows; },
     { onLoadError: function () { state.exerciseCatalogLoading = false; }, afterRender: updateExerciseSuggestions });
+
+  // Primeiro acesso de verdade (nunca salvou configurações, nenhum treino e
+  // nenhum peso, confirmado pela rede): onboarding de 3 passos.
+  Promise.all([pSettings, pWorkouts, pWeights, pTypes]).then(function (r) {
+    var settingsRes = r[0], workoutsRes = r[1], weightsRes = r[2];
+    if (!settingsRes.fromNetwork || !workoutsRes.fromNetwork || !weightsRes.fromNetwork) return;
+    if (settingsRes.rows == null && state.workouts.length === 0 && state.weights.length === 0 && !prefGet('onboarded')) {
+      openOnboarding();
+    }
+  });
+}
+RETRY_HANDLERS.own = loadOwnData;
+
+// ── onboarding (primeiro acesso) ──
+var onboarding = { step: 1, goal: DEFAULT_MONTHLY_GOAL, keepTypes: {}, dialog: null };
+
+function openOnboarding() {
+  onboarding.step = 1;
+  onboarding.goal = DEFAULT_MONTHLY_GOAL;
+  onboarding.keepTypes = {};
+  state.workoutTypes.forEach(function (t) { onboarding.keepTypes[t.id] = true; });
+  renderOnboarding();
+  onboarding.dialog = openDialog(els.onboarding, { persistent: true, onClose: function (reason) { if (reason === 'escape') finishOnboarding(true); } });
 }
 
-// ── boot: check session, show login or app shell ──
+function renderOnboarding() {
+  els.onboarding.querySelectorAll('.ob-step').forEach(function (s) { s.hidden = Number(s.dataset.step) !== onboarding.step; });
+  els.onboarding.querySelectorAll('.ob-dot').forEach(function (d) { d.classList.toggle('active', Number(d.dataset.dot) <= onboarding.step); });
+  els.obGoalOptions.querySelectorAll('.ob-chip').forEach(function (c) {
+    var active = Number(c.dataset.goal) === onboarding.goal;
+    c.classList.toggle('active', active);
+    c.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  els.obTypes.innerHTML = state.workoutTypes.map(function (t) {
+    var on = !!onboarding.keepTypes[t.id];
+    return '<button type="button" class="ob-chip' + (on ? ' active' : '') + '" aria-pressed="' + on + '" data-type-id="' + t.id + '">' + esc(t.name) + '</button>';
+  }).join('');
+  els.obNext.textContent = onboarding.step === 3 ? 'Começar' : 'Continuar';
+}
+
+els.obGoalOptions.addEventListener('click', function (e) {
+  var c = e.target.closest('[data-goal]');
+  if (!c) return;
+  onboarding.goal = Number(c.dataset.goal);
+  renderOnboarding();
+});
+els.obTypes.addEventListener('click', function (e) {
+  var c = e.target.closest('[data-type-id]');
+  if (!c) return;
+  var id = Number(c.dataset.typeId);
+  onboarding.keepTypes[id] = !onboarding.keepTypes[id];
+  renderOnboarding();
+});
+
+els.obSkip.addEventListener('click', function () { finishOnboarding(true); });
+els.obNext.addEventListener('click', function () {
+  if (onboarding.step < 3) { onboarding.step += 1; renderOnboarding(); return; }
+  finishOnboarding(false);
+});
+
+async function finishOnboarding(skipped) {
+  var weight = skipped ? null : parseDecimal(els.obWeight.value);
+  if (!skipped && weight != null && (isNaN(weight) || weight <= 0 || weight >= 500)) {
+    setFieldError(els.obWeight, 'Informe um peso entre 0 e 500 kg, ou deixe em branco.');
+    return;
+  }
+  prefSet('onboarded', true);
+  if (onboarding.dialog) { var d = onboarding.dialog; onboarding.dialog = null; d.close('done'); }
+
+  try {
+    // Gravar as configurações marca a conta como "já passou pelo onboarding"
+    // (a condição de abertura é não ter linha em pandafit_settings).
+    await upsertSettings({ monthly_goal: skipped ? DEFAULT_MONTHLY_GOAL : onboarding.goal });
+    state.monthlyGoal = skipped ? DEFAULT_MONTHLY_GOAL : onboarding.goal;
+    if (skipped) { renderActiveTab(); return; }
+
+    var removeIds = state.workoutTypes.filter(function (t) { return !onboarding.keepTypes[t.id]; }).map(function (t) { return t.id; });
+    for (var i = 0; i < removeIds.length; i++) await deleteWorkoutType(removeIds[i]);
+    state.workoutTypes = state.workoutTypes.filter(function (t) { return onboarding.keepTypes[t.id]; });
+    var extra = els.obTypeExtra.value.trim();
+    if (extra && !state.workoutTypes.some(function (t) { return t.name.toLowerCase() === extra.toLowerCase(); })) {
+      state.workoutTypes.push(await insertWorkoutType(extra, ''));
+    }
+    state.type = state.workoutTypes.length ? state.workoutTypes[0].name : '';
+    cacheSet(currentUserId(), 'workoutTypes', state.workoutTypes);
+
+    if (weight) {
+      var row = await upsertWeight({ date: todayISO(), weight_kg: weight });
+      state.weights = [row];
+      cacheSet(currentUserId(), 'weights', state.weights);
+    }
+    renderRegistrar();
+    renderActiveTab();
+    notifySuccess('Tudo pronto! Agora é só registrar o primeiro treino.');
+  } catch (err) {
+    console.error('Falha ao concluir onboarding', err);
+    notifyError('Não foi possível salvar tudo. Ajuste em Configurações quando quiser.');
+  }
+}
+
+// ── boot: sessão existente, login ou recuperação de senha ──
 supabase.auth.getSession().then(function (res) {
   if (res.data.session) {
     handleSignedIn(res.data.session);
@@ -3844,14 +4957,24 @@ supabase.auth.getSession().then(function (res) {
   }
 });
 
-supabase.auth.onAuthStateChange(function (event) {
+supabase.auth.onAuthStateChange(function (event, session) {
   if (event === 'SIGNED_OUT') {
+    appStarted = false;
     resetAppState();
     showLoginScreen();
   }
+  // Mantém o token atualizado pras chamadas às edge functions (que usam
+  // state.session.access_token direto, fora do cliente supabase-js).
+  if ((event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session && state.session) {
+    state.session = session;
+  }
+  if (event === 'PASSWORD_RECOVERY' && session) {
+    state.session = session;
+    showNewPasswordScreen('recovery');
+  }
 });
 
-// ── PWA: service worker (app-shell cache for offline/instalação) ──
+// ── PWA: service worker (app-shell cache para offline/instalação) ──
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('./sw.js').catch(function (err) {
