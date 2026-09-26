@@ -64,6 +64,11 @@ Deno.serve(async (req: Request) => {
       const { data: authList, error: listError } = await admin.auth.admin.listUsers({ perPage: 1000 })
       if (listError) throw listError
 
+      const { data: vinculos, error: vinculosError } = await admin
+        .from("pandafit_medico_pacientes")
+        .select("medico_id, usuario_id")
+      if (vinculosError) throw vinculosError
+
       const authPorId = new Map(authList.users.map((u) => [u.id, u]))
       const usuarios = escopo.map((u) => {
         const a = authPorId.get(u.id)
@@ -76,7 +81,7 @@ Deno.serve(async (req: Request) => {
           last_sign_in_at: a?.last_sign_in_at ?? null,
         }
       })
-      return json({ usuarios })
+      return json({ usuarios, vinculos })
     }
 
     if (action === "invite") {
@@ -179,6 +184,38 @@ Deno.serve(async (req: Request) => {
 
       const { error } = await admin.from("pandafit_usuarios").delete().eq("id", userId)
       if (error) throw error
+
+      return json({ ok: true })
+    }
+
+    if (action === "set_link") {
+      // Conecta (ou desconecta) um paciente a um médico — N:N, um paciente
+      // pode ter vários médicos e vice-versa. Valida os papéis pra não
+      // deixar vincular, por exemplo, um admin como "médico" de alguém.
+      const { medicoId, usuarioId, linked } = body
+      if (!medicoId || typeof medicoId !== "string" || !usuarioId || typeof usuarioId !== "string") {
+        return json({ error: "medicoId e usuarioId são obrigatórios" }, 400)
+      }
+
+      const { data: medico } = await admin.from("pandafit_usuarios").select("role").eq("id", medicoId).maybeSingle()
+      if (!medico || medico.role !== "medico") return json({ error: "medicoId não é um médico válido" }, 400)
+
+      const { data: paciente } = await admin.from("pandafit_usuarios").select("role").eq("id", usuarioId).maybeSingle()
+      if (!paciente || paciente.role !== "usuario") return json({ error: "usuarioId não é um paciente válido" }, 400)
+
+      if (linked) {
+        const { error } = await admin
+          .from("pandafit_medico_pacientes")
+          .upsert({ medico_id: medicoId, usuario_id: usuarioId }, { onConflict: "medico_id,usuario_id" })
+        if (error) throw error
+      } else {
+        const { error } = await admin
+          .from("pandafit_medico_pacientes")
+          .delete()
+          .eq("medico_id", medicoId)
+          .eq("usuario_id", usuarioId)
+        if (error) throw error
+      }
 
       return json({ ok: true })
     }

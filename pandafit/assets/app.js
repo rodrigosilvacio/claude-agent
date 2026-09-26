@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=26';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=27';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -111,6 +111,8 @@ var state = {
   usersLoadError: false,
   creatingUser: false,
   newUserRole: 'usuario',
+  userLinks: [], // [{ medico_id, usuario_id }] — vínculo paciente↔médico
+  savingLinkFor: null, // "<medicoId>:<usuarioId>" da linha em salvamento, ou null
 
   // medico: Pacientes
   patients: [],
@@ -1062,6 +1064,8 @@ function resetAppState() {
   state.workoutSets = {};
   state.users = [];
   state.usersLoading = true;
+  state.userLinks = [];
+  state.savingLinkFor = null;
   state.patients = [];
   state.patientsLoading = true;
   state.selectedPatient = null;
@@ -3075,6 +3079,7 @@ function loadUsers() {
   callAdminUsers('list', {})
     .then(function (body) {
       state.users = body.usuarios;
+      state.userLinks = body.vinculos || [];
       state.usersLoading = false;
     })
     .catch(function (err) {
@@ -3142,9 +3147,11 @@ function renderUsers() {
     return;
   }
 
+  var medicos = state.users.filter(function (u) { return u.role === 'medico'; });
+
   els.usersList.innerHTML = state.users.map(function (u) {
     var isSelf = u.id === currentUserId();
-    return '<div class="user-row">' +
+    var row = '<div class="user-row">' +
       '<div class="user-info">' +
       '<span class="user-name">' + (u.nome || u.email) + (isSelf ? ' (você)' : '') + '</span>' +
       '<span class="user-email">' + u.email + '</span>' +
@@ -3158,6 +3165,32 @@ function renderUsers() {
       DELETE_ICON_SVG +
       '</button>' +
       '</div>';
+
+    // Vínculo paciente↔médico: cada médico é um chip que liga/desliga o
+    // acesso dele aos dados deste paciente (ver pandafit_medico_pacientes).
+    if (u.role === 'usuario') {
+      var linkedIds = state.userLinks
+        .filter(function (l) { return l.usuario_id === u.id; })
+        .map(function (l) { return l.medico_id; });
+
+      row += '<div class="user-links-row">' +
+        '<span class="user-links-label">Médicos conectados</span>' +
+        (medicos.length === 0
+          ? '<span class="user-email">Cadastre um médico para conectar pacientes.</span>'
+          : '<div class="link-chips">' +
+            medicos.map(function (m) {
+              var active = linkedIds.indexOf(m.id) !== -1;
+              var key = m.id + ':' + u.id;
+              var busy = state.savingLinkFor === key;
+              return '<button type="button" class="link-chip' + (active ? ' active' : '') + '" ' +
+                'data-medico-id="' + m.id + '" data-usuario-id="' + u.id + '" data-linked="' + active + '" ' +
+                (busy ? 'disabled' : '') + '>' + (m.nome || m.email) + '</button>';
+            }).join('') +
+            '</div>') +
+        '</div>';
+    }
+
+    return row;
   }).join('');
 
   els.usersList.querySelectorAll('.user-role-select').forEach(function (select) {
@@ -3193,6 +3226,33 @@ function renderUsers() {
         .catch(function (err) {
           console.error('Falha ao revogar acesso', err);
           showUserFormToast(err.message || 'Não foi possível revogar. Tente de novo.');
+        });
+    });
+  });
+
+  els.usersList.querySelectorAll('.link-chip').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var medicoId = btn.dataset.medicoId;
+      var usuarioId = btn.dataset.usuarioId;
+      var linked = btn.dataset.linked === 'true';
+      var key = medicoId + ':' + usuarioId;
+      if (state.savingLinkFor) return;
+
+      state.savingLinkFor = key;
+      renderUsers();
+      callAdminUsers('set_link', { medicoId: medicoId, usuarioId: usuarioId, linked: !linked })
+        .then(function () {
+          state.userLinks = linked
+            ? state.userLinks.filter(function (l) { return !(l.medico_id === medicoId && l.usuario_id === usuarioId); })
+            : state.userLinks.concat([{ medico_id: medicoId, usuario_id: usuarioId }]);
+        })
+        .catch(function (err) {
+          console.error('Falha ao atualizar vínculo paciente/médico', err);
+          showUserFormToast(err.message || 'Não foi possível atualizar o vínculo. Tente de novo.');
+        })
+        .finally(function () {
+          state.savingLinkFor = null;
+          renderUsers();
         });
     });
   });
