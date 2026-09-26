@@ -26,7 +26,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/styles.css?v=32" />
+<link rel="stylesheet" href="assets/styles.css?v=33" />
 </head>
 <body>
 
@@ -98,6 +98,9 @@
       </div>
 
       <p class="login-footnote">Acesso só por convite. Fale com o administrador se precisar de uma conta.</p>
+      <!-- Mantenha em sincronia com o ?v=N dos assets e com CACHE_NAME do sw.js:
+           é o jeito de conferir, na tela, qual versão está no ar. -->
+      <p class="app-version" id="app-version">PandaFit v33</p>
     </div>
   </main>
 
@@ -508,6 +511,12 @@
 
         <div class="section account-section">
           <div class="section-title">Conta</div>
+          <label class="field">
+            <span class="field-label">Seu nome (é como o seu médico encontra você)</span>
+            <input type="text" id="input-my-name" maxlength="120" autocomplete="name" placeholder="Nome completo" aria-describedby="err-input-my-name" />
+            <span class="field-error" id="err-input-my-name" hidden></span>
+          </label>
+          <button type="button" class="btn btn-primary goal-save-btn" id="btn-save-my-name">Salvar nome</button>
           <p class="account-email" id="config-account-email"></p>
           <button type="button" class="export-btn" id="btn-logout-config">Sair</button>
         </div>
@@ -749,6 +758,7 @@
     <main class="screen" id="screen-pacientes" data-screen="pacientes" hidden>
       <div class="screen-head">
         <h1 class="title" id="pacientes-title">Pacientes</h1>
+        <p class="patient-subtitle" id="pacientes-subtitle" hidden></p>
       </div>
 
       <div class="screen-body" id="pacientes-list-view">
@@ -757,6 +767,10 @@
             <span class="section-title">Selecione um paciente</span>
             <span class="section-note" id="patients-count-note">0 pacientes</span>
           </div>
+          <label class="field patient-search">
+            <span class="field-label">Buscar paciente</span>
+            <input type="search" id="input-patient-search" placeholder="Nome ou e-mail" autocomplete="off" />
+          </label>
           <div id="patients-list" class="records-list"></div>
         </div>
       </div>
@@ -958,6 +972,6 @@
 
 </div>
 
-<script type="module" src="assets/app.js?v=32"></script>
+<script type="module" src="assets/app.js?v=33"></script>
 </body>
 </html>

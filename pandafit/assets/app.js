@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=32';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=33';
 
 // Link de "esqueci minha senha": o Supabase volta pra cá com
 // "#...type=recovery" no hash. Lido aqui, no topo do módulo, porque o
@@ -888,6 +888,8 @@ var els = {
   btnLogoutConfig: $('#btn-logout-config'),
   settingsRowUsuarios: $('#settings-row-usuarios'),
   toggleWeeklySummary: $('#toggle-weekly-summary'),
+  inputMyName: $('#input-my-name'),
+  btnSaveMyName: $('#btn-save-my-name'),
   inputFeedback: $('#input-feedback'),
   btnSendFeedback: $('#btn-send-feedback'),
 
@@ -1077,6 +1079,8 @@ var els = {
 
   // medico: Pacientes
   pacientesTitle: $('#pacientes-title'),
+  pacientesSubtitle: $('#pacientes-subtitle'),
+  inputPatientSearch: $('#input-patient-search'),
   pacientesListView: $('#pacientes-list-view'),
   pacientesDetailView: $('#pacientes-detail-view'),
   patientsList: $('#patients-list'),
@@ -1097,6 +1101,13 @@ var els = {
   patientWorkoutsNote: $('#patient-workouts-note'),
   patientWorkoutsList: $('#patient-workouts-list'),
 };
+
+// Nome de exibição: o nome cadastrado, ou null quando está vazio (aí a tela
+// decide como mostrar a falta dele, em vez de repetir o e-mail duas vezes).
+function displayName(u) {
+  var n = u && typeof u.nome === 'string' ? u.nome.trim() : '';
+  return n || null;
+}
 
 // ── preferências locais por usuário (conveniência; nunca fonte de verdade) ──
 function prefKey(name) { return 'pandafit_' + name + '_' + (currentUserId() || 'anon'); }
@@ -1607,14 +1618,18 @@ async function handleSignedIn(session) {
   showAppShell();
 }
 
+function renderAccountIdentity() {
+  var label = displayName(state.profile) || state.profile.email || '?';
+  els.accountInitial.textContent = label.charAt(0).toUpperCase();
+  els.menuAvatar.textContent = label.charAt(0).toUpperCase();
+  els.menuName.textContent = label;
+}
+
 var appStarted = false;
 function showAppShell() {
   els.screenLogin.hidden = true;
   els.appShell.hidden = false;
-  var label = (state.profile.nome || state.profile.email || '?').trim();
-  els.accountInitial.textContent = label.charAt(0).toUpperCase();
-  els.menuAvatar.textContent = label.charAt(0).toUpperCase();
-  els.menuName.textContent = label;
+  renderAccountIdentity();
   els.menuRole.textContent = state.profile.email + ' · ' + roleLabel(state.profile.role);
   els.configAccountEmail.textContent = state.profile.email + ' · ' + roleLabel(state.profile.role);
 
@@ -3476,7 +3491,29 @@ RETRY_HANDLERS.documents = loadDocuments;
 // ── Configurações: resumo semanal + feedback ──
 function renderConfig() {
   els.toggleWeeklySummary.checked = !!state.weeklySummaryEmail;
+  if (document.activeElement !== els.inputMyName) els.inputMyName.value = displayName(state.profile) || '';
 }
+
+els.btnSaveMyName.addEventListener('click', function () {
+  var nome = els.inputMyName.value.trim();
+  if (nome.length > 120) {
+    setFieldError(els.inputMyName, 'Use no máximo 120 caracteres.');
+    return;
+  }
+  els.btnSaveMyName.disabled = true;
+  supabase.rpc('pandafit_atualizar_meu_nome', { p_nome: nome })
+    .then(function (res) {
+      if (res.error) throw res.error;
+      state.profile.nome = res.data || null;
+      renderAccountIdentity();
+      notifySuccess(nome ? 'Nome salvo. É assim que seu médico vai encontrar você.' : 'Nome removido.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao salvar nome', err);
+      notifyError('Não foi possível salvar o nome. Tente de novo.');
+    })
+    .finally(function () { els.btnSaveMyName.disabled = false; });
+});
 
 els.toggleWeeklySummary.addEventListener('change', function () {
   var on = els.toggleWeeklySummary.checked;
@@ -4143,8 +4180,11 @@ function renderUsers() {
     var isSelf = u.id === currentUserId();
     var row = '<div class="user-row">' +
       '<div class="user-info">' +
-      '<span class="user-name">' + esc(u.nome || u.email) + (isSelf ? ' (você)' : '') + '</span>' +
+      (displayName(u)
+        ? '<span class="user-name">' + esc(displayName(u)) + (isSelf ? ' (você)' : '') + '</span>'
+        : '<span class="user-name is-missing">Nome não cadastrado' + (isSelf ? ' (você)' : '') + '</span>') +
       '<span class="user-email">' + esc(u.email) + '</span>' +
+      '<button type="button" class="link-btn user-edit-name" data-id="' + esc(u.id) + '">' + (displayName(u) ? 'Editar nome' : 'Adicionar nome') + '</button>' +
       '</div>' +
       '<select class="user-role-select" data-id="' + esc(u.id) + '" aria-label="Papel de ' + esc(u.nome || u.email) + '" ' + (isSelf ? 'disabled' : '') + '>' +
       '<option value="usuario"' + (u.role === 'usuario' ? ' selected' : '') + '>Usuário</option>' +
@@ -4220,6 +4260,39 @@ els.usersList.addEventListener('change', function (e) {
 });
 
 els.usersList.addEventListener('click', function (e) {
+  var editName = e.target.closest('.user-edit-name');
+  if (editName) {
+    var target = state.users.find(function (x) { return x.id === editName.dataset.id; });
+    if (!target) return;
+    var info = editName.closest('.user-info');
+    info.innerHTML = '<label class="field"><span class="field-label">Nome de ' + esc(target.email) + '</span>' +
+      '<input type="text" class="user-name-input" maxlength="120" value="' + esc(displayName(target) || '') + '" /></label>' +
+      '<span class="inline-actions"><button type="button" class="link-btn user-name-save" data-id="' + esc(target.id) + '">Salvar</button>' +
+      '<button type="button" class="link-btn user-name-cancel">Cancelar</button></span>';
+    info.querySelector('input').focus();
+    return;
+  }
+  if (e.target.closest('.user-name-cancel')) { renderUsers(); return; }
+  var saveName = e.target.closest('.user-name-save');
+  if (saveName) {
+    var input = saveName.closest('.user-info').querySelector('.user-name-input');
+    saveName.disabled = true;
+    callAdminUsers('update_name', { userId: saveName.dataset.id, nome: input.value })
+      .then(function (body) {
+        var u = state.users.find(function (x) { return x.id === saveName.dataset.id; });
+        if (u) u.nome = body.nome;
+        if (state.profile && state.profile.id === saveName.dataset.id) { state.profile.nome = body.nome; renderAccountIdentity(); }
+        notifySuccess('Nome atualizado.');
+        renderUsers();
+      })
+      .catch(function (err) {
+        console.error('Falha ao atualizar nome', err);
+        notifyError(err.message || 'Não foi possível atualizar o nome.');
+        saveName.disabled = false;
+      });
+    return;
+  }
+
   var revoke = e.target.closest('.user-revoke');
   if (revoke) {
     var userId = revoke.dataset.id;
@@ -4299,15 +4372,44 @@ function renderPatientsList() {
     return;
   }
 
-  els.patientsList.innerHTML = state.patients.map(function (p) {
+  var query = normalizeSearch(els.inputPatientSearch.value);
+  var list = state.patients
+    .filter(function (p) {
+      return !query || normalizeSearch((displayName(p) || '') + ' ' + p.email).indexOf(query) !== -1;
+    })
+    .sort(function (a, b) {
+      // Com nome primeiro, em ordem alfabética; sem nome no fim, pelo e-mail.
+      var na = displayName(a), nb = displayName(b);
+      if (na && !nb) return -1;
+      if (!na && nb) return 1;
+      return (na || a.email).localeCompare(nb || b.email, 'pt-BR', { sensitivity: 'base' });
+    });
+
+  if (list.length === 0) {
+    els.patientsList.innerHTML = '<p class="empty-state">Nenhum paciente encontrado para essa busca.</p>';
+    return;
+  }
+
+  els.patientsList.innerHTML = list.map(function (p) {
     var lastVisit = (prefGet(visitKey(p.id)) || {}).last;
+    var nome = displayName(p);
     return '<button type="button" class="patient-row" data-id="' + esc(p.id) + '">' +
-      '<span class="user-info"><span class="user-name">' + esc(p.nome || p.email) + '</span>' +
+      '<span class="user-info">' +
+      (nome
+        ? '<span class="user-name">' + esc(nome) + '</span>'
+        : '<span class="user-name is-missing">Nome não cadastrado</span>') +
       '<span class="user-email">' + esc(p.email) + (lastVisit ? ' · última visita ' + fmtDayLabel(lastVisit) : '') + '</span></span>' +
       '<span class="patient-row-arrow" aria-hidden="true">›</span>' +
       '</button>';
   }).join('');
 }
+
+// Busca sem acento e sem diferenciar maiúsculas ("joao" acha "João").
+function normalizeSearch(text) {
+  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+els.inputPatientSearch.addEventListener('input', renderPatientsList);
 
 els.patientsList.addEventListener('click', function (e) {
   var btn = e.target.closest('.patient-row');
@@ -4327,7 +4429,10 @@ function openPatientDetail(patient) {
   prefSet(visitKey(patient.id), visits);
   state.patientPrevVisit = visits.prev || null;
   els.sincePeriod.value = state.patientPrevVisit ? 'last' : '30';
-  els.pacientesTitle.textContent = patient.nome || patient.email;
+  var nome = displayName(patient);
+  els.pacientesTitle.textContent = nome || 'Nome não cadastrado';
+  els.pacientesSubtitle.textContent = patient.email;
+  els.pacientesSubtitle.hidden = false;
   els.pacientesListView.hidden = true;
   els.pacientesDetailView.hidden = false;
   window.scrollTo(0, 0);
@@ -4338,6 +4443,7 @@ RETRY_HANDLERS.patient = function () { if (state.selectedPatient) loadPatientDet
 els.btnBackToPatients.addEventListener('click', function () {
   state.selectedPatient = null;
   els.pacientesTitle.textContent = 'Pacientes';
+  els.pacientesSubtitle.hidden = true;
   els.pacientesListView.hidden = false;
   els.pacientesDetailView.hidden = true;
   renderPatientsList();

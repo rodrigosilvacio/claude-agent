@@ -160,6 +160,22 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true })
     }
 
+    if (action === "update_name") {
+      // Nome é o que o médico usa pra achar o paciente na lista dele.
+      const { userId, nome } = body
+      if (!userId || typeof userId !== "string") return json({ error: "ID do usuário é obrigatório" }, 400)
+      const limpo = typeof nome === "string" && nome.trim() ? nome.trim() : null
+      if (limpo && limpo.length > 120) return json({ error: "Nome muito longo (máx. 120 caracteres)" }, 400)
+
+      const { data: alvo } = await admin.from("pandafit_usuarios").select("id").eq("id", userId).maybeSingle()
+      if (!alvo) return json({ error: "Usuário fora do escopo do PandaFit" }, 403)
+
+      const { error } = await admin.from("pandafit_usuarios").update({ nome: limpo }).eq("id", userId)
+      if (error) throw error
+
+      return json({ ok: true, nome: limpo })
+    }
+
     if (action === "set_password") {
       const { userId, password } = body
       if (!userId || typeof userId !== "string") return json({ error: "ID do usuário é obrigatório" }, 400)

@@ -482,6 +482,16 @@ em relação às descrições acima:
 
 Backend desta versão: `supabase/migrations/0059_pandafit_ux_cx_transparencia_feedback_resumo.sql`.
 
+**v33**: o médico encontra o paciente pelo nome. A lista de Pacientes mostra
+o nome em destaque e o e-mail embaixo (quem não tem nome aparece como "Nome
+não cadastrado", no fim da lista), em ordem alfabética e com busca por nome
+ou e-mail (ignora acentos); o detalhe do paciente traz o e-mail abaixo do
+nome. Para o nome existir: o admin edita o nome de qualquer usuário em
+Usuários (ação `update_name` da edge function) e cada pessoa edita o próprio
+em Configurações › Conta (RPC `pandafit_atualizar_meu_nome`, migration
+`0060_pandafit_editar_proprio_nome.sql`). A tela de login mostra, pequeno,
+o número da versão no ar ("PandaFit v33"): atualize junto com o `?v=N`.
+
 ### PWA (manifest + service worker)
 
 `manifest.json` (nome, ícones 192/512px gerados a partir do mesmo panda do
