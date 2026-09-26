@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=22';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=23';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
@@ -84,6 +84,14 @@ var state = {
   uploadingDocument: false,
   documentsPage: 0,
   deletingDocumentId: null,
+
+  photos: [],
+  photosLoading: true,
+  photosLoadError: false,
+  uploadingPhoto: false,
+  photosPage: 0,
+  deletingPhotoId: null,
+  photoSignedUrls: {}, // { [file_path]: signedUrl } — só da página atual da galeria
 
   // admin: Usuários
   users: [],
@@ -431,6 +439,65 @@ async function documentDownloadUrl(path, fileName) {
   return data.signedUrl;
 }
 
+// ── fotos de progresso ──
+async function fetchProgressPhotos(userId, limit) {
+  var { data, error } = await supabase
+    .from('pandafit_progress_photos')
+    .select('id, file_path, file_name, file_type, file_size, taken_at, uploaded_at')
+    .eq('user_id', userId)
+    .order('taken_at', { ascending: false })
+    .order('uploaded_at', { ascending: false })
+    .limit(limit || 200);
+  if (error) throw error;
+  return data;
+}
+
+async function uploadProgressPhoto(file, takenAt) {
+  var userId = currentUserId();
+  var path = userId + '/' + Date.now() + '-' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  var { error: uploadError } = await supabase.storage
+    .from('pandafit-progress-photos')
+    .upload(path, file);
+  if (uploadError) throw uploadError;
+
+  var { data, error } = await supabase
+    .from('pandafit_progress_photos')
+    .insert({
+      user_id: userId,
+      file_name: file.name,
+      file_path: path,
+      file_type: file.type || 'application/octet-stream',
+      file_size: file.size,
+      taken_at: takenAt,
+    })
+    .select('id, file_path, file_name, file_type, file_size, taken_at, uploaded_at')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteProgressPhoto(photo) {
+  await supabase.storage.from('pandafit-progress-photos').remove([photo.file_path]);
+  var { error } = await supabase
+    .from('pandafit_progress_photos')
+    .delete()
+    .eq('id', photo.id);
+  if (error) throw error;
+}
+
+// Uma chamada só pra todas as miniaturas da página atual da galeria, em vez
+// de uma signed URL por foto — createSignedUrls aceita o lote inteiro.
+async function progressPhotoSignedUrls(paths) {
+  if (paths.length === 0) return {};
+  var { data, error } = await supabase.storage
+    .from('pandafit-progress-photos')
+    .createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+  if (error) throw error;
+  var map = {};
+  data.forEach(function (item) { if (!item.error) map[item.path] = item.signedUrl; });
+  return map;
+}
+
 // ── modalidades (catálogo por usuário) ──
 async function fetchWorkoutTypes(userId) {
   var { data, error } = await supabase
@@ -756,6 +823,16 @@ var els = {
   weightsPagerNext: $('#weights-pager-next'),
   weightsPagerNote: $('#weights-pager-note'),
 
+  inputPhotoFile: $('#input-photo-file'),
+  btnUploadPhoto: $('#btn-upload-photo'),
+  photoToast: $('#photo-toast'),
+  photosGallery: $('#photos-gallery'),
+  photosCountNote: $('#photos-count-note'),
+  photosPager: $('#photos-pager'),
+  photosPagerPrev: $('#photos-pager-prev'),
+  photosPagerNext: $('#photos-pager-next'),
+  photosPagerNote: $('#photos-pager-note'),
+
   inputDocumentFile: $('#input-document-file'),
   btnUploadDocument: $('#btn-upload-document'),
   documentToast: $('#document-toast'),
@@ -794,6 +871,8 @@ var els = {
   patientWeightChartWrap: $('#patient-weight-chart-wrap'),
   patientWeightsNote: $('#patient-weights-note'),
   patientWeightsList: $('#patient-weights-list'),
+  patientPhotosNote: $('#patient-photos-note'),
+  patientPhotosGallery: $('#patient-photos-gallery'),
   patientWorkoutsNote: $('#patient-workouts-note'),
   patientWorkoutsList: $('#patient-workouts-list'),
 };
@@ -833,6 +912,7 @@ var showToast = makeToaster(els.toast);
 var showGoalToast = makeToaster(els.goalToast);
 var showWeightToast = makeToaster(els.weightToast);
 var showDocumentToast = makeToaster(els.documentToast);
+var showPhotoToast = makeToaster(els.photoToast);
 var showTargetWeightToast = makeToaster(els.targetWeightToast);
 var showUserFormToast = makeToaster(els.userFormToast);
 var showTypeFormToast = makeToaster(els.typeFormToast);
@@ -878,6 +958,11 @@ function resetAppState() {
   state.documents = [];
   state.documentsLoading = true;
   state.documentsLoadError = false;
+  state.photos = [];
+  state.photosLoading = true;
+  state.photosLoadError = false;
+  state.photosPage = 0;
+  state.photoSignedUrls = {};
   state.monthlyGoal = DEFAULT_MONTHLY_GOAL;
   state.targetWeight = null;
   state.workoutTypes = [];
@@ -1021,7 +1106,7 @@ function renderActiveTab() {
   if (state.tab === 'modalidades') renderWorkoutTypes();
   if (state.tab === 'locais') renderLocations();
   if (state.tab === 'exercicios') renderExerciseCatalog();
-  if (state.tab === 'registrar' && state.registrarSection === 'peso') renderWeights();
+  if (state.tab === 'registrar' && state.registrarSection === 'peso') { renderWeights(); renderPhotosGallery(); }
   if (state.tab === 'documentos') renderDocuments();
 }
 
@@ -1035,7 +1120,7 @@ function setRegistrarSection(section) {
   els.sectionPeso.hidden = section !== 'peso';
   els.saveBarTreino.hidden = section !== 'treino';
   updateEditUI();
-  if (section === 'peso') renderWeights();
+  if (section === 'peso') { renderWeights(); renderPhotosGallery(); }
 }
 
 // ── editing an existing workout/weight instead of only insert/delete ──
@@ -1545,6 +1630,142 @@ async function handleDeleteWeightClick(id) {
       state.deletingWeightId = null;
       renderWeights();
     });
+}
+
+var PHOTOS_PAGE_SIZE = 6;
+
+els.btnUploadPhoto.addEventListener('click', function () {
+  if (state.uploadingPhoto) return;
+
+  var file = els.inputPhotoFile.files && els.inputPhotoFile.files[0];
+  if (!file) {
+    showPhotoToast('Escolha uma foto primeiro.');
+    return;
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) {
+    showPhotoToast('Arquivo maior que 10MB. Escolha um menor.');
+    return;
+  }
+
+  state.uploadingPhoto = true;
+  els.btnUploadPhoto.disabled = true;
+
+  uploadProgressPhoto(file, todayISO())
+    .then(function (photo) {
+      state.photos.unshift(photo);
+      state.photosPage = 0;
+      els.inputPhotoFile.value = '';
+      renderPhotosGallery();
+      showPhotoToast('Foto enviada.');
+    })
+    .catch(function (err) {
+      console.error('Falha ao enviar foto', err);
+      showPhotoToast('Não foi possível enviar. Tente de novo.');
+    })
+    .finally(function () {
+      state.uploadingPhoto = false;
+      els.btnUploadPhoto.disabled = false;
+    });
+});
+
+els.photosPagerPrev.addEventListener('click', function () {
+  if (state.photosPage > 0) {
+    state.photosPage -= 1;
+    renderPhotosGallery();
+  }
+});
+els.photosPagerNext.addEventListener('click', function () {
+  state.photosPage += 1;
+  renderPhotosGallery();
+});
+
+async function handleDeletePhotoClick(photo) {
+  if (state.deletingPhotoId) return;
+  var ok = await confirmModal('Excluir esta foto de progresso? Essa ação não pode ser desfeita.');
+  if (!ok) return;
+
+  state.deletingPhotoId = photo.id;
+  deleteProgressPhoto(photo)
+    .then(function () {
+      state.photos = state.photos.filter(function (p) { return p.id !== photo.id; });
+    })
+    .catch(function (err) {
+      console.error('Falha ao excluir foto', err);
+      showPhotoToast('Não foi possível excluir. Tente de novo.');
+    })
+    .finally(function () {
+      state.deletingPhotoId = null;
+      renderPhotosGallery();
+    });
+}
+
+// Renderiza os tiles na hora (sem esperar a imagem) e busca as URLs
+// assinadas da página inteira numa chamada só, preenchendo o <img src>
+// assim que a resposta chega — evita 1 chamada de rede por miniatura.
+function renderPhotosGallery() {
+  els.photosCountNote.textContent = state.photos.length + (state.photos.length === 1 ? ' foto' : ' fotos');
+
+  if (state.photosLoading) {
+    els.photosGallery.innerHTML = '<p class="empty-state">Carregando fotos…</p>';
+    els.photosPager.hidden = true;
+    return;
+  }
+  if (state.photosLoadError) {
+    els.photosGallery.innerHTML = '<p class="empty-state">Não foi possível carregar as fotos. Recarregue a página.</p>';
+    els.photosPager.hidden = true;
+    return;
+  }
+  if (state.photos.length === 0) {
+    els.photosGallery.innerHTML = '<p class="empty-state">Nenhuma foto enviada ainda.</p>';
+    els.photosPager.hidden = true;
+    state.photosPage = 0;
+    return;
+  }
+
+  var pageCount = Math.ceil(state.photos.length / PHOTOS_PAGE_SIZE);
+  if (state.photosPage >= pageCount) state.photosPage = pageCount - 1;
+  if (state.photosPage < 0) state.photosPage = 0;
+
+  var start = state.photosPage * PHOTOS_PAGE_SIZE;
+  var pageItems = state.photos.slice(start, start + PHOTOS_PAGE_SIZE);
+
+  els.photosGallery.innerHTML = pageItems.map(function (p) {
+    return '<div class="photo-tile">' +
+      '<div class="photo-thumb-wrap"><img class="photo-thumb" data-path="' + p.file_path + '" alt="Foto de ' + fmtDayLabel(p.taken_at) + '" /></div>' +
+      '<div class="photo-tile-foot">' +
+      '<span class="photo-date">' + fmtDayLabel(p.taken_at) + '</span>' +
+      '<button type="button" class="photo-delete" data-id="' + p.id + '" aria-label="Excluir foto">' + DELETE_ICON_SVG + '</button>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+
+  var paths = pageItems.map(function (p) { return p.file_path; });
+  progressPhotoSignedUrls(paths)
+    .then(function (map) {
+      state.photoSignedUrls = map;
+      els.photosGallery.querySelectorAll('.photo-thumb').forEach(function (img) {
+        var url = map[img.dataset.path];
+        if (url) img.src = url;
+      });
+    })
+    .catch(function (err) { console.error('Falha ao gerar URLs das fotos', err); });
+
+  els.photosGallery.querySelectorAll('.photo-thumb').forEach(function (img) {
+    img.addEventListener('click', function () {
+      if (img.src) window.open(img.src, '_blank', 'noopener');
+    });
+  });
+  els.photosGallery.querySelectorAll('.photo-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var photo = state.photos.find(function (p) { return p.id === Number(btn.dataset.id); });
+      if (photo) handleDeletePhotoClick(photo);
+    });
+  });
+
+  els.photosPager.hidden = pageCount <= 1;
+  els.photosPagerNote.textContent = 'Página ' + (state.photosPage + 1) + ' de ' + pageCount;
+  els.photosPagerPrev.disabled = state.photosPage === 0;
+  els.photosPagerNext.disabled = state.photosPage >= pageCount - 1;
 }
 
 els.btnUploadDocument.addEventListener('click', function () {
@@ -2644,10 +2865,12 @@ els.btnBackToPatients.addEventListener('click', function () {
 function loadPatientDetail(patientId) {
   els.patientDocumentsList.innerHTML = '<p class="empty-state">Carregando…</p>';
   els.patientWeightsList.innerHTML = '<p class="empty-state">Carregando…</p>';
+  els.patientPhotosGallery.innerHTML = '<p class="empty-state">Carregando…</p>';
   els.patientWorkoutsList.innerHTML = '<p class="empty-state">Carregando…</p>';
   els.patientWeightChartWrap.innerHTML = '';
   els.patientDocsNote.textContent = '';
   els.patientWeightsNote.textContent = '';
+  els.patientPhotosNote.textContent = '';
   els.patientWorkoutsNote.textContent = '';
 
   Promise.all([
@@ -2655,11 +2878,13 @@ function loadPatientDetail(patientId) {
     fetchWeights(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
     fetchWorkouts(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
     fetchWorkoutSets(patientId).catch(function () { return {}; }),
+    fetchProgressPhotos(patientId, PATIENT_RECENT_LIMIT).catch(function () { return null; }),
   ]).then(function (results) {
-    state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2], sets: results[3] };
+    state.patientDetail = { documents: results[0], weights: results[1], workouts: results[2], sets: results[3], photos: results[4] };
     renderPatientDocuments(results[0]);
     renderPatientWeights(results[1]);
     renderPatientWorkouts(results[2], results[3]);
+    renderPatientPhotos(results[4]);
   });
 }
 
@@ -2779,6 +3004,42 @@ function renderPatientWeights(weights) {
   }).join('');
 }
 
+// Somente leitura — o médico vê a galeria de progresso do paciente, mas
+// não tem botão de excluir (só o dono da conta gerencia as próprias fotos).
+function renderPatientPhotos(photos) {
+  if (photos == null) {
+    els.patientPhotosGallery.innerHTML = '<p class="empty-state">Não foi possível carregar as fotos.</p>';
+    return;
+  }
+  els.patientPhotosNote.textContent = photos.length + (photos.length === 1 ? ' foto' : ' fotos');
+  if (photos.length === 0) {
+    els.patientPhotosGallery.innerHTML = '<p class="empty-state">Nenhuma foto enviada.</p>';
+    return;
+  }
+  els.patientPhotosGallery.innerHTML = photos.map(function (p) {
+    return '<div class="photo-tile">' +
+      '<div class="photo-thumb-wrap"><img class="photo-thumb" data-path="' + p.file_path + '" alt="Foto de ' + fmtDayLabel(p.taken_at) + '" /></div>' +
+      '<div class="photo-tile-foot"><span class="photo-date">' + fmtDayLabel(p.taken_at) + '</span></div>' +
+      '</div>';
+  }).join('');
+
+  var paths = photos.map(function (p) { return p.file_path; });
+  progressPhotoSignedUrls(paths)
+    .then(function (map) {
+      els.patientPhotosGallery.querySelectorAll('.photo-thumb').forEach(function (img) {
+        var url = map[img.dataset.path];
+        if (url) img.src = url;
+      });
+    })
+    .catch(function (err) { console.error('Falha ao gerar URLs das fotos do paciente', err); });
+
+  els.patientPhotosGallery.querySelectorAll('.photo-thumb').forEach(function (img) {
+    img.addEventListener('click', function () {
+      if (img.src) window.open(img.src, '_blank', 'noopener');
+    });
+  });
+}
+
 function renderPatientWorkouts(workouts, sets) {
   if (workouts == null) {
     els.patientWorkoutsList.innerHTML = '<p class="empty-state">Não foi possível carregar os treinos.</p>';
@@ -2887,6 +3148,18 @@ function startOwnData() {
       console.error('Falha ao carregar documentos', err);
       state.documentsLoading = false;
       state.documentsLoadError = true;
+    })
+    .finally(renderActiveTab);
+
+  fetchProgressPhotos(userId)
+    .then(function (rows) {
+      state.photos = rows;
+      state.photosLoading = false;
+    })
+    .catch(function (err) {
+      console.error('Falha ao carregar fotos de progresso', err);
+      state.photosLoading = false;
+      state.photosLoadError = true;
     })
     .finally(renderActiveTab);
 
