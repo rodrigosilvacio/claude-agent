@@ -1,9 +1,10 @@
-import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=28';
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabaseClient.js?v=29';
 
 var DEFAULT_MONTHLY_GOAL = 12;
 var RECORDS_PAGE_SIZE = 5;
 var EVOLUTION_MONTHS = 6;
 var MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+var AI_ANALYZABLE_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 var MAX_WORKOUT_MINUTES = 720;
 var MAX_MONTH_OFFSET = 60;
 var MAX_STREAK_LOOKBACK = 240;
@@ -754,6 +755,33 @@ async function callAdminUsers(action, payload) {
   var body = await res.json();
   if (!res.ok) throw new Error(body.error || 'Erro ao processar a solicitação.');
   return body;
+}
+
+// ── edge function: pandafit-analyze-document (resumo por IA, só médico) ──
+async function callAnalyzeDocument(documentId, force) {
+  var res = await fetch(SUPABASE_URL + '/functions/v1/pandafit-analyze-document', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_KEY,
+      Authorization: 'Bearer ' + state.session.access_token,
+    },
+    body: JSON.stringify({ documentId: documentId, force: !!force }),
+  });
+  var body = await res.json();
+  if (!res.ok) throw new Error(body.error || 'Erro ao gerar o resumo.');
+  return body;
+}
+
+// Escapa antes de inserir texto de fonte externa (resposta do modelo) via
+// innerHTML — nada no resto do app precisava disso até aqui.
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ── DOM refs ──
@@ -3148,6 +3176,7 @@ function renderUsers() {
   }
 
   var medicos = state.users.filter(function (u) { return u.role === 'medico'; });
+  var pacientesElegiveis = state.users.filter(function (u) { return u.role === 'usuario' || u.role === 'admin'; });
 
   els.usersList.innerHTML = state.users.map(function (u) {
     var isSelf = u.id === currentUserId();
@@ -3188,6 +3217,33 @@ function renderUsers() {
               return '<button type="button" class="link-chip' + (active ? ' active' : '') + '" ' +
                 'data-medico-id="' + m.id + '" data-usuario-id="' + u.id + '" data-linked="' + active + '" ' +
                 (busy ? 'disabled' : '') + '>' + (m.nome || m.email) + '</button>';
+            }).join('') +
+            '</div>') +
+        '</div>';
+    }
+
+    // Mesma coisa na direção oposta: na própria linha do médico, um chip
+    // por paciente elegível — mesmo vínculo, só invertendo quem é o "dono"
+    // do clique. Aparece já na criação do médico, sem precisar ir até a
+    // linha de cada paciente pra conectar o primeiro.
+    if (u.role === 'medico') {
+      var linkedPacienteIds = state.userLinks
+        .filter(function (l) { return l.medico_id === u.id; })
+        .map(function (l) { return l.usuario_id; });
+
+      row += '<div class="user-links-row">' +
+        '<span class="user-links-label">Pacientes conectados</span>' +
+        (pacientesElegiveis.length === 0
+          ? '<span class="user-email">Cadastre um paciente (usuário) para conectar.</span>'
+          : '<div class="link-chips">' +
+            pacientesElegiveis.map(function (p) {
+              var active = linkedPacienteIds.indexOf(p.id) !== -1;
+              var key = u.id + ':' + p.id;
+              var busy = state.savingLinkFor === key;
+              var isSelfPaciente = p.id === currentUserId();
+              return '<button type="button" class="link-chip' + (active ? ' active' : '') + '" ' +
+                'data-medico-id="' + u.id + '" data-usuario-id="' + p.id + '" data-linked="' + active + '" ' +
+                (busy ? 'disabled' : '') + '>' + (p.nome || p.email) + (isSelfPaciente ? ' (você)' : '') + '</button>';
             }).join('') +
             '</div>') +
         '</div>';
@@ -3415,6 +3471,7 @@ function renderPatientDocuments(documents) {
   els.patientDocsSummary.textContent = fmtFileSize(totalBytes) + ' ao todo · último envio em ' + fmtDayLabel(documents[0].uploaded_at.slice(0, 10));
 
   els.patientDocumentsList.innerHTML = documents.map(function (doc) {
+    var canAnalyze = AI_ANALYZABLE_TYPES.indexOf(doc.file_type) !== -1;
     return '<div class="record-row has-edit">' +
       '<span class="record-day">' + fmtDayLabel(doc.uploaded_at.slice(0, 10)) + '</span>' +
       '<span class="record-mid"><span class="record-type">' + doc.file_name + '</span>' +
@@ -3424,7 +3481,13 @@ function renderPatientDocuments(documents) {
       '<button type="button" class="record-delete" data-id="' + doc.id + '" aria-label="Excluir documento">' +
       DELETE_ICON_SVG +
       '</button>' +
-      '</div>';
+      '</div>' +
+      (canAnalyze
+        ? '<div class="doc-ai-row">' +
+          '<button type="button" class="doc-ai-btn" data-id="' + doc.id + '">Resumo com IA</button>' +
+          '<div class="doc-ai-result" hidden></div>' +
+          '</div>'
+        : '');
   }).join('');
   els.patientDocumentsList.querySelectorAll('.doc-view-link').forEach(function (link) {
     link.addEventListener('click', function (e) {
@@ -3436,6 +3499,11 @@ function renderPatientDocuments(documents) {
     link.addEventListener('click', function (e) {
       e.preventDefault();
       handleDownloadDocumentClick(link.dataset.path, link.dataset.name, link);
+    });
+  });
+  els.patientDocumentsList.querySelectorAll('.doc-ai-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      handleAnalyzeDocumentClick(Number(btn.dataset.id), btn);
     });
   });
   els.patientDocumentsList.querySelectorAll('.record-delete').forEach(function (btn) {
@@ -3457,6 +3525,31 @@ async function handleDownloadDocumentClick(path, fileName, linkEl) {
     showDocumentToast('Não foi possível baixar o documento.');
   } finally {
     linkEl.textContent = original;
+  }
+}
+
+// Chama a edge function pandafit-analyze-document (Claude via API da
+// Anthropic) pra gerar — ou reaproveitar do cache — um resumo do exame,
+// como apoio à leitura do médico. Nunca substitui o julgamento clínico
+// (ver o texto fixo que a própria function inclui no resumo).
+async function handleAnalyzeDocumentClick(documentId, btn) {
+  var resultEl = btn.nextElementSibling;
+  var originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Analisando…';
+
+  try {
+    var res = await callAnalyzeDocument(documentId);
+    resultEl.innerHTML = '<p class="doc-ai-text">' + escapeHtml(res.summary).replace(/\n/g, '<br>') + '</p>';
+    resultEl.hidden = false;
+    btn.textContent = 'Gerar de novo';
+  } catch (err) {
+    console.error('Falha ao gerar resumo com IA', err);
+    resultEl.innerHTML = '<p class="doc-ai-error">' + escapeHtml(err.message || 'Não foi possível gerar o resumo. Tente de novo.') + '</p>';
+    resultEl.hidden = false;
+    btn.textContent = originalLabel;
+  } finally {
+    btn.disabled = false;
   }
 }
 
