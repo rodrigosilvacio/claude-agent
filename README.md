@@ -2,6 +2,15 @@
 
 Repositório com Projetos desenvolvidos com Claude Code como exemplo.
 
+## Pulso do Dia (`/healthapp`)
+
+App iOS nativo (SwiftUI + HealthKit) que lê do Apple Saúde passos, frequência
+cardíaca, FC em repouso, HRV, sono, calorias ativas e treinos, e mostra uma
+dashboard do dia. Diferente do resto do repo, não é web: precisa de Mac com
+Xcode. Tudo roda no aparelho, somente leitura, sem backend. O projeto Xcode é
+gerado com `xcodegen` a partir de `healthapp/project.yml`. Plano em
+`healthapp/PLANO.md`, instruções em `healthapp/README.md`.
+
 ## Notícias de IA (`/ninanews`)
 
 Página com um único botão ("Buscar notícias de hoje") que aciona a Edge
