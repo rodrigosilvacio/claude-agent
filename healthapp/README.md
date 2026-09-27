@@ -22,10 +22,8 @@ Tudo roda no aparelho: sem backend, sem analytics, somente leitura.
 Pré requisitos: Mac com **Xcode 16+**, conta **Apple Developer** e, de preferência, um iPhone com iOS 17+.
 
 ```bash
-brew install xcodegen          # uma vez
 cd healthapp
-xcodegen                       # gera PulsoDoDia.xcodeproj a partir do project.yml
-open PulsoDoDia.xcodeproj
+./setup.sh                     # instala o XcodeGen se precisar, gera e abre o PulsoDoDia.xcodeproj
 ```
 
 No Xcode:
