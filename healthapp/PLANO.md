@@ -1,7 +1,7 @@
 # Plano: App iOS com Apple Saúde (HealthKit)
 
 Nome provisório: **Pulso do Dia**
-Owner: Rodrigo Silva · Data: 27/09/2026 · Status: planejamento
+Owner: Rodrigo Silva · Data: 27/09/2026 · Status: MVP implementado (itens 1 a 12 do backlog), pendente validação no Xcode e TestFlight. Como rodar: [`README.md`](README.md)
 
 ---
 
@@ -311,7 +311,9 @@ Como o MVP não tem backend, a medição no piloto vem de **App Store Connect / 
 
 ## 13. Próximos passos
 
-- [ ] Confirmar nome do app e conta Apple Developer (Owner: Rodrigo)
+- [x] Conta Apple Developer disponível
+- [ ] Confirmar nome do app e bundle id (Owner: Rodrigo)
 - [ ] Garantir Mac com Xcode 16+ e iPhone de teste (Owner: dev iOS)
-- [ ] Redigir política de privacidade (Owner: Rodrigo + jurídico/DPO)
-- [ ] Iniciar Semana 1 do cronograma
+- [x] Rascunho da política de privacidade (`privacidade.html`)
+- [ ] Revisar política com jurídico/DPO e publicar (Owner: Rodrigo)
+- [ ] Rodar no Xcode, validar no iPhone e seguir para a Semana 4 (TestFlight)

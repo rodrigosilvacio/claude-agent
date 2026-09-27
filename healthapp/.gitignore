@@ -1,0 +1,5 @@
+# O projeto Xcode é gerado a partir do project.yml (xcodegen)
+*.xcodeproj
+xcuserdata/
+DerivedData/
+build/

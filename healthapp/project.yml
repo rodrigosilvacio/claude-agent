@@ -1,0 +1,71 @@
+# Gere o projeto Xcode com: brew install xcodegen && xcodegen
+name: PulsoDoDia
+options:
+  bundleIdPrefix: com.rodrigosilva
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: pt-BR
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # Preencha com o Team ID da sua conta Apple Developer (ou escolha o time no Xcode, aba Signing & Capabilities).
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  PulsoDoDia:
+    type: application
+    platform: iOS
+    sources:
+      - PulsoDoDia
+    info:
+      path: PulsoDoDia/Info.plist
+      properties:
+        CFBundleDisplayName: Pulso do Dia
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - healthkit
+        NSHealthShareUsageDescription: "O Pulso do Dia lê do Apple Saúde seus passos, frequência cardíaca, frequência cardíaca em repouso, HRV, sono, calorias ativas e treinos para montar sua dashboard diária. Os dados ficam somente no seu iPhone e nunca são enviados para servidores."
+    entitlements:
+      path: PulsoDoDia/PulsoDoDia.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rodrigosilva.pulsododia
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+  PulsoDoDiaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - PulsoDoDiaTests
+    dependencies:
+      - target: PulsoDoDia
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.rodrigosilva.pulsododia.tests
+
+schemes:
+  PulsoDoDia:
+    build:
+      targets:
+        PulsoDoDia: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PulsoDoDiaTests
