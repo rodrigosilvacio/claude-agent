@@ -1,4 +1,2 @@
 node_modules/
-entregas/*
-!entregas/.gitkeep
-!entregas/exemplo-*/
+entregas/*/execucao.log

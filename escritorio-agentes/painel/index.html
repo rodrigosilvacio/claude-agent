@@ -14,6 +14,7 @@
     --pixel: 'Pixelify Sans', monospace; --vt: 'VT323', monospace; --corpo: 'Inter', system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--texto); font-family: var(--vt); font-size: 20px; }
   header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 4px solid var(--borda); flex-wrap: wrap; }
   header img { height: 44px; }
@@ -67,7 +68,7 @@
 </head>
 <body>
 <header>
-  <img src="/assets/logo-rodrigo-silva.png" alt="Rodrigo Silva · IA · Dados · Produtos">
+  <img src="../assets/logo-rodrigo-silva.png" alt="Rodrigo Silva · IA · Dados · Produtos">
   <h1>ESCRITÓRIO DE AGENTES</h1>
   <span class="esp"></span>
   <a class="botao sec" id="abrirOffice" target="_blank" rel="noopener">ABRIR PIXEL-AGENTS ↗</a>
@@ -144,14 +145,15 @@ const TRABALHANDO = BASE.map((l, i) => (i === 9 ? '.ACCCCCCCCA.' : i === 10 ? '.
 const AGENTES = {
   tiago:   { nome: 'TIAGO',   papel: 'ESCRITOR', acao: 'ESCREVENDO', icone: '✎', x: 30,  cores: { H: '#3b2a20', S: '#e0b48f', E: '#1a1a1a', G: '#e0b48f', M: '#a0563f', C: '#4f7fb8', A: '#e0b48f', P: '#2c2c3a', K: '#111' } },
   roberto: { nome: 'ROBERTO', papel: 'REVISOR',  acao: 'REVISANDO',  icone: '?', x: 135, cores: { H: '#9a9a9a', S: '#c99572', E: '#1a1a1a', G: '#f5f3ef', M: '#7a3f2e', C: '#4c8a5a', A: '#c99572', P: '#2a2a2a', K: '#111' } },
-  rodrigo: { nome: 'RODRIGO', papel: 'ARTISTA',  acao: 'DESENHANDO', icone: '✦', x: 240, cores: { H: '#c0392b', S: '#8d5a3b', E: '#111', G: '#8d5a3b', M: '#5a2a1a', C: '#cc7c5e', A: '#8d5a3b', P: '#3a3026', K: '#111' } },
+  eloah:   { nome: 'ELOAH',   papel: 'ARTISTA',  acao: 'DESENHANDO', icone: '✦', x: 240, cores: { B: '#c0392b', L: '#2b1a12', H: '#2b1a12', S: '#8d5a3b', E: '#111', G: '#8d5a3b', M: '#5a2a1a', C: '#cc7c5e', A: '#8d5a3b', P: '#3a3026', K: '#111' } },
 };
 // Roberto usa óculos: os olhos viram lentes claras com aro escuro.
 AGENTES.roberto.mapa = BASE.map((l, i) => (i === 3 ? '..KGEKGEK...' : l));
 AGENTES.roberto.mapaT = TRABALHANDO.map((l, i) => (i === 3 ? '..KGEKGEK...' : l));
-// Rodrigo artista usa boina.
-const boina = (m) => m.map((l, i) => (i === 0 ? '...HHHHHH...' : i === 1 ? '..HHHHHHHH..' : l));
-AGENTES.rodrigo.mapa = boina(BASE); AGENTES.rodrigo.mapaT = boina(TRABALHANDO);
+// Eloah: boina vermelha e cabelo comprido caindo dos dois lados do rosto (linhas 2 a 7).
+const comCabelo = (l) => [...l].map((ch, k) => ((k === 2 || k === 9) && ch === '.' ? 'L' : ch)).join('');
+const boina = (m) => m.map((l, i) => (i === 0 ? '...BBBBBB...' : i === 1 ? '..BBBBBBBB..' : i <= 7 ? comCabelo(l) : l));
+AGENTES.eloah.mapa = boina(BASE); AGENTES.eloah.mapaT = boina(TRABALHANDO);
 AGENTES.tiago.mapa = BASE; AGENTES.tiago.mapaT = TRABALHANDO;
 
 const cv = document.getElementById('escritorio');
@@ -203,6 +205,7 @@ function desenhar() {
     }
   }
   if (estado.etapa === 'concluido') { px(110, 40, 100, 14, '#7fbf6a'); texto('ENTREGUE! ✓', 160, 50, '#131311', 6); }
+  if (estado.etapa === 'github') { px(80, 40, 160, 14, '#cc7c5e'); texto('EQUIPE TRABALHANDO NO GITHUB' + '.'.repeat((quadro >> 4) % 4), 160, 50, '#131311', 6); }
   if (estado.etapa === 'escalado') { px(100, 40, 120, 14, '#e8c15a'); texto('PRECISA DE VOCÊ', 160, 50, '#131311', 6); }
   // folha de papel em trânsito
   if (voo) {
@@ -218,10 +221,10 @@ document.fonts.ready.then(desenhar);
 // ---------------- esteira ----------------
 const ETAPAS = [
   ['fila', 'FILA', 'aguardando'], ['escrita', 'TIAGO', 'escreve'], ['revisao', 'ROBERTO', 'revisa'],
-  ['arte', 'RODRIGO', 'cria a arte'], ['concluido', 'ENTREGA', 'post + arte'],
+  ['arte', 'ELOAH', 'cria a arte'], ['concluido', 'ENTREGA', 'post + arte'],
 ];
 const ORDEM = { fila: 0, parado: 0, escrita: 1, ajuste: 1, revisao: 2, finalizando: 3, arte: 3, concluido: 4 };
-const NOMES = { fila: 'NA FILA', parado: 'PARADO', escrita: 'TIAGO ESCREVE', ajuste: 'TIAGO AJUSTA', revisao: 'ROBERTO REVISA', finalizando: 'APROVADO', arte: 'RODRIGO DESENHA', concluido: 'CONCLUÍDO', escalado: 'PRECISA DE VOCÊ', interrompido: 'INTERROMPIDO', erro: 'ERRO' };
+const NOMES = { fila: 'NA FILA', parado: 'PARADO', escrita: 'TIAGO ESCREVE', ajuste: 'TIAGO AJUSTA', revisao: 'ROBERTO REVISA', finalizando: 'APROVADO', arte: 'ELOAH DESENHA', concluido: 'CONCLUÍDO', escalado: 'PRECISA DE VOCÊ', interrompido: 'INTERROMPIDO', erro: 'ERRO', github: 'EM PRODUÇÃO' };
 
 function desenharEsteira(d) {
   const atual = d ? ORDEM[d.etapa] ?? -1 : -1;
@@ -232,14 +235,41 @@ function desenharEsteira(d) {
 }
 
 // ---------------- dados ----------------
+// Dois modos com a mesma tela:
+//  - local: painel/server.mjs responde /api/* e dispara o Claude Code na sua máquina;
+//  - GitHub Pages: sem servidor. O pedido vira uma issue (o workflow roda a esteira)
+//    e as entregas vêm de entregas/index.json, publicado pelo próprio workflow.
+// Os caminhos são relativos (../entregas, ../assets) e funcionam nos dois modos.
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let selecionada = null;
 let ultimoAgente = null;
+let modoGitHub = false;
+const [dono, repo] = location.hostname.endsWith('.github.io')
+  ? [location.hostname.split('.')[0], location.pathname.split('/')[1]]
+  : ['rodrigosilvacio', 'claude-agent'];
+const GH = `https://github.com/${dono}/${repo}`;
+let cacheGitHub = { demandas: [], producao: [], issuesEm: 0 };
+
+async function listarGitHub() {
+  const indice = await fetch(`../entregas/index.json?t=${Date.now()}`).then((x) => x.json()).catch(() => ({ demandas: [] }));
+  // A API pública do GitHub tem limite de 60 chamadas/hora sem login: consulta as issues a cada 60s.
+  if (Date.now() - cacheGitHub.issuesEm > 60000) {
+    cacheGitHub.issuesEm = Date.now();
+    const issues = await fetch(`https://api.github.com/repos/${dono}/${repo}/issues?state=open&creator=${dono}&per_page=30`).then((x) => (x.ok ? x.json() : [])).catch(() => []);
+    cacheGitHub.issues = issues.filter((i) => !i.pull_request && /^\[Post\]/i.test(i.title));
+  }
+  const comEntrega = new Set(indice.demandas.map((d) => d.issue).filter(Boolean));
+  cacheGitHub.producao = (cacheGitHub.issues || []).filter((i) => !comEntrega.has(i.number)).map((i) => ({
+    id: `issue-${i.number}`, issue: i.number, tema: i.title.replace(/^\[Post\]\s*/i, ''), etapa: 'github', rodando: true, posts: [], agente: null, url: i.html_url,
+  }));
+  cacheGitHub.demandas = indice.demandas;
+  return { emExecucao: cacheGitHub.producao[0]?.id || null, demandas: [...cacheGitHub.producao, ...indice.demandas] };
+}
 
 async function atualizar() {
   try {
-    const r = await fetch('/api/demandas').then((x) => x.json());
+    const r = modoGitHub ? await listarGitHub() : await fetch('/api/demandas').then((x) => x.json());
     const lista = r.demandas;
     $('lista').innerHTML = lista.length ? lista.map((d) => {
       const ativo = d.rodando ? 'ativo' : d.etapa;
@@ -262,29 +292,44 @@ function selecionar(id) { selecionada = id; carregarDetalhe(); document.querySel
 
 let assinaturaDetalhe = '';
 async function carregarDetalhe() {
-  const d = await fetch(`/api/demandas/${encodeURIComponent(selecionada)}`).then((x) => x.json());
-  if (d.erro && !d.id) return;
-  const assinatura = JSON.stringify([d.etapa, d.rodando, d.posts, d.revisoes, d.temArte, d.log.length]);
+  const d = modoGitHub
+    ? [...cacheGitHub.producao, ...cacheGitHub.demandas].find((x) => x.id === selecionada)
+    : await fetch(`/api/demandas/${encodeURIComponent(selecionada)}`).then((x) => x.json());
+  if (!d || (d.erro && !d.id)) return;
+  const assinatura = JSON.stringify([d.id, d.etapa, d.rodando, d.posts, d.revisoes, d.temArte, (d.log || '').length]);
   if (assinatura === assinaturaDetalhe) return;
   assinaturaDetalhe = assinatura;
+  $('detalhe').hidden = false;
+  if (d.etapa === 'github') {
+    $('detalhe').innerHTML = `
+      <h2>▶ ${esc(d.tema).toUpperCase()}</h2>
+      <span class="tag ativo">EM PRODUÇÃO</span>
+      <p>Tiago, Roberto e Eloah estão trabalhando nesta demanda no GitHub Actions. Quando terminarem, o post e a arte aparecem aqui e como comentário na issue.</p>
+      <div class="acoes"><a class="botao" target="_blank" rel="noopener" href="${esc(d.url)}">VER ISSUE #${d.issue}</a><a class="botao sec" target="_blank" rel="noopener" href="${GH}/actions/workflows/escritorio-agentes.yml">VER ESTEIRA</a></div>`;
+    return;
+  }
   const abertos = new Set([...document.querySelectorAll('#detalhe details[open]')].map((x) => x.dataset.k));
   const hist = d.historico.map((h) => {
     const rev = h.revisao ? (h.revisao.startsWith('VEREDITO: APROVADO') ? '<span class="tag concluido">APROVADO</span>' : '<span class="tag erro">REPROVADO</span>') : '<span class="tag ativo">EM REVISÃO</span>';
     return `<details data-k="v${h.n}" ${abertos.has('v' + h.n) ? 'open' : ''}><summary>Versão ${h.n} do Tiago ${rev}</summary><pre>${esc(h.post)}</pre>${h.revisao ? `<h3>PARECER DO ROBERTO</h3><pre>${esc(h.revisao)}</pre>` : ''}</details>`;
   }).join('');
-  $('detalhe').hidden = false;
+  const arte = `../entregas/${encodeURIComponent(d.id)}/arte.png`;
+  const retomar = modoGitHub
+    ? (d.issue ? `<div class="acoes"><a class="botao sec" target="_blank" rel="noopener" href="${GH}/issues/${d.issue}">REFAZER: ADICIONE O LABEL "refazer" NA ISSUE #${d.issue}</a></div>` : '')
+    : '<div class="acoes"><button id="reprocessar" class="sec">RETOMAR ESTEIRA</button></div>';
   $('detalhe').innerHTML = `
     <h2>▶ ${esc(d.tema).toUpperCase()}</h2>
     <span class="tag ${d.rodando ? 'ativo' : d.etapa}">${NOMES[d.etapa] || d.etapa}</span>
+    ${d.issue ? `<a class="msg" target="_blank" rel="noopener" href="${GH}/issues/${d.issue}">issue #${d.issue}</a>` : ''}
     ${d.erro ? `<div class="alerta erro">${esc(d.erro)}</div>` : ''}
     ${d.pendencias ? `<div class="alerta">O Roberto não aprovou em 3 rodadas. Decisão sua:<pre>${esc(d.pendencias)}</pre></div>` : ''}
     ${d.postFinal ? `<h3>POST REVISADO</h3><pre id="final">${esc(d.postFinal)}</pre><div class="acoes"><button id="copiar">COPIAR POST</button><span class="msg" id="msgCopia"></span></div>` : ''}
-    ${d.temArte ? `<h3>ARTE</h3><img class="arte" src="/entregas/${encodeURIComponent(d.id)}/arte.png?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="/entregas/${encodeURIComponent(d.id)}/arte.png">BAIXAR ARTE</a></div>` : ''}
+    ${d.temArte ? `<h3>ARTE</h3><img class="arte" src="${arte}?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="${arte}">BAIXAR ARTE</a></div>` : ''}
     <h3>HISTÓRICO</h3>
     <details data-k="briefing" ${abertos.has('briefing') ? 'open' : ''}><summary>Briefing</summary><pre>${esc(d.briefing)}</pre></details>
     ${hist || '<p class="vazio">O Tiago ainda não entregou a primeira versão.</p>'}
-    <details data-k="log" ${abertos.has('log') ? 'open' : ''}><summary>Log da execução</summary><pre>${esc(d.log || 'sem log')}</pre></details>
-    ${!d.rodando && ['erro', 'interrompido', 'parado'].includes(d.etapa) ? '<div class="acoes"><button id="reprocessar" class="sec">RETOMAR ESTEIRA</button></div>' : ''}`;
+    ${modoGitHub ? '' : `<details data-k="log" ${abertos.has('log') ? 'open' : ''}><summary>Log da execução</summary><pre>${esc(d.log || 'sem log')}</pre></details>`}
+    ${!d.rodando && ['erro', 'interrompido', 'parado', 'escalado'].includes(d.etapa) ? retomar : ''}`;
   $('copiar')?.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(d.postFinal); $('msgCopia').textContent = 'Copiado!'; }
     catch { getSelection().selectAllChildren($('final')); $('msgCopia').textContent = 'Selecionado, use Ctrl+C.'; }
@@ -295,6 +340,14 @@ async function carregarDetalhe() {
 $('form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const dados = Object.fromEntries(new FormData(e.target));
+  if (modoGitHub) {
+    // O pedido vira uma issue pelo formulário do repositório, já preenchido.
+    const q = new URLSearchParams({ template: 'demanda-post.yml', title: `[Post] ${dados.tema}`, ...dados });
+    window.open(`${GH}/issues/new?${q}`, '_blank', 'noopener');
+    $('msgForm').textContent = 'Confirme em "Create" na aba do GitHub. A esteira começa sozinha.';
+    cacheGitHub.issuesEm = 0;
+    return;
+  }
   $('enviar').disabled = true; $('msgForm').textContent = 'Entregando ao Tiago...';
   try {
     const r = await fetch('/api/demandas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) });
@@ -309,9 +362,16 @@ $('form').addEventListener('submit', async (e) => {
 fetch('/api/config').then((r) => r.json()).then((c) => {
   $('abrirOffice').href = c.escritorio;
   $('verOffice').onclick = () => { const cx = $('caixaOffice'); cx.hidden = !cx.hidden; if (!cx.hidden && !$('office').src) $('office').src = c.escritorio; };
+}).catch(() => {
+  modoGitHub = true;
+  $('abrirOffice').href = `${GH}/issues?q=is%3Aissue+%22%5BPost%5D%22+in%3Atitle`;
+  $('abrirOffice').textContent = 'DEMANDAS NO GITHUB ↗';
+  $('verOffice').hidden = true;
+  $('enviar').textContent = 'ABRIR PEDIDO NO GITHUB ▶';
+}).finally(() => {
+  atualizar();
+  setInterval(atualizar, modoGitHub ? 20000 : 2500);
 });
-atualizar();
-setInterval(atualizar, 2500);
 </script>
 </body>
 </html>

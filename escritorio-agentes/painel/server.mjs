@@ -8,10 +8,11 @@
 // Uso: node painel/server.mjs [--port 4000] [--host 127.0.0.1] [--office http://127.0.0.1:3100]
 
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { argsClaude, criarBriefing, detalhe, idsDemandas, statusDe } from '../scripts/demanda-lib.mjs';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ENTREGAS = join(RAIZ, 'entregas');
@@ -28,66 +29,8 @@ mkdirSync(ENTREGAS, { recursive: true });
 const fila = [];
 let emExecucao = null;
 
-// ---------- status derivado dos arquivos ----------
-
-function versoes(arquivos, prefixo) {
-  return arquivos
-    .map((f) => f.match(new RegExp(`^${prefixo}-v(\\d+)\\.md$`)))
-    .filter(Boolean)
-    .map((m) => Number(m[1]))
-    .sort((a, b) => a - b);
-}
-
-function statusDe(id) {
-  const pasta = join(ENTREGAS, id);
-  const arquivos = readdirSync(pasta);
-  const tem = (f) => arquivos.includes(f);
-  const posts = versoes(arquivos, 'post');
-  const revisoes = versoes(arquivos, 'revisao').map((n) => ({
-    n,
-    aprovado: readFileSync(join(pasta, `revisao-v${n}.md`), 'utf8').startsWith('VEREDITO: APROVADO'),
-  }));
-  const ultimoPost = posts.at(-1) || 0;
-  const ultimaRev = revisoes.at(-1);
-  const rodando = emExecucao === id;
-
-  let etapa, agente;
-  if (tem('erro.txt')) [etapa, agente] = ['erro', null];
-  else if (tem('arte.png') && tem('post-final.md')) [etapa, agente] = ['concluido', null];
-  else if (tem('pendencias.md')) [etapa, agente] = ['escalado', null];
-  else if (tem('post-final.md')) [etapa, agente] = ['arte', 'rodrigo'];
-  else if (ultimaRev && ultimaRev.n === ultimoPost) [etapa, agente] = ultimaRev.aprovado ? ['finalizando', null] : ['ajuste', 'tiago'];
-  else if (ultimoPost) [etapa, agente] = ['revisao', 'roberto'];
-  else if (rodando) [etapa, agente] = ['escrita', 'tiago'];
-  else [etapa, agente] = [fila.includes(id) ? 'fila' : 'parado', null];
-
-  if (!rodando && ['escrita', 'revisao', 'ajuste', 'arte', 'finalizando'].includes(etapa)) [etapa, agente] = ['interrompido', null];
-
-  const briefing = JSON.parse(readFileSync(join(pasta, 'briefing.json'), 'utf8'));
-  return { id, tema: briefing.tema, criadoEm: briefing.criadoEm, etapa, agente, rodando, posts, revisoes, temArte: tem('arte.png') };
-}
-
-function listar() {
-  return readdirSync(ENTREGAS, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && existsSync(join(ENTREGAS, d.name, 'briefing.json')))
-    .map((d) => statusDe(d.name))
-    .sort((a, b) => b.id.localeCompare(a.id));
-}
-
-function detalhe(id) {
-  const pasta = join(ENTREGAS, id);
-  const ler = (f) => (existsSync(join(pasta, f)) ? readFileSync(join(pasta, f), 'utf8') : null);
-  const s = statusDe(id);
-  return {
-    ...s,
-    briefing: ler('briefing.md'),
-    historico: s.posts.map((n) => ({ n, post: ler(`post-v${n}.md`), revisao: ler(`revisao-v${n}.md`) })),
-    postFinal: ler('post-final.md'),
-    pendencias: ler('pendencias.md'),
-    erro: ler('erro.txt'),
-    log: (ler('execucao.log') || '').slice(-4000),
-  };
-}
+const estado = (id) => ({ rodando: emExecucao === id, naFila: fila.includes(id) });
+const listar = () => idsDemandas(ENTREGAS).map((id) => statusDe(ENTREGAS, id, estado(id)));
 
 // ---------- fila e execução ----------
 
@@ -97,17 +40,7 @@ function proximo() {
   emExecucao = id;
   const log = createWriteStream(join(ENTREGAS, id, 'execucao.log'), { flags: 'a' });
   log.write(`\n[${new Date().toISOString()}] Iniciando /post ${id}\n`);
-  // As permissões vão explícitas na chamada (além de .claude/settings.json) para a
-  // esteira rodar sem prompts mesmo antes de a pasta ser marcada como confiável.
-  const permitidas = [
-    'Read', 'Glob', 'Agent', 'Write', 'Edit',
-    'Bash(node scripts/checar-texto.mjs:*)', 'Bash(node scripts/finalizar-post.mjs:*)', 'Bash(node scripts/renderizar-arte.mjs:*)',
-  ];
-  const proc = spawn(CLAUDE, ['-p', `/post ${id}`, '--permission-mode', 'acceptEdits', '--allowedTools', permitidas.join(',')], {
-    cwd: RAIZ,
-    env: process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const proc = spawn(CLAUDE, argsClaude(id), { cwd: RAIZ, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.pipe(log, { end: false });
   proc.stderr.pipe(log, { end: false });
   const fim = (msg) => {
@@ -122,40 +55,8 @@ function proximo() {
   proc.on('close', (code) => fim(`Encerrado com código ${code}`));
 }
 
-function slug(t) {
-  return t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'post';
-}
-
 function criarDemanda(dados) {
-  const limpar = (v, max) => String(v || '').trim().slice(0, max);
-  const d = {
-    tema: limpar(dados.tema, 200),
-    descricao: limpar(dados.descricao, 4000),
-    objetivo: limpar(dados.objetivo, 300),
-    publico: limpar(dados.publico, 300),
-    cta: limpar(dados.cta, 300),
-    observacoes: limpar(dados.observacoes, 1500),
-  };
-  if (!d.tema || !d.descricao) throw new Error('Tema e descrição são obrigatórios.');
-  const agora = new Date();
-  const carimbo = agora.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
-  const id = `${carimbo}-${slug(d.tema)}`;
-  const pasta = join(ENTREGAS, id);
-  mkdirSync(pasta, { recursive: true });
-  writeFileSync(join(pasta, 'briefing.json'), JSON.stringify({ ...d, criadoEm: agora.toISOString() }, null, 2));
-  writeFileSync(
-    join(pasta, 'briefing.md'),
-    [
-      `# Briefing: ${d.tema}`,
-      '',
-      `**Descrição do post:**\n${d.descricao}`,
-      `**Objetivo:** ${d.objetivo || 'não informado (Tiago decide)'}`,
-      `**Público:** ${d.publico || 'executivos, CIOs, CTOs e líderes de tecnologia'}`,
-      `**Chamada para ação:** ${d.cta || 'não informada (fechar com reflexão ou pergunta)'}`,
-      `**Observações:** ${d.observacoes || 'nenhuma'}`,
-      '',
-    ].join('\n\n'),
-  );
+  const id = criarBriefing(ENTREGAS, dados);
   fila.push(id);
   proximo();
   return id;
@@ -177,7 +78,7 @@ function arquivo(res, base, relativo) {
   res.end(readFileSync(alvo));
 }
 
-const idValido = (id) => /^[0-9]{8}-[0-9]{6}-[a-z0-9-]+$/.test(id) && existsSync(join(ENTREGAS, id, 'briefing.json'));
+const idValido = (id) => /^[a-z0-9-]+$/.test(id) && existsSync(join(ENTREGAS, id, 'briefing.json'));
 
 createServer((req, res) => {
   const url = new URL(req.url, 'http://local');
@@ -202,7 +103,7 @@ createServer((req, res) => {
       return;
     }
     let m = p.match(/^\/api\/demandas\/([^/]+)$/);
-    if (req.method === 'GET' && m) return idValido(m[1]) ? json(res, 200, detalhe(m[1])) : json(res, 404, { erro: 'demanda não encontrada' });
+    if (req.method === 'GET' && m) return idValido(m[1]) ? json(res, 200, detalhe(ENTREGAS, m[1], estado(m[1]))) : json(res, 404, { erro: 'demanda não encontrada' });
     m = p.match(/^\/api\/demandas\/([^/]+)\/reprocessar$/);
     if (req.method === 'POST' && m && idValido(m[1])) {
       if (emExecucao === m[1] || fila.includes(m[1])) return json(res, 409, { erro: 'demanda já está em andamento' });

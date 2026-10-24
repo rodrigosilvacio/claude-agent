@@ -1,5 +1,5 @@
 ---
-description: Roda a esteira do escritório (Tiago escreve, Roberto revisa, Rodrigo cria a arte) para uma demanda já registrada em entregas/<id>/briefing.md
+description: Roda a esteira do escritório (Tiago escreve, Roberto revisa, Eloah cria a arte) para uma demanda já registrada em entregas/<id>/briefing.md
 argument-hint: <id-da-demanda>
 ---
 
@@ -10,20 +10,20 @@ Pasta: `entregas/$ARGUMENTS/`
 
 Se `entregas/$ARGUMENTS/briefing.md` não existir, escreva `entregas/$ARGUMENTS/erro.txt` explicando e pare.
 
-**Retomada:** se a pasta já tiver arquivos de uma execução anterior, não recomece do zero. Continue do ponto onde parou: se `post-v<N>.md` existe sem `revisao-v<N>.md`, comece pelo Roberto na versão `N`; se a última revisão reprovou, chame o Tiago na versão seguinte; se `post-final.md` existe sem `arte.png`, vá direto para o Rodrigo.
+**Retomada:** se a pasta já tiver arquivos de uma execução anterior, não recomece do zero. Continue do ponto onde parou: se `post-v<N>.md` existe sem `revisao-v<N>.md`, comece pelo Roberto na versão `N`; se a última revisão reprovou, chame o Tiago na versão seguinte; se `post-final.md` existe sem `arte.png`, vá direto para Eloah.
 
 ## Esteira
 
-Use a ferramenta Agent para cada etapa, **uma por vez, nunca em paralelo**, e sempre com uma `description` curta começando pelo nome do agente (é ela que aparece no balão do personagem no escritório pixel art), por exemplo `Tiago escreve a v1`, `Roberto revisa a v1`, `Rodrigo cria a arte`.
+Use a ferramenta Agent para cada etapa, **uma por vez, nunca em paralelo**, e sempre com uma `description` curta começando pelo nome do agente (é ela que aparece no balão do personagem no escritório pixel art), por exemplo `Tiago escreve a v1`, `Roberto revisa a v1`, `Eloah cria a arte`.
 
 1. **Tiago escreve** (`subagent_type: tiago-escritor`): peça a versão `N = 1` informando a pasta da demanda.
 2. **Roberto revisa** (`subagent_type: roberto-revisor`): peça a revisão da versão `N`.
 3. Leia a primeira linha de `revisao-v<N>.md`:
    - `VEREDITO: REPROVADO` e `N < 3`: chame o **Tiago** de novo com `N + 1`, informando o caminho da revisão anterior, e volte ao passo 2.
-   - `VEREDITO: REPROVADO` e `N = 3`: **pare a esteira**. Escreva `entregas/$ARGUMENTS/pendencias.md` com um resumo dos bloqueantes que restaram e a recomendação para o Rodrigo decidir. Não gere arte.
+   - `VEREDITO: REPROVADO` e `N = 3`: **pare a esteira**. Escreva `entregas/$ARGUMENTS/pendencias.md` com um resumo dos bloqueantes que restaram e a recomendação para o Rodrigo Silva decidir. Não gere arte.
    - `VEREDITO: APROVADO`: siga para o passo 4.
 4. **Finalize o texto** rodando `node scripts/finalizar-post.mjs entregas/$ARGUMENTS <N>`. Isso gera `post-final.md` (pronto para copiar e colar) a partir da versão aprovada.
-5. **Rodrigo cria a arte** (`subagent_type: rodrigo-artista`): informe a pasta e a versão aprovada `N`.
+5. **Eloah cria a arte** (`subagent_type: eloah-artista`): informe a pasta e a versão aprovada `N`.
 6. Confirme que existem `post-final.md` e `arte.png`. Se faltar algo, escreva `erro.txt` com o motivo.
 
 ## Regras

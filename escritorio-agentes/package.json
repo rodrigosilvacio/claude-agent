@@ -2,7 +2,7 @@
   "name": "escritorio-agentes",
   "private": true,
   "type": "module",
-  "description": "Escritório de agentes (Tiago, Roberto e Rodrigo) para posts de LinkedIn, visualizado com pixel-agents",
+  "description": "Escritório de agentes (Tiago, Roberto e Eloah) para posts de LinkedIn, visualizado com pixel-agents",
   "scripts": {
     "painel": "node painel/server.mjs --port 4000",
     "escritorio": "npx -y pixel-agents --port 3100",

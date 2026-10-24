@@ -6,7 +6,7 @@ Este diretório é um "escritório" com três agentes que produzem posts de Link
 |---|---|---|
 | Tiago (o escritor) | `.claude/agents/tiago-escritor.md` | escreve e reescreve a copy |
 | Roberto (o revisor) | `.claude/agents/roberto-revisor.md` | revisa e aprova ou reprova |
-| Rodrigo (o artista gráfico) | `.claude/agents/rodrigo-artista.md` | cria o criativo com o logotipo |
+| Eloah (artista) | `.claude/agents/eloah-artista.md` | cria o criativo com o logotipo |
 
 A esteira é disparada por `/post <id>` (`.claude/commands/post.md`). Cada demanda vive em `entregas/<id>/` e guarda todo o histórico (briefing, versões, revisões, arte), o que dá rastreabilidade do que foi escrito, por quem e por que mudou.
 
