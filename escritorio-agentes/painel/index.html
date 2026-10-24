@@ -118,9 +118,20 @@
       <input id="senha" type="password" autocomplete="current-password" minlength="6" required>
       <div class="acoes">
         <button id="botaoLogin" type="submit">ENTRAR ▶</button>
-        <span class="msg" id="msgLogin"></span>
+        <button id="esqueci" type="button" class="sec">ESQUECI A SENHA</button>
       </div>
+      <p class="msg" id="msgLogin"></p>
       <p class="msg">Cada conta pode pedir até 3 posts por dia. O texto e a arte ficam visíveis só para você.</p>
+    </form>
+
+    <form class="caixa" id="caixaNovaSenha" hidden>
+      <h2>▶ CRIE UMA NOVA SENHA</h2>
+      <label for="novaSenha">Nova senha (mínimo 6 caracteres)</label>
+      <input id="novaSenha" type="password" autocomplete="new-password" minlength="6" required>
+      <div class="acoes">
+        <button id="botaoNovaSenha" type="submit">SALVAR SENHA ▶</button>
+        <span class="msg" id="msgNovaSenha"></span>
+      </div>
     </form>
 
     <form class="caixa" id="form" hidden>
@@ -287,6 +298,7 @@ function desenharEsteira(d) {
 const SUPABASE_URL = 'https://xtrvojnauvkkterogrst.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT';
 const LOGO_URL = new URL('../assets/logo-rodrigo-silva.png', location.href).href;
+const URL_PAINEL = location.href.split('#')[0].split('?')[0];
 const AGENTE_DA_ETAPA = { escrita: 'tiago', ajuste: 'tiago', revisao: 'roberto', arte: 'eloah' };
 const CRITERIOS = { ortografia: 'Ortografia', gramatica: 'Gramática', coerencia: 'Coerência', titulo: 'Título', postura: 'Postura CIO/CTO', tom: 'Tom', estrutura: 'Estrutura', aderencia: 'Aderência' };
 
@@ -620,9 +632,16 @@ $('caixaLogin').addEventListener('submit', async (e) => {
       if (error) throw error;
       $('msgLogin').textContent = '';
     } else {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split('#')[0] } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: URL_PAINEL } });
       if (error) throw error;
-      $('msgLogin').textContent = data.session ? '' : 'Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.';
+      // E-mail já cadastrado: o Supabase responde "ok" sem enviar nada (para não
+      // revelar quem tem conta) e devolve o usuário sem identidades.
+      if (data.user && !data.user.identities?.length) {
+        document.querySelector('.aba[data-aba="entrar"]').click();
+        $('msgLogin').textContent = 'Este e-mail já tem conta (vale a mesma conta dos outros apps do Rodrigo). Entre com a sua senha ou use "Esqueci a senha".';
+      } else {
+        $('msgLogin').textContent = data.session ? '' : 'Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.';
+      }
     }
   } catch (err) {
     $('msgLogin').textContent = /invalid login/i.test(err.message) ? 'E-mail ou senha incorretos.' : `Erro: ${err.message}`;
@@ -631,10 +650,36 @@ $('caixaLogin').addEventListener('submit', async (e) => {
 
 $('sair').addEventListener('click', () => sb.auth.signOut());
 
+$('esqueci').addEventListener('click', async () => {
+  const email = $('email').value.trim();
+  if (!email) { $('msgLogin').textContent = 'Digite seu e-mail acima e clique de novo em "Esqueci a senha".'; return; }
+  $('esqueci').disabled = true;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: URL_PAINEL });
+  $('esqueci').disabled = false;
+  $('msgLogin').textContent = error
+    ? `Erro: ${error.message}`
+    : 'Se este e-mail tiver conta, enviamos um link para criar uma nova senha. Confira também a caixa de spam.';
+});
+
+// Volta do link "Esqueci a senha": a pessoa já está logada pelo link e só
+// precisa definir a nova senha.
+let recuperandoSenha = /type=recovery/.test(location.hash);
+$('caixaNovaSenha').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('botaoNovaSenha').disabled = true;
+  const { error } = await sb.auth.updateUser({ password: $('novaSenha').value });
+  $('botaoNovaSenha').disabled = false;
+  if (error) { $('msgNovaSenha').textContent = `Erro: ${error.message}`; return; }
+  recuperandoSenha = false;
+  history.replaceState(null, '', URL_PAINEL);
+  mostrarConta();
+});
+
 function mostrarConta() {
   const logado = Boolean(usuario);
+  $('caixaNovaSenha').hidden = !(logado && recuperandoSenha);
   $('caixaLogin').hidden = logado;
-  $('form').hidden = !logado;
+  $('form').hidden = !logado || recuperandoSenha;
   $('caixaComo').hidden = logado;
   $('caixaLista').hidden = !logado;
   $('sair').hidden = !logado;
@@ -685,14 +730,15 @@ async function iniciar() {
     $('msgLogin').textContent = 'Não consegui conectar ao servidor. Recarregue a página.';
     return;
   }
+  sb.auth.onAuthStateChange((evento, sessao) => {
+    const antes = usuario?.id;
+    usuario = sessao?.user || null;
+    if (evento === 'PASSWORD_RECOVERY') { recuperandoSenha = true; mostrarConta(); }
+    if (antes !== usuario?.id) { mostrarConta(); atualizar(); }
+  });
   const { data } = await sb.auth.getSession();
   usuario = data.session?.user || null;
   mostrarConta();
-  sb.auth.onAuthStateChange((_evento, sessao) => {
-    const antes = usuario?.id;
-    usuario = sessao?.user || null;
-    if (antes !== usuario?.id) { mostrarConta(); atualizar(); }
-  });
   atualizar();
   setInterval(() => { if (usuario) atualizar(); }, 8000);
 }
