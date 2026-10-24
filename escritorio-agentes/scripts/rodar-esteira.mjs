@@ -164,6 +164,12 @@ proc.on('error', (err) => {
 });
 
 proc.on('close', async (codigo) => {
+  // Claude encerrou com falha sem deixar entrega: registra o erro para o painel
+  // não deduzir uma etapa a partir de arquivos parciais.
+  const entregue = existsSync(join(pasta, 'arte.png')) || existsSync(join(pasta, 'pendencias.md'));
+  if (codigo !== 0 && !entregue && !existsSync(join(pasta, 'erro.txt'))) {
+    writeFileSync(join(pasta, 'erro.txt'), `O Claude Code encerrou com código ${codigo} antes de concluir a esteira. Veja o execucao.log.\n`);
+  }
   const { etapa } = statusDe(ENTREGAS, id);
   const finais = {
     concluido: 'post revisado e arte entregues',

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 // As permissões vão explícitas na chamada (além de .claude/settings.json) para a
 // esteira rodar sem prompts mesmo antes de a pasta ser marcada como confiável.
 export const FERRAMENTAS_PERMITIDAS = [
-  'Read', 'Glob', 'Agent', 'Write', 'Edit',
+  'Read', 'Glob', 'Agent', 'Write(./entregas/**)', 'Edit(./entregas/**)',
   'Bash(node scripts/checar-texto.mjs:*)', 'Bash(node scripts/finalizar-post.mjs:*)', 'Bash(node scripts/renderizar-arte.mjs:*)',
 ];
 
