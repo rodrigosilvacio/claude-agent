@@ -2,6 +2,33 @@
 
 Repositório com Projetos desenvolvidos com Claude Code como exemplo.
 
+## Escritório de Agentes (`/escritorio-agentes`)
+
+Escritório pixel art com três agentes de IA que produzem posts de LinkedIn:
+**Tiago** (escritor) escreve a copy, **Roberto** (revisor) revisa com critério
+objetivo e devolve para ajuste (máx. 3 rodadas), e **Eloah** (artista) cria o
+criativo 1080x1350 sempre com o logotipo. Qualquer pessoa cria conta no painel
+(`escritorio-agentes/painel/`, GitHub Pages), pede o post e acompanha os
+agentes trabalhando ao vivo.
+
+**Na nuvem (Supabase):** login pelo Supabase Auth; o pedido passa pela edge
+function `escritorio-pedir` (limite de 3 pedidos por pessoa a cada 24 h e 40
+no total por dia, em `escritorio_config`) e vira uma linha em
+`escritorio_demandas`. A partir daí o próprio banco conduz a esteira: a cada
+mudança de etapa, um trigger chama `escritorio-esteira` via pg_net, que roda
+um agente por invocação (Claude `claude-opus-5-5`, saída JSON estruturada,
+com a `ANTHROPIC_API_KEY` já existente nas secrets) para caber no teto de
+~150 s. Um cron a cada 2 min reenvia etapas paradas. Cada passo vira um
+evento em `escritorio_eventos`, que o painel assina via Realtime. Guardrails
+determinísticos (`regras.ts`) barram travessões, posts acima de 3000
+caracteres e arte sem logo; o veredito do Roberto segue regra fixa no código.
+Migrations `0061` e `0062`; `escritorio-esteira` e `escritorio-evento` são
+publicadas com `--no-verify-jwt` (autenticação própria), `escritorio-pedir`
+com JWT. Detalhes em [`escritorio-agentes/README.md`](escritorio-agentes/README.md).
+
+**Local:** os mesmos agentes rodam como subagentes do Claude Code e aparecem no
+[pixel-agents](https://www.npmjs.com/package/pixel-agents) (`./iniciar.sh`).
+
 ## Notícias de IA (`/ninanews`)
 
 Página com um único botão ("Buscar notícias de hoje") que aciona a Edge

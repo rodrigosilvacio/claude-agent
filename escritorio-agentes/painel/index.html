@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escritório de Agentes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=VT323&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #131311; --painel: #1d1c19; --painel2: #262420; --borda: #3a3731;
+    --texto: #f5f3ef; --apoio: #a8a39b; --terracota: #cc7c5e; --terracota2: #e9a58a;
+    --verde: #7fbf6a; --amarelo: #e8c15a; --vermelho: #e0625a; --azul: #6aa6d8;
+    --pixel: 'Pixelify Sans', monospace; --vt: 'VT323', monospace; --corpo: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--texto); font-family: var(--vt); font-size: 20px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 4px solid var(--borda); flex-wrap: wrap; }
+  header img { height: 44px; }
+  header h1 { font-family: var(--pixel); font-size: 22px; margin: 0; color: var(--terracota2); letter-spacing: 1px; }
+  header .esp { flex: 1; }
+  main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .caixa { background: var(--painel); border: 4px solid var(--borda); box-shadow: 6px 6px 0 #000; padding: 16px; margin-bottom: 20px; image-rendering: pixelated; }
+  .caixa h2 { font-family: var(--pixel); font-size: 17px; color: var(--terracota2); margin: 0 0 14px; }
+  canvas#escritorio { width: 100%; image-rendering: pixelated; display: block; border: 4px solid #000; background: #000; }
+  .esteira { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .feed { margin-top: 12px; background: #0c0c0b; border: 3px solid var(--borda); padding: 8px 10px; max-height: 190px; overflow-y: auto; font-size: 18px; }
+  .feed h4 { font-family: var(--pixel); font-size: 13px; margin: 0 0 6px; color: var(--vermelho); }
+  .feed h4::before { content: '● '; animation: pisca 1s steps(2) infinite; }
+  .feed div { display: flex; gap: 8px; line-height: 1.25; }
+  .feed time { color: var(--apoio); flex: none; }
+  .feed .tiago { color: var(--azul); } .feed .roberto { color: var(--verde); } .feed .eloah { color: var(--terracota2); }
+  .feed .ok { color: var(--verde); } .feed .nok { color: var(--vermelho); }
+  .passo { flex: 1; min-width: 120px; background: var(--painel2); border: 3px solid var(--borda); padding: 8px; font-size: 18px; text-align: center; }
+  .passo b { font-family: var(--pixel); font-size: 14px; display: block; margin-bottom: 6px; }
+  .passo.ativo { border-color: var(--terracota); color: var(--terracota2); animation: pisca 1s steps(2) infinite; }
+  .passo.ok { border-color: var(--verde); color: var(--verde); }
+  @keyframes pisca { 50% { border-color: var(--terracota2); } }
+  label { display: block; font-size: 18px; color: var(--apoio); margin: 10px 0 4px; }
+  input, textarea { width: 100%; background: #0c0c0b; color: var(--texto); border: 3px solid var(--borda); padding: 8px 10px; font-family: var(--vt); font-size: 20px; outline: none; }
+  input:focus, textarea:focus { border-color: var(--terracota); }
+  textarea { min-height: 110px; resize: vertical; }
+  .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .linha2 { grid-template-columns: 1fr; } }
+  button, .botao { font-family: var(--pixel); font-size: 15px; background: var(--terracota); color: #131311; border: none; padding: 12px 14px; cursor: pointer; box-shadow: 4px 4px 0 #000; text-decoration: none; display: inline-block; }
+  button:hover, .botao:hover { background: var(--terracota2); }
+  button:active, .botao:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #000; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .sec { background: var(--painel2); color: var(--texto); }
+  .sec:hover { background: var(--borda); }
+  .acoes { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .msg { font-size: 18px; color: var(--apoio); }
+  .lista { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+  .item { background: var(--painel2); border: 3px solid var(--borda); padding: 8px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .item:hover, .item.sel { border-color: var(--terracota); }
+  .item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-family: var(--pixel); font-size: 13px; padding: 5px 6px; white-space: nowrap; background: var(--borda); }
+  .tag.concluido { background: var(--verde); color: #000; }
+  .tag.escalado, .tag.interrompido { background: var(--amarelo); color: #000; }
+  .tag.erro { background: var(--vermelho); color: #000; }
+  .tag.ativo { background: var(--terracota); color: #000; }
+  .vazio { color: var(--apoio); font-size: 18px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; background: #0c0c0b; border: 3px solid var(--borda); padding: 12px; font-family: var(--corpo); font-size: 14px; line-height: 1.55; margin: 8px 0 0; max-height: 420px; overflow-y: auto; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 19px; color: var(--apoio); }
+  summary .tag { margin-left: 6px; }
+  .arte { width: 100%; max-width: 420px; display: block; border: 4px solid #000; margin-top: 8px; }
+  .alerta { border: 3px solid var(--amarelo); padding: 10px; color: var(--amarelo); margin-top: 10px; font-size: 18px; }
+  .alerta.erro { border-color: var(--vermelho); color: var(--vermelho); }
+  iframe { width: 100%; height: 520px; border: 4px solid #000; background: #000; display: block; }
+  h3 { font-family: var(--pixel); font-size: 15px; margin: 18px 0 6px; color: var(--texto); }
+  .abas { display: flex; gap: 8px; margin-bottom: 4px; }
+  .aba { background: var(--painel2); color: var(--apoio); box-shadow: none; border: 3px solid var(--borda); }
+  .aba.sel { background: var(--terracota); color: #131311; border-color: var(--terracota); }
+  .moldura { position: relative; width: 100%; max-width: 420px; aspect-ratio: 1080 / 1350; overflow: hidden; border: 4px solid #000; margin-top: 8px; background: #131311; }
+  iframe.arteFrame { position: absolute; top: 0; left: 0; width: 1080px; height: 1350px; border: 0; transform-origin: 0 0; }
+  p { font-size: 19px; line-height: 1.3; }
+  b.tiago { color: var(--azul); } b.roberto { color: var(--verde); } b.eloah { color: var(--terracota2); }
+</style>
+</head>
+<body>
+<header>
+  <img src="../assets/logo-rodrigo-silva.png" alt="Rodrigo Silva · IA · Dados · Produtos">
+  <h1>ESCRITÓRIO DE AGENTES</h1>
+  <span class="esp"></span>
+  <span class="msg" id="conta"></span>
+  <button class="sec" id="sair" hidden>SAIR</button>
+  <a class="botao sec" id="abrirOffice" target="_blank" rel="noopener" hidden>ABRIR PIXEL-AGENTS ↗</a>
+  <button class="sec" id="verOffice" hidden>VER OFFICE AQUI</button>
+</header>
+
+<main>
+  <section>
+    <div class="caixa">
+      <h2>▶ O ESCRITÓRIO</h2>
+      <canvas id="escritorio" width="320" height="150"></canvas>
+      <div class="esteira" id="esteira"></div>
+      <div class="feed" id="feed" hidden></div>
+    </div>
+
+    <div class="caixa" id="caixaOffice" hidden>
+      <h2>▶ PIXEL-AGENTS (AO VIVO)</h2>
+      <iframe id="office" title="Escritório pixel-agents"></iframe>
+      <p class="msg">Se aparecer em branco, rode <code>npx pixel-agents --port 3100</code> nesta pasta.</p>
+    </div>
+
+    <form class="caixa" id="caixaLogin" hidden>
+      <h2>▶ ENTRE PARA PEDIR SEU POST</h2>
+      <div class="abas">
+        <button type="button" class="aba sel" data-aba="entrar">ENTRAR</button>
+        <button type="button" class="aba" data-aba="criar">CRIAR CONTA</button>
+      </div>
+      <label for="email">E-mail</label>
+      <input id="email" type="email" autocomplete="email" required>
+      <label for="senha">Senha</label>
+      <input id="senha" type="password" autocomplete="current-password" minlength="6" required>
+      <div class="acoes">
+        <button id="botaoLogin" type="submit">ENTRAR ▶</button>
+        <span class="msg" id="msgLogin"></span>
+      </div>
+      <p class="msg">Cada conta pode pedir até 3 posts por dia. O texto e a arte ficam visíveis só para você.</p>
+    </form>
+
+    <form class="caixa" id="form" hidden>
+      <h2>▶ NOVA DEMANDA</h2>
+      <label for="tema">Tema do post *</label>
+      <input id="tema" name="tema" minlength="3" maxlength="200" required placeholder="Ex.: Por que IA sem dados organizados é só demo bonita">
+      <label for="descricao">Descrição do post *</label>
+      <textarea id="descricao" name="descricao" minlength="10" maxlength="4000" required placeholder="Conte a história, a ideia central, fatos e números reais que devem entrar, e o ângulo que você quer."></textarea>
+      <div class="linha2">
+        <div><label for="objetivo">Objetivo</label><input id="objetivo" name="objetivo" maxlength="300" placeholder="Gerar reflexão, divulgar evento..."></div>
+        <div><label for="publico">Público</label><input id="publico" name="publico" maxlength="300" placeholder="CIOs, CTOs, conselheiros..."></div>
+      </div>
+      <label for="cta">Chamada para ação</label>
+      <input id="cta" name="cta" maxlength="300" placeholder="Ex.: comente como sua empresa trata isso">
+      <label for="observacoes">Observações</label>
+      <input id="observacoes" name="observacoes" maxlength="1500" placeholder="Tom, palavras proibidas, links...">
+      <div class="acoes">
+        <button id="enviar" type="submit">ENVIAR PARA O TIAGO ▶</button>
+        <span class="msg" id="msgForm"></span>
+      </div>
+    </form>
+  </section>
+
+  <section>
+    <div class="caixa" id="caixaComo" hidden>
+      <h2>▶ COMO FUNCIONA</h2>
+      <p><b class="tiago">Tiago</b> escreve o post, <b class="roberto">Roberto</b> revisa com critério de CIO (até 3 rodadas) e <b class="eloah">Eloah</b> cria a arte com o logotipo. Você acompanha tudo ao vivo no escritório ao lado e recebe o post pronto para copiar e a arte em PNG.</p>
+      <h3>EXEMPLO DE ENTREGA</h3>
+      <pre id="exemploPost">carregando...</pre>
+      <img class="arte" src="../entregas/exemplo-ia-fundacao-de-dados/arte.png" alt="Arte de exemplo criada pela Eloah">
+    </div>
+    <div class="caixa" id="caixaLista">
+      <h2 id="tituloLista">▶ DEMANDAS</h2>
+      <div class="lista" id="lista"><span class="vazio">Nenhuma demanda ainda. Faça o primeiro pedido ao lado.</span></div>
+    </div>
+    <div class="caixa" id="detalhe" hidden></div>
+  </section>
+</main>
+
+<script type="module">
+// ---------------- sprites em pixel art ----------------
+// Cada personagem é um mapa 12x16. Letras = cores da paleta do personagem.
+const BASE = [
+  '....HHHH....',
+  '...HHHHHH...',
+  '...HSSSSH...',
+  '...SEGSEG...',
+  '...SSSSSS...',
+  '....SMMS....',
+  '.....SS.....',
+  '...CCCCCC...',
+  '..CCCCCCCC..',
+  '..ACCCCCCA..',
+  '..ACCCCCCA..',
+  '...CCCCCC...',
+  '...PPPPPP...',
+  '...PP..PP...',
+  '...PP..PP...',
+  '...KK..KK...',
+];
+// Quadro "trabalhando": braços erguidos sobre o teclado.
+const TRABALHANDO = BASE.map((l, i) => (i === 9 ? '.ACCCCCCCCA.' : i === 10 ? '..CCCCCCCC..' : l));
+const AGENTES = {
+  tiago:   { nome: 'TIAGO',   papel: 'ESCRITOR', acao: 'ESCREVENDO', icone: '✎', x: 30,  cores: { H: '#3b2a20', S: '#e0b48f', E: '#1a1a1a', G: '#e0b48f', M: '#a0563f', C: '#4f7fb8', A: '#e0b48f', P: '#2c2c3a', K: '#111' } },
+  roberto: { nome: 'ROBERTO', papel: 'REVISOR',  acao: 'REVISANDO',  icone: '?', x: 135, cores: { H: '#9a9a9a', S: '#c99572', E: '#1a1a1a', G: '#f5f3ef', M: '#7a3f2e', C: '#4c8a5a', A: '#c99572', P: '#2a2a2a', K: '#111' } },
+  eloah:   { nome: 'ELOAH',   papel: 'ARTISTA',  acao: 'DESENHANDO', icone: '✦', x: 240, cores: { B: '#c0392b', L: '#2b1a12', H: '#2b1a12', S: '#8d5a3b', E: '#111', G: '#8d5a3b', M: '#5a2a1a', C: '#cc7c5e', A: '#8d5a3b', P: '#3a3026', K: '#111' } },
+};
+// Roberto usa óculos: os olhos viram lentes claras com aro escuro.
+AGENTES.roberto.mapa = BASE.map((l, i) => (i === 3 ? '..KGEKGEK...' : l));
+AGENTES.roberto.mapaT = TRABALHANDO.map((l, i) => (i === 3 ? '..KGEKGEK...' : l));
+// Eloah: boina vermelha e cabelo comprido caindo dos dois lados do rosto (linhas 2 a 7).
+const comCabelo = (l) => [...l].map((ch, k) => ((k === 2 || k === 9) && ch === '.' ? 'L' : ch)).join('');
+const boina = (m) => m.map((l, i) => (i === 0 ? '...BBBBBB...' : i === 1 ? '..BBBBBBBB..' : i <= 7 ? comCabelo(l) : l));
+AGENTES.eloah.mapa = boina(BASE); AGENTES.eloah.mapaT = boina(TRABALHANDO);
+AGENTES.tiago.mapa = BASE; AGENTES.tiago.mapaT = TRABALHANDO;
+
+const cv = document.getElementById('escritorio');
+const g = cv.getContext('2d');
+g.imageSmoothingEnabled = false;
+let estado = { agente: null, etapa: null, versao: 0 };
+let voo = null; // folha de papel viajando entre mesas
+let quadro = 0;
+
+function px(x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+function sprite(mapa, cores, x, y) {
+  mapa.forEach((linha, j) => [...linha].forEach((ch, i) => { if (ch !== '.') px(x + i * 2, y + j * 2, 2, 2, cores[ch]); }));
+}
+function texto(t, x, y, c, tam = 8) { g.fillStyle = c; g.font = `bold ${Math.round(tam * 1.5)}px "Pixelify Sans", monospace`; g.textAlign = 'center'; g.fillText(t, x, y); }
+
+function desenhar() {
+  quadro++;
+  // parede e janela
+  px(0, 0, 320, 52, '#2b2823');
+  for (let x = 0; x < 320; x += 16) px(x, 48, 8, 4, '#24221e');
+  px(120, 10, 80, 30, '#0d1b2a'); px(122, 12, 76, 26, '#1e3a5f');
+  for (let i = 0; i < 6; i++) px(126 + ((i * 13 + (quadro >> 4)) % 70), 16 + (i * 7) % 18, 2, 2, '#f5f3ef');
+  px(159, 10, 2, 30, '#0d1b2a');
+  texto('IA · DADOS · PRODUTOS', 60, 30, '#cc7c5e', 5);
+  // piso em xadrez
+  for (let y = 52; y < 150; y += 10) for (let x = 0; x < 320; x += 10) px(x, y, 10, 10, ((x + y) / 10) % 2 ? '#3d342b' : '#463c31');
+  // planta e café
+  px(298, 96, 12, 14, '#7a4b2a'); px(294, 80, 20, 18, '#3f7d3a'); px(300, 74, 8, 8, '#4f9a48');
+  px(8, 100, 14, 10, '#f5f3ef'); px(22, 103, 3, 4, '#f5f3ef'); px(10, 102, 10, 3, '#5a3a22');
+
+  for (const [id, a] of Object.entries(AGENTES)) {
+    const ativo = estado.agente === id;
+    const bob = ativo ? (quadro >> 3) % 2 : (quadro >> 5) % 2 ? 0 : 1;
+    // personagem atrás da mesa
+    sprite(ativo && (quadro >> 3) % 2 ? a.mapaT : a.mapa, a.cores, a.x + 13, 64 + bob);
+    // mesa e monitor
+    px(a.x, 92, 50, 6, '#8a5a35'); px(a.x, 98, 50, 3, '#5e3b22'); px(a.x + 3, 101, 4, 18, '#5e3b22'); px(a.x + 43, 101, 4, 18, '#5e3b22');
+    px(a.x + 30, 76, 18, 14, '#111'); px(a.x + 32, 78, 14, 10, ativo ? ((quadro >> 2) % 2 ? '#cc7c5e' : '#e9a58a') : '#2a3a4a');
+    px(a.x + 37, 90, 4, 2, '#111');
+    // placa com nome
+    px(a.x - 2, 124, 54, 22, '#1d1c19'); px(a.x - 2, 124, 54, 2, ativo ? '#cc7c5e' : '#3a3731');
+    texto(a.nome, a.x + 25, 135, ativo ? '#e9a58a' : '#f5f3ef', 6);
+    texto(a.papel, a.x + 25, 143, '#a8a39b', 5);
+    // balão de fala
+    if (ativo) {
+      const label = estado.balao || (estado.etapa === 'ajuste' ? `AJUSTANDO V${estado.versao + 1}` : a.acao + '.'.repeat((quadro >> 4) % 4));
+      g.font = 'bold 8px "Pixelify Sans", monospace';
+      const w = Math.min(150, g.measureText(label).width + 10);
+      const bx = Math.max(2, Math.min(318 - w, a.x + 25 - w / 2));
+      px(bx, 54, w, 14, '#f5f3ef'); px(a.x + 20, 68, 4, 3, '#f5f3ef');
+      texto(label, bx + w / 2, 64, '#131311', 5);
+    }
+  }
+  if (estado.etapa === 'concluido') { px(110, 40, 100, 14, '#7fbf6a'); texto('ENTREGUE! ✓', 160, 50, '#131311', 6); }
+  if (estado.etapa === 'escalado') { px(100, 40, 120, 14, '#e8c15a'); texto('PRECISA DE VOCÊ', 160, 50, '#131311', 6); }
+  // folha de papel em trânsito
+  if (voo) {
+    voo.t += 0.03;
+    const x = voo.de + (voo.para - voo.de) * voo.t, y = 84 - Math.sin(voo.t * Math.PI) * 30;
+    px(x, y, 8, 10, '#f5f3ef'); px(x + 1, y + 2, 6, 1, '#888'); px(x + 1, y + 5, 5, 1, '#888');
+    if (voo.t >= 1) voo = null;
+  }
+  requestAnimationFrame(desenhar);
+}
+document.fonts.ready.then(desenhar);
+
+// ---------------- esteira ----------------
+const ETAPAS = [
+  ['fila', 'FILA', 'aguardando'], ['escrita', 'TIAGO', 'escreve'], ['revisao', 'ROBERTO', 'revisa'],
+  ['arte', 'ELOAH', 'cria a arte'], ['concluido', 'ENTREGA', 'post + arte'],
+];
+const ORDEM = { fila: 0, parado: 0, escrita: 1, ajuste: 1, revisao: 2, finalizando: 3, arte: 3, concluido: 4 };
+const NOMES = { fila: 'NA FILA', parado: 'PARADO', escrita: 'TIAGO ESCREVE', ajuste: 'TIAGO AJUSTA', revisao: 'ROBERTO REVISA', finalizando: 'APROVADO', arte: 'ELOAH DESENHA', concluido: 'CONCLUÍDO', escalado: 'PRECISA DE VOCÊ', interrompido: 'INTERROMPIDO', erro: 'ERRO' };
+
+function desenharEsteira(d) {
+  const atual = d ? ORDEM[d.etapa] ?? -1 : -1;
+  document.getElementById('esteira').innerHTML = ETAPAS.map(([, n, s], i) => {
+    const cls = d && d.etapa === 'concluido' ? 'ok' : i < atual ? 'ok' : i === atual && d.rodando ? 'ativo' : '';
+    return `<div class="passo ${cls}"><b>${n}</b>${s}</div>`;
+  }).join('');
+}
+
+// ---------------- dados ----------------
+// Dois modos com a mesma tela:
+//  - nuvem (GitHub Pages ou qualquer hospedagem estática): login no Supabase
+//    Auth, pedido pela edge function escritorio-pedir e esteira rodando no
+//    Supabase (escritorio-esteira). Cada pessoa vê só as próprias demandas.
+//  - local: painel/server.mjs responde /api/* e roda o Claude Code na máquina.
+// Os dois recebem os eventos ao vivo de escritorio_eventos (Supabase Realtime).
+const SUPABASE_URL = 'https://xtrvojnauvkkterogrst.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT';
+const LOGO_URL = new URL('../assets/logo-rodrigo-silva.png', location.href).href;
+const AGENTE_DA_ETAPA = { escrita: 'tiago', ajuste: 'tiago', revisao: 'roberto', arte: 'eloah' };
+const CRITERIOS = { ortografia: 'Ortografia', gramatica: 'Gramática', coerencia: 'Coerência', titulo: 'Título', postura: 'Postura CIO/CTO', tom: 'Tom', estrutura: 'Estrutura', aderencia: 'Aderência' };
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let modo = 'nuvem';
+let sb = null;
+let usuario = null;
+let selecionada = null;
+let ultimoAgente = null;
+let minhas = []; // demandas já no formato do painel (nuvem)
+
+// ---------- nuvem: converte linhas do Supabase para o formato do painel ----------
+
+function etapaPainel(d) {
+  if (d.erro) return 'erro';
+  if (d.etapa === 'escrita' && d.rodada > 1) return 'ajuste';
+  return d.etapa;
+}
+
+function revisaoEmTexto(v) {
+  if (!v.revisao) return null;
+  const r = v.revisao;
+  const media = v.media != null ? String(Number(v.media).toFixed(2)).replace(/0$/, '').replace('.', ',') : '?';
+  const notas = Object.entries(CRITERIOS).map(([k, nome]) => `${nome}: ${r.notas?.[k] ?? '?'}`).join(' · ');
+  const bloq = (r.bloqueantes || []).map((b, i) => `${i + 1}. "${b.trecho}"\n   Problema: ${b.problema}\n   Correção: ${b.correcao}`).join('\n') || 'Nenhum.';
+  const sug = (r.sugestoes || []).map((s, i) => `${i + 1}. "${s.trecho}"\n   ${s.sugestao}`).join('\n') || 'Nenhuma.';
+  return `VEREDITO: ${v.aprovado ? 'APROVADO' : 'REPROVADO'} (média ${media})\n\nNotas: ${notas}\n\nBloqueantes:\n${bloq}\n\nSugestões:\n${sug}\n\nParecer do Roberto: ${r.parecer}`;
+}
+
+function demandaDaNuvem(d, versoes) {
+  const etapa = etapaPainel(d);
+  const doDemanda = versoes.filter((v) => v.demanda_id === d.id).sort((a, b) => a.n - b.n);
+  const rodando = ['escrita', 'ajuste', 'revisao', 'arte'].includes(etapa);
+  return {
+    id: d.id,
+    tema: d.tema,
+    etapa,
+    rodando,
+    agente: rodando ? AGENTE_DA_ETAPA[etapa] : null,
+    posts: doDemanda.map((v) => v.n),
+    revisoes: doDemanda.filter((v) => v.aprovado != null).map((v) => ({ n: v.n, aprovado: v.aprovado })),
+    temArte: Boolean(d.arte_html),
+    arteHtml: d.arte_html,
+    briefing: [`Tema: ${d.tema}`, `Descrição: ${d.descricao}`, `Objetivo: ${d.objetivo || '(não informado)'}`, `Público: ${d.publico || '(não informado)'}`, `Chamada para ação: ${d.cta || '(não informada)'}`, `Observações: ${d.observacoes || 'nenhuma'}`].join('\n\n'),
+    historico: doDemanda.map((v) => ({
+      n: v.n,
+      post: `${v.titulo}\n\n${v.texto}\n\n${v.hashtags}\n\nFrase para a arte: ${v.frase_arte}\n\nNotas do Tiago: ${v.notas_autor || ''}`,
+      revisao: revisaoEmTexto(v),
+    })),
+    postFinal: d.post_final,
+    pendencias: d.pendencias,
+    erro: d.erro,
+  };
+}
+
+async function listarNuvem() {
+  if (!usuario) return { emExecucao: null, demandas: [] };
+  const { data: ds, error } = await sb.from('escritorio_demandas')
+    .select('id, tema, descricao, objetivo, publico, cta, observacoes, etapa, rodada, post_final, arte_html, pendencias, erro, criado_em')
+    .order('criado_em', { ascending: false }).limit(30);
+  if (error) throw error;
+  const ids = ds.map((d) => d.id);
+  const { data: vs } = ids.length ? await sb.from('escritorio_versoes').select('*').in('demanda_id', ids) : { data: [] };
+  minhas = ds.map((d) => demandaDaNuvem(d, vs || []));
+  return { emExecucao: minhas.find((d) => d.rodando)?.id || null, demandas: minhas };
+}
+
+// ---------------- ao vivo (Supabase Realtime) ----------------
+// A esteira (nuvem ou local) publica cada passo dos agentes em
+// escritorio_eventos; o escritório anima com o agente e a ação reais. Os
+// eventos são públicos e só dizem quem está fazendo o quê ("Roberto revisa a
+// v1"), nunca o conteúdo do post.
+const eventos = new Map(); // demanda -> eventos em ordem de id
+const ETAPA_DO_AGENTE = { tiago: 'escrita', roberto: 'revisao', eloah: 'arte' };
+const AO_VIVO_MS = 20 * 60 * 1000;   // sem evento há 20 min = execução abandonada
+const RECENTE_MS = 60 * 60 * 1000;   // o feed ainda mostra a última execução por 1 h
+
+function receberEvento(ev, inicial = false) {
+  const lista = eventos.get(ev.demanda) || [];
+  if (lista.some((x) => x.id === ev.id)) return;
+  lista.push(ev);
+  lista.sort((a, b) => a.id - b.id);
+  eventos.set(ev.demanda, lista.slice(-80));
+  if (inicial) return;
+  aplicarAoVivo();
+  // Mudança numa demanda minha: recarrega a lista e o detalhe na hora.
+  if (modo === 'local' || minhas.some((d) => d.id === ev.demanda)) atualizar();
+  if (ev.tipo === 'fim') setTimeout(atualizar, 1500);
+}
+
+function execucaoMaisRecente() {
+  let melhor = null;
+  for (const [demanda, lista] of eventos) {
+    const ult = lista.at(-1);
+    if (!melhor || ult.id > melhor.ult.id) melhor = { demanda, lista, ult };
+  }
+  if (!melhor) return null;
+  const idade = Date.now() - new Date(melhor.ult.criado_em).getTime();
+  return { ...melhor, aoVivo: melhor.ult.tipo !== 'fim' && idade < AO_VIVO_MS, recente: idade < RECENTE_MS };
+}
+
+function etapaAoVivo(d) {
+  const ex = execucaoMaisRecente();
+  if (!ex || !ex.aoVivo || ex.demanda !== d.id) return null;
+  const comAgente = [...ex.lista].reverse().find((x) => x.agente);
+  return comAgente ? ETAPA_DO_AGENTE[comAgente.agente] : 'fila';
+}
+
+function tituloExecucao(demanda) {
+  const minha = minhas.find((d) => d.id === demanda);
+  if (minha) return minha.tema;
+  if (modo === 'local') return demanda.replace(/^\d{8}-\d{6}-/, '').replace(/-/g, ' ');
+  return 'pedido de outra pessoa';
+}
+
+const hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function desenharFeed(ex) {
+  const feed = $('feed');
+  if (!ex || !ex.recente) { feed.hidden = true; return; }
+  feed.hidden = false;
+  feed.innerHTML = `<h4>${ex.aoVivo ? 'AO VIVO' : 'ÚLTIMA EXECUÇÃO'} · ${esc(tituloExecucao(ex.demanda)).toUpperCase()}</h4>` +
+    ex.lista.slice(-14).reverse().map((x) => {
+      const cls = x.tipo === 'veredito' ? (x.texto.includes('APROVOU') ? 'ok' : 'nok') : x.agente || '';
+      return `<div><time>${hora(x.criado_em)}</time><span class="${cls}">${esc(x.texto)}</span></div>`;
+    }).join('');
+}
+
+function aplicarAoVivo() {
+  const ex = execucaoMaisRecente();
+  desenharFeed(ex);
+  if (!ex || !ex.aoVivo) return;
+  const comAgente = [...ex.lista].reverse().find((x) => x.agente);
+  const agente = comAgente?.agente || 'tiago';
+  if (ultimoAgente && agente !== ultimoAgente && !voo) voo = { de: AGENTES[ultimoAgente].x + 20, para: AGENTES[agente].x + 20, t: 0 };
+  ultimoAgente = agente;
+  const fala = (comAgente?.texto || 'recebendo a demanda').replace(/^(Tiago|Roberto|Eloah)\s+/, '');
+  estado = { agente, etapa: ETAPA_DO_AGENTE[agente], versao: 0, balao: fala.toUpperCase().slice(0, 34) };
+  desenharEsteira({ etapa: ETAPA_DO_AGENTE[agente], rodando: true });
+}
+
+// ---------------- lista e detalhe ----------------
+
+async function atualizar() {
+  try {
+    const r = modo === 'local' ? await fetch('/api/demandas').then((x) => x.json()) : await listarNuvem();
+    const lista = r.demandas;
+    $('lista').innerHTML = lista.length ? lista.map((d) => {
+      const vivo = etapaAoVivo(d);
+      const ativo = vivo || d.rodando ? 'ativo' : d.etapa;
+      return `<div class="item ${d.id === selecionada ? 'sel' : ''}" data-id="${esc(d.id)}"><span class="t">${esc(d.tema)}</span><span class="tag ${ativo}">${NOMES[vivo || d.etapa] || d.etapa}</span></div>`;
+    }).join('') : '<span class="vazio">Nenhuma demanda ainda. Faça o primeiro pedido ao lado.</span>';
+    const foco = lista.find((d) => d.id === r.emExecucao) || lista.find((d) => d.id === selecionada) || lista[0];
+    if (foco) {
+      if (foco.agente && ultimoAgente && foco.agente !== ultimoAgente) voo = { de: AGENTES[ultimoAgente].x + 20, para: AGENTES[foco.agente].x + 20, t: 0 };
+      ultimoAgente = foco.agente || ultimoAgente;
+      estado = { agente: foco.rodando ? foco.agente : null, etapa: foco.etapa, versao: foco.posts.at(-1) || 0 };
+      if (!selecionada) selecionar(foco.id);
+    } else {
+      estado = { agente: null, etapa: null, versao: 0 };
+      $('detalhe').hidden = true;
+    }
+    desenharEsteira(foco);
+    aplicarAoVivo();
+    if (selecionada) carregarDetalhe();
+  } catch (e) {
+    console.warn('Falha ao atualizar:', e);
+  }
+}
+
+$('lista').addEventListener('click', (e) => { const it = e.target.closest('.item'); if (it) selecionar(it.dataset.id); });
+function selecionar(id) { selecionada = id; assinaturaDetalhe = ''; carregarDetalhe(); document.querySelectorAll('.item').forEach((i) => i.classList.toggle('sel', i.dataset.id === id)); }
+
+let assinaturaDetalhe = '';
+async function carregarDetalhe() {
+  const d = modo === 'local'
+    ? await fetch(`/api/demandas/${encodeURIComponent(selecionada)}`).then((x) => x.json())
+    : minhas.find((x) => x.id === selecionada);
+  if (!d || (d.erro && !d.id)) return;
+  const assinatura = JSON.stringify([d.id, d.etapa, d.rodando, d.posts, d.revisoes, d.temArte, d.erro, (d.log || '').length]);
+  if (assinatura === assinaturaDetalhe) return;
+  assinaturaDetalhe = assinatura;
+  const abertos = new Set([...document.querySelectorAll('#detalhe details[open]')].map((x) => x.dataset.k));
+  const hist = d.historico.map((h) => {
+    const rev = h.revisao ? (h.revisao.startsWith('VEREDITO: APROVADO') ? '<span class="tag concluido">APROVADO</span>' : '<span class="tag erro">REPROVADO</span>') : '<span class="tag ativo">EM REVISÃO</span>';
+    return `<details data-k="v${h.n}" ${abertos.has('v' + h.n) ? 'open' : ''}><summary>Versão ${h.n} do Tiago ${rev}</summary><pre>${esc(h.post)}</pre>${h.revisao ? `<h3>PARECER DO ROBERTO</h3><pre>${esc(h.revisao)}</pre>` : ''}</details>`;
+  }).join('');
+  const podeRetomar = modo === 'local'
+    ? !d.rodando && ['erro', 'interrompido', 'parado'].includes(d.etapa)
+    : d.etapa === 'erro';
+  let arte = '';
+  if (d.temArte && modo === 'local') {
+    const png = `/entregas/${encodeURIComponent(d.id)}/arte.png`;
+    arte = `<h3>ARTE</h3><img class="arte" src="${png}?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="${png}">BAIXAR ARTE</a></div>`;
+  } else if (d.temArte) {
+    arte = `<h3>ARTE</h3><div class="moldura" id="moldura"></div><div class="acoes"><button id="baixarArte">BAIXAR PNG</button><span class="msg" id="msgArte"></span></div>`;
+  }
+  $('detalhe').hidden = false;
+  $('detalhe').innerHTML = `
+    <h2>▶ ${esc(d.tema).toUpperCase()}</h2>
+    <span class="tag ${d.rodando ? 'ativo' : d.etapa}">${NOMES[d.etapa] || d.etapa}</span>
+    ${d.erro ? `<div class="alerta erro">${esc(d.erro)}</div>` : ''}
+    ${d.pendencias ? `<div class="alerta">O Roberto não aprovou em 3 rodadas. Decisão sua:<pre>${esc(d.pendencias)}</pre></div>` : ''}
+    ${d.postFinal ? `<h3>POST REVISADO</h3><pre id="final">${esc(d.postFinal)}</pre><div class="acoes"><button id="copiar">COPIAR POST</button><span class="msg" id="msgCopia"></span></div>` : ''}
+    ${arte}
+    <h3>HISTÓRICO</h3>
+    <details data-k="briefing" ${abertos.has('briefing') ? 'open' : ''}><summary>Briefing</summary><pre>${esc(d.briefing)}</pre></details>
+    ${hist || '<p class="vazio">O Tiago ainda não entregou a primeira versão.</p>'}
+    ${modo === 'local' ? `<details data-k="log" ${abertos.has('log') ? 'open' : ''}><summary>Log da execução</summary><pre>${esc(d.log || 'sem log')}</pre></details>` : ''}
+    ${podeRetomar ? '<div class="acoes"><button id="reprocessar" class="sec">RETOMAR ESTEIRA</button><span class="msg" id="msgRetomar"></span></div>' : ''}`;
+  $('copiar')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(d.postFinal); $('msgCopia').textContent = 'Copiado!'; }
+    catch { getSelection().selectAllChildren($('final')); $('msgCopia').textContent = 'Selecionado, use Ctrl+C.'; }
+  });
+  $('reprocessar')?.addEventListener('click', () => retomar(d.id));
+  if (d.temArte && modo === 'nuvem') mostrarArte(d);
+}
+
+async function retomar(id) {
+  if (modo === 'local') {
+    await fetch(`/api/demandas/${encodeURIComponent(id)}/reprocessar`, { method: 'POST' });
+  } else {
+    const { error } = await sb.functions.invoke('escritorio-pedir', { body: { acao: 'retomar', id } });
+    if (error) { $('msgRetomar').textContent = await mensagemDeErro(error); return; }
+  }
+  atualizar();
+}
+
+// ---------------- arte (nuvem) ----------------
+// O HTML da Eloah roda num iframe sandbox sem scripts e com CSP (só estilos,
+// fontes do Google e imagens do próprio site). O PNG é gerado no navegador.
+
+const CSP_ARTE = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+
+function documentoDaArte(html) {
+  const comLogo = html.replaceAll('{{LOGO}}', LOGO_URL);
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${CSP_ARTE}">`;
+  return /<head[^>]*>/i.test(comLogo) ? comLogo.replace(/<head[^>]*>/i, (m) => `${m}${meta}`) : `${meta}${comLogo}`;
+}
+
+function mostrarArte(d) {
+  const moldura = $('moldura');
+  const quadroArte = document.createElement('iframe');
+  quadroArte.className = 'arteFrame';
+  quadroArte.title = 'Arte do post';
+  quadroArte.setAttribute('sandbox', 'allow-same-origin');
+  quadroArte.srcdoc = documentoDaArte(d.arteHtml);
+  moldura.replaceChildren(quadroArte);
+  const ajustar = () => { quadroArte.style.transform = `scale(${moldura.clientWidth / 1080})`; };
+  ajustar();
+  new ResizeObserver(ajustar).observe(moldura);
+  quadroArte.addEventListener('load', () => conferirArte(quadroArte));
+  $('baixarArte').addEventListener('click', () => baixarArte(quadroArte, d));
+}
+
+// Conferência visual no navegador: logo carregado e nada além de 1080x1350.
+function conferirArte(quadroArte) {
+  const doc = quadroArte.contentDocument;
+  const logo = doc?.querySelector('img[data-logo]');
+  const avisos = [];
+  if (!logo || !logo.complete || !logo.naturalWidth) avisos.push('o logo não carregou');
+  if (doc && (doc.documentElement.scrollHeight > 1352 || doc.documentElement.scrollWidth > 1082)) avisos.push('algum elemento passou do tamanho da arte');
+  $('msgArte').textContent = avisos.length ? `Atenção: ${avisos.join(' e ')}.` : '';
+}
+
+async function baixarArte(quadroArte, d) {
+  $('msgArte').textContent = 'Gerando PNG...';
+  try {
+    const { toPng } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
+    const doc = quadroArte.contentDocument;
+    await doc.fonts.ready;
+    const png = await toPng(doc.body, { width: 1080, height: 1350, pixelRatio: 1, cacheBust: true });
+    const a = document.createElement('a');
+    a.href = png;
+    a.download = `post-${d.tema.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.png`;
+    a.click();
+    $('msgArte').textContent = 'PNG baixado.';
+  } catch (e) {
+    console.error(e);
+    $('msgArte').textContent = 'Não consegui gerar o PNG. Tente de novo ou use o Chrome.';
+  }
+}
+
+// ---------------- pedidos ----------------
+
+async function mensagemDeErro(error) {
+  try { return (await error.context.json()).erro || error.message; } catch { return error.message; }
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const dados = Object.fromEntries(new FormData(e.target));
+  $('enviar').disabled = true; $('msgForm').textContent = 'Entregando ao Tiago...';
+  try {
+    let id;
+    if (modo === 'local') {
+      const r = await fetch('/api/demandas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.erro);
+      id = j.id;
+    } else {
+      const { data, error } = await sb.functions.invoke('escritorio-pedir', { body: { acao: 'criar', ...dados } });
+      if (error) throw new Error(await mensagemDeErro(error));
+      id = data.id;
+    }
+    e.target.reset(); $('msgForm').textContent = 'Demanda na mesa do Tiago!';
+    selecionada = id; assinaturaDetalhe = ''; atualizar();
+  } catch (err) { $('msgForm').textContent = 'Erro: ' + err.message; }
+  finally { $('enviar').disabled = false; }
+});
+
+// ---------------- login (nuvem) ----------------
+
+let abaLogin = 'entrar';
+document.querySelectorAll('.aba').forEach((b) => b.addEventListener('click', () => {
+  abaLogin = b.dataset.aba;
+  document.querySelectorAll('.aba').forEach((x) => x.classList.toggle('sel', x === b));
+  $('botaoLogin').textContent = abaLogin === 'entrar' ? 'ENTRAR ▶' : 'CRIAR CONTA ▶';
+  $('senha').autocomplete = abaLogin === 'entrar' ? 'current-password' : 'new-password';
+  $('msgLogin').textContent = '';
+}));
+
+$('caixaLogin').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('email').value.trim();
+  const password = $('senha').value;
+  $('botaoLogin').disabled = true; $('msgLogin').textContent = abaLogin === 'entrar' ? 'Entrando...' : 'Criando conta...';
+  try {
+    if (abaLogin === 'entrar') {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      $('msgLogin').textContent = '';
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split('#')[0] } });
+      if (error) throw error;
+      $('msgLogin').textContent = data.session ? '' : 'Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.';
+    }
+  } catch (err) {
+    $('msgLogin').textContent = /invalid login/i.test(err.message) ? 'E-mail ou senha incorretos.' : `Erro: ${err.message}`;
+  } finally { $('botaoLogin').disabled = false; }
+});
+
+$('sair').addEventListener('click', () => sb.auth.signOut());
+
+function mostrarConta() {
+  const logado = Boolean(usuario);
+  $('caixaLogin').hidden = logado;
+  $('form').hidden = !logado;
+  $('caixaComo').hidden = logado;
+  $('caixaLista').hidden = !logado;
+  $('sair').hidden = !logado;
+  $('conta').textContent = logado ? usuario.email : '';
+  $('tituloLista').textContent = '▶ MINHAS DEMANDAS';
+  if (!logado) { minhas = []; selecionada = null; $('detalhe').hidden = true; }
+}
+
+// ---------------- início ----------------
+
+async function conectarSupabase() {
+  try {
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.110.5');
+    sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+    const desde = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+    const { data } = await sb.from('escritorio_eventos').select('*').gte('criado_em', desde).order('id', { ascending: false }).limit(200);
+    (data || []).reverse().forEach((ev) => receberEvento(ev, true));
+    aplicarAoVivo();
+    sb.channel('escritorio-eventos')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'escritorio_eventos' }, (p) => receberEvento(p.new))
+      .subscribe();
+    return true;
+  } catch (e) {
+    console.warn('Supabase indisponível:', e);
+    return false;
+  }
+}
+
+async function iniciar() {
+  const config = await fetch('/api/config').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (config?.escritorio) {
+    modo = 'local';
+    $('form').hidden = false;
+    $('abrirOffice').hidden = false;
+    $('verOffice').hidden = false;
+    $('abrirOffice').href = config.escritorio;
+    $('verOffice').onclick = () => { const cx = $('caixaOffice'); cx.hidden = !cx.hidden; if (!cx.hidden && !$('office').src) $('office').src = config.escritorio; };
+    conectarSupabase();
+    atualizar();
+    setInterval(atualizar, 2500);
+    return;
+  }
+
+  modo = 'nuvem';
+  fetch('../entregas/exemplo-ia-fundacao-de-dados/post-final.md').then((r) => r.text()).then((t) => { $('exemploPost').textContent = t; }).catch(() => {});
+  mostrarConta();
+  if (!(await conectarSupabase())) {
+    $('msgLogin').textContent = 'Não consegui conectar ao servidor. Recarregue a página.';
+    return;
+  }
+  const { data } = await sb.auth.getSession();
+  usuario = data.session?.user || null;
+  mostrarConta();
+  sb.auth.onAuthStateChange((_evento, sessao) => {
+    const antes = usuario?.id;
+    usuario = sessao?.user || null;
+    if (antes !== usuario?.id) { mostrarConta(); atualizar(); }
+  });
+  atualizar();
+  setInterval(() => { if (usuario) atualizar(); }, 8000);
+}
+
+iniciar();
+</script>
+</body>
+</html>
