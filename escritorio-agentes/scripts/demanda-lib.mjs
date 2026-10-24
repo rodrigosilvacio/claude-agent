@@ -1,6 +1,6 @@
-// Regras compartilhadas entre o painel local (painel/server.mjs) e o modo
-// GitHub (workflow + GitHub Pages): criação do briefing, status derivado dos
-// arquivos de cada demanda e a chamada do Claude Code que roda a esteira.
+// Regras do modo local (painel/server.mjs e scripts/rodar-esteira.mjs):
+// criação do briefing, status derivado dos arquivos de cada demanda e a
+// chamada do Claude Code que roda a esteira.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,7 +23,7 @@ function slug(t) {
 }
 
 // Cria entregas/<id>/briefing.json e briefing.md. `extra` guarda metadados de
-// origem (ex.: número da issue no modo GitHub). Devolve o id.
+// origem. Devolve o id.
 export function criarBriefing(entregas, dados, extra = {}) {
   const limpar = (v, max) => String(v || '').trim().slice(0, max);
   const d = {
@@ -67,8 +67,7 @@ function versoes(arquivos, prefixo) {
     .sort((a, b) => a - b);
 }
 
-// `rodando` e `naFila` vêm de quem executa (o painel local sabe; o índice
-// estático do GitHub Pages considera tudo parado).
+// `rodando` e `naFila` vêm de quem executa (o painel local sabe).
 export function statusDe(entregas, id, { rodando = false, naFila = false } = {}) {
   const pasta = join(entregas, id);
   const arquivos = readdirSync(pasta);
@@ -95,7 +94,7 @@ export function statusDe(entregas, id, { rodando = false, naFila = false } = {})
 
   const briefing = JSON.parse(readFileSync(join(pasta, 'briefing.json'), 'utf8'));
   return {
-    id, tema: briefing.tema, criadoEm: briefing.criadoEm, issue: briefing.issue || null,
+    id, tema: briefing.tema, criadoEm: briefing.criadoEm,
     etapa, agente, rodando, posts, revisoes, temArte: tem('arte.png'),
   };
 }

@@ -71,6 +71,13 @@
   .alerta.erro { border-color: var(--vermelho); color: var(--vermelho); }
   iframe { width: 100%; height: 520px; border: 4px solid #000; background: #000; display: block; }
   h3 { font-family: var(--pixel); font-size: 15px; margin: 18px 0 6px; color: var(--texto); }
+  .abas { display: flex; gap: 8px; margin-bottom: 4px; }
+  .aba { background: var(--painel2); color: var(--apoio); box-shadow: none; border: 3px solid var(--borda); }
+  .aba.sel { background: var(--terracota); color: #131311; border-color: var(--terracota); }
+  .moldura { position: relative; width: 100%; max-width: 420px; aspect-ratio: 1080 / 1350; overflow: hidden; border: 4px solid #000; margin-top: 8px; background: #131311; }
+  iframe.arteFrame { position: absolute; top: 0; left: 0; width: 1080px; height: 1350px; border: 0; transform-origin: 0 0; }
+  p { font-size: 19px; line-height: 1.3; }
+  b.tiago { color: var(--azul); } b.roberto { color: var(--verde); } b.eloah { color: var(--terracota2); }
 </style>
 </head>
 <body>
@@ -78,8 +85,10 @@
   <img src="../assets/logo-rodrigo-silva.png" alt="Rodrigo Silva · IA · Dados · Produtos">
   <h1>ESCRITÓRIO DE AGENTES</h1>
   <span class="esp"></span>
-  <a class="botao sec" id="abrirOffice" target="_blank" rel="noopener">ABRIR PIXEL-AGENTS ↗</a>
-  <button class="sec" id="verOffice">VER OFFICE AQUI</button>
+  <span class="msg" id="conta"></span>
+  <button class="sec" id="sair" hidden>SAIR</button>
+  <a class="botao sec" id="abrirOffice" target="_blank" rel="noopener" hidden>ABRIR PIXEL-AGENTS ↗</a>
+  <button class="sec" id="verOffice" hidden>VER OFFICE AQUI</button>
 </header>
 
 <main>
@@ -97,12 +106,29 @@
       <p class="msg">Se aparecer em branco, rode <code>npx pixel-agents --port 3100</code> nesta pasta.</p>
     </div>
 
-    <form class="caixa" id="form">
+    <form class="caixa" id="caixaLogin" hidden>
+      <h2>▶ ENTRE PARA PEDIR SEU POST</h2>
+      <div class="abas">
+        <button type="button" class="aba sel" data-aba="entrar">ENTRAR</button>
+        <button type="button" class="aba" data-aba="criar">CRIAR CONTA</button>
+      </div>
+      <label for="email">E-mail</label>
+      <input id="email" type="email" autocomplete="email" required>
+      <label for="senha">Senha</label>
+      <input id="senha" type="password" autocomplete="current-password" minlength="6" required>
+      <div class="acoes">
+        <button id="botaoLogin" type="submit">ENTRAR ▶</button>
+        <span class="msg" id="msgLogin"></span>
+      </div>
+      <p class="msg">Cada conta pode pedir até 3 posts por dia. O texto e a arte ficam visíveis só para você.</p>
+    </form>
+
+    <form class="caixa" id="form" hidden>
       <h2>▶ NOVA DEMANDA</h2>
       <label for="tema">Tema do post *</label>
-      <input id="tema" name="tema" maxlength="200" required placeholder="Ex.: Por que IA sem dados organizados é só demo bonita">
+      <input id="tema" name="tema" minlength="3" maxlength="200" required placeholder="Ex.: Por que IA sem dados organizados é só demo bonita">
       <label for="descricao">Descrição do post *</label>
-      <textarea id="descricao" name="descricao" maxlength="4000" required placeholder="Conte a história, a ideia central, fatos e números reais que devem entrar, e o ângulo que você quer."></textarea>
+      <textarea id="descricao" name="descricao" minlength="10" maxlength="4000" required placeholder="Conte a história, a ideia central, fatos e números reais que devem entrar, e o ângulo que você quer."></textarea>
       <div class="linha2">
         <div><label for="objetivo">Objetivo</label><input id="objetivo" name="objetivo" maxlength="300" placeholder="Gerar reflexão, divulgar evento..."></div>
         <div><label for="publico">Público</label><input id="publico" name="publico" maxlength="300" placeholder="CIOs, CTOs, conselheiros..."></div>
@@ -119,15 +145,22 @@
   </section>
 
   <section>
-    <div class="caixa">
-      <h2>▶ DEMANDAS</h2>
+    <div class="caixa" id="caixaComo" hidden>
+      <h2>▶ COMO FUNCIONA</h2>
+      <p><b class="tiago">Tiago</b> escreve o post, <b class="roberto">Roberto</b> revisa com critério de CIO (até 3 rodadas) e <b class="eloah">Eloah</b> cria a arte com o logotipo. Você acompanha tudo ao vivo no escritório ao lado e recebe o post pronto para copiar e a arte em PNG.</p>
+      <h3>EXEMPLO DE ENTREGA</h3>
+      <pre id="exemploPost">carregando...</pre>
+      <img class="arte" src="../entregas/exemplo-ia-fundacao-de-dados/arte.png" alt="Arte de exemplo criada pela Eloah">
+    </div>
+    <div class="caixa" id="caixaLista">
+      <h2 id="tituloLista">▶ DEMANDAS</h2>
       <div class="lista" id="lista"><span class="vazio">Nenhuma demanda ainda. Faça o primeiro pedido ao lado.</span></div>
     </div>
     <div class="caixa" id="detalhe" hidden></div>
   </section>
 </main>
 
-<script>
+<script type="module">
 // ---------------- sprites em pixel art ----------------
 // Cada personagem é um mapa 12x16. Letras = cores da paleta do personagem.
 const BASE = [
@@ -216,7 +249,6 @@ function desenhar() {
     }
   }
   if (estado.etapa === 'concluido') { px(110, 40, 100, 14, '#7fbf6a'); texto('ENTREGUE! ✓', 160, 50, '#131311', 6); }
-  if (estado.etapa === 'github') { px(80, 40, 160, 14, '#cc7c5e'); texto('EQUIPE TRABALHANDO NO GITHUB' + '.'.repeat((quadro >> 4) % 4), 160, 50, '#131311', 6); }
   if (estado.etapa === 'escalado') { px(100, 40, 120, 14, '#e8c15a'); texto('PRECISA DE VOCÊ', 160, 50, '#131311', 6); }
   // folha de papel em trânsito
   if (voo) {
@@ -235,7 +267,7 @@ const ETAPAS = [
   ['arte', 'ELOAH', 'cria a arte'], ['concluido', 'ENTREGA', 'post + arte'],
 ];
 const ORDEM = { fila: 0, parado: 0, escrita: 1, ajuste: 1, revisao: 2, finalizando: 3, arte: 3, concluido: 4 };
-const NOMES = { fila: 'NA FILA', parado: 'PARADO', escrita: 'TIAGO ESCREVE', ajuste: 'TIAGO AJUSTA', revisao: 'ROBERTO REVISA', finalizando: 'APROVADO', arte: 'ELOAH DESENHA', concluido: 'CONCLUÍDO', escalado: 'PRECISA DE VOCÊ', interrompido: 'INTERROMPIDO', erro: 'ERRO', github: 'EM PRODUÇÃO' };
+const NOMES = { fila: 'NA FILA', parado: 'PARADO', escrita: 'TIAGO ESCREVE', ajuste: 'TIAGO AJUSTA', revisao: 'ROBERTO REVISA', finalizando: 'APROVADO', arte: 'ELOAH DESENHA', concluido: 'CONCLUÍDO', escalado: 'PRECISA DE VOCÊ', interrompido: 'INTERROMPIDO', erro: 'ERRO' };
 
 function desenharEsteira(d) {
   const atual = d ? ORDEM[d.etapa] ?? -1 : -1;
@@ -247,25 +279,87 @@ function desenharEsteira(d) {
 
 // ---------------- dados ----------------
 // Dois modos com a mesma tela:
-//  - local: painel/server.mjs responde /api/* e dispara o Claude Code na sua máquina;
-//  - GitHub Pages: sem servidor. O pedido vira uma issue (o workflow roda a esteira)
-//    e as entregas vêm de entregas/index.json, publicado pelo próprio workflow.
-// Os caminhos são relativos (../entregas, ../assets) e funcionam nos dois modos.
+//  - nuvem (GitHub Pages ou qualquer hospedagem estática): login no Supabase
+//    Auth, pedido pela edge function escritorio-pedir e esteira rodando no
+//    Supabase (escritorio-esteira). Cada pessoa vê só as próprias demandas.
+//  - local: painel/server.mjs responde /api/* e roda o Claude Code na máquina.
+// Os dois recebem os eventos ao vivo de escritorio_eventos (Supabase Realtime).
+const SUPABASE_URL = 'https://xtrvojnauvkkterogrst.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT';
+const LOGO_URL = new URL('../assets/logo-rodrigo-silva.png', location.href).href;
+const AGENTE_DA_ETAPA = { escrita: 'tiago', ajuste: 'tiago', revisao: 'roberto', arte: 'eloah' };
+const CRITERIOS = { ortografia: 'Ortografia', gramatica: 'Gramática', coerencia: 'Coerência', titulo: 'Título', postura: 'Postura CIO/CTO', tom: 'Tom', estrutura: 'Estrutura', aderencia: 'Aderência' };
+
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let modo = 'nuvem';
+let sb = null;
+let usuario = null;
 let selecionada = null;
 let ultimoAgente = null;
-let modoGitHub = false;
-const [dono, repo] = location.hostname.endsWith('.github.io')
-  ? [location.hostname.split('.')[0], location.pathname.split('/')[1]]
-  : ['rodrigosilvacio', 'claude-agent'];
-const GH = `https://github.com/${dono}/${repo}`;
-let cacheGitHub = { demandas: [], producao: [], issuesEm: 0 };
+let minhas = []; // demandas já no formato do painel (nuvem)
+
+// ---------- nuvem: converte linhas do Supabase para o formato do painel ----------
+
+function etapaPainel(d) {
+  if (d.erro) return 'erro';
+  if (d.etapa === 'escrita' && d.rodada > 1) return 'ajuste';
+  return d.etapa;
+}
+
+function revisaoEmTexto(v) {
+  if (!v.revisao) return null;
+  const r = v.revisao;
+  const media = v.media != null ? String(Number(v.media).toFixed(2)).replace(/0$/, '').replace('.', ',') : '?';
+  const notas = Object.entries(CRITERIOS).map(([k, nome]) => `${nome}: ${r.notas?.[k] ?? '?'}`).join(' · ');
+  const bloq = (r.bloqueantes || []).map((b, i) => `${i + 1}. "${b.trecho}"\n   Problema: ${b.problema}\n   Correção: ${b.correcao}`).join('\n') || 'Nenhum.';
+  const sug = (r.sugestoes || []).map((s, i) => `${i + 1}. "${s.trecho}"\n   ${s.sugestao}`).join('\n') || 'Nenhuma.';
+  return `VEREDITO: ${v.aprovado ? 'APROVADO' : 'REPROVADO'} (média ${media})\n\nNotas: ${notas}\n\nBloqueantes:\n${bloq}\n\nSugestões:\n${sug}\n\nParecer do Roberto: ${r.parecer}`;
+}
+
+function demandaDaNuvem(d, versoes) {
+  const etapa = etapaPainel(d);
+  const doDemanda = versoes.filter((v) => v.demanda_id === d.id).sort((a, b) => a.n - b.n);
+  const rodando = ['escrita', 'ajuste', 'revisao', 'arte'].includes(etapa);
+  return {
+    id: d.id,
+    tema: d.tema,
+    etapa,
+    rodando,
+    agente: rodando ? AGENTE_DA_ETAPA[etapa] : null,
+    posts: doDemanda.map((v) => v.n),
+    revisoes: doDemanda.filter((v) => v.aprovado != null).map((v) => ({ n: v.n, aprovado: v.aprovado })),
+    temArte: Boolean(d.arte_html),
+    arteHtml: d.arte_html,
+    briefing: [`Tema: ${d.tema}`, `Descrição: ${d.descricao}`, `Objetivo: ${d.objetivo || '(não informado)'}`, `Público: ${d.publico || '(não informado)'}`, `Chamada para ação: ${d.cta || '(não informada)'}`, `Observações: ${d.observacoes || 'nenhuma'}`].join('\n\n'),
+    historico: doDemanda.map((v) => ({
+      n: v.n,
+      post: `${v.titulo}\n\n${v.texto}\n\n${v.hashtags}\n\nFrase para a arte: ${v.frase_arte}\n\nNotas do Tiago: ${v.notas_autor || ''}`,
+      revisao: revisaoEmTexto(v),
+    })),
+    postFinal: d.post_final,
+    pendencias: d.pendencias,
+    erro: d.erro,
+  };
+}
+
+async function listarNuvem() {
+  if (!usuario) return { emExecucao: null, demandas: [] };
+  const { data: ds, error } = await sb.from('escritorio_demandas')
+    .select('id, tema, descricao, objetivo, publico, cta, observacoes, etapa, rodada, post_final, arte_html, pendencias, erro, criado_em')
+    .order('criado_em', { ascending: false }).limit(30);
+  if (error) throw error;
+  const ids = ds.map((d) => d.id);
+  const { data: vs } = ids.length ? await sb.from('escritorio_versoes').select('*').in('demanda_id', ids) : { data: [] };
+  minhas = ds.map((d) => demandaDaNuvem(d, vs || []));
+  return { emExecucao: minhas.find((d) => d.rodando)?.id || null, demandas: minhas };
+}
 
 // ---------------- ao vivo (Supabase Realtime) ----------------
-// scripts/rodar-esteira.mjs publica cada passo dos agentes na tabela
-// escritorio_eventos; o módulo no fim da página assina os INSERTs e chama
-// receberEvento(). O escritório anima com o agente e a ação reais.
+// A esteira (nuvem ou local) publica cada passo dos agentes em
+// escritorio_eventos; o escritório anima com o agente e a ação reais. Os
+// eventos são públicos e só dizem quem está fazendo o quê ("Roberto revisa a
+// v1"), nunca o conteúdo do post.
 const eventos = new Map(); // demanda -> eventos em ordem de id
 const ETAPA_DO_AGENTE = { tiago: 'escrita', roberto: 'revisao', eloah: 'arte' };
 const AO_VIVO_MS = 20 * 60 * 1000;   // sem evento há 20 min = execução abandonada
@@ -279,6 +373,8 @@ function receberEvento(ev, inicial = false) {
   eventos.set(ev.demanda, lista.slice(-80));
   if (inicial) return;
   aplicarAoVivo();
+  // Mudança numa demanda minha: recarrega a lista e o detalhe na hora.
+  if (modo === 'local' || minhas.some((d) => d.id === ev.demanda)) atualizar();
   if (ev.tipo === 'fim') setTimeout(atualizar, 1500);
 }
 
@@ -293,13 +389,18 @@ function execucaoMaisRecente() {
   return { ...melhor, aoVivo: melhor.ult.tipo !== 'fim' && idade < AO_VIVO_MS, recente: idade < RECENTE_MS };
 }
 
-// Etapa ao vivo de um item da lista (por id da demanda ou número da issue).
 function etapaAoVivo(d) {
   const ex = execucaoMaisRecente();
-  if (!ex || !ex.aoVivo) return null;
-  if (ex.demanda !== d.id && !(d.issue && ex.lista.some((x) => x.issue === d.issue))) return null;
+  if (!ex || !ex.aoVivo || ex.demanda !== d.id) return null;
   const comAgente = [...ex.lista].reverse().find((x) => x.agente);
   return comAgente ? ETAPA_DO_AGENTE[comAgente.agente] : 'fila';
+}
+
+function tituloExecucao(demanda) {
+  const minha = minhas.find((d) => d.id === demanda);
+  if (minha) return minha.tema;
+  if (modo === 'local') return demanda.replace(/^\d{8}-\d{6}-/, '').replace(/-/g, ' ');
+  return 'pedido de outra pessoa';
 }
 
 const hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -307,8 +408,7 @@ function desenharFeed(ex) {
   const feed = $('feed');
   if (!ex || !ex.recente) { feed.hidden = true; return; }
   feed.hidden = false;
-  const titulo = ex.demanda.replace(/^\d{8}-\d{6}-/, '').replace(/-/g, ' ');
-  feed.innerHTML = `<h4>${ex.aoVivo ? 'AO VIVO' : 'ÚLTIMA EXECUÇÃO'} · ${esc(titulo).toUpperCase()}</h4>` +
+  feed.innerHTML = `<h4>${ex.aoVivo ? 'AO VIVO' : 'ÚLTIMA EXECUÇÃO'} · ${esc(tituloExecucao(ex.demanda)).toUpperCase()}</h4>` +
     ex.lista.slice(-14).reverse().map((x) => {
       const cls = x.tipo === 'veredito' ? (x.texto.includes('APROVOU') ? 'ok' : 'nok') : x.agente || '';
       return `<div><time>${hora(x.criado_em)}</time><span class="${cls}">${esc(x.texto)}</span></div>`;
@@ -328,25 +428,11 @@ function aplicarAoVivo() {
   desenharEsteira({ etapa: ETAPA_DO_AGENTE[agente], rodando: true });
 }
 
-async function listarGitHub() {
-  const indice = await fetch(`../entregas/index.json?t=${Date.now()}`).then((x) => x.json()).catch(() => ({ demandas: [] }));
-  // A API pública do GitHub tem limite de 60 chamadas/hora sem login: consulta as issues a cada 60s.
-  if (Date.now() - cacheGitHub.issuesEm > 60000) {
-    cacheGitHub.issuesEm = Date.now();
-    const issues = await fetch(`https://api.github.com/repos/${dono}/${repo}/issues?state=open&creator=${dono}&per_page=30`).then((x) => (x.ok ? x.json() : [])).catch(() => []);
-    cacheGitHub.issues = issues.filter((i) => !i.pull_request && /^\[Post\]/i.test(i.title));
-  }
-  const comEntrega = new Set(indice.demandas.map((d) => d.issue).filter(Boolean));
-  cacheGitHub.producao = (cacheGitHub.issues || []).filter((i) => !comEntrega.has(i.number)).map((i) => ({
-    id: `issue-${i.number}`, issue: i.number, tema: i.title.replace(/^\[Post\]\s*/i, ''), etapa: 'github', rodando: true, posts: [], agente: null, url: i.html_url,
-  }));
-  cacheGitHub.demandas = indice.demandas;
-  return { emExecucao: cacheGitHub.producao[0]?.id || null, demandas: [...cacheGitHub.producao, ...indice.demandas] };
-}
+// ---------------- lista e detalhe ----------------
 
 async function atualizar() {
   try {
-    const r = modoGitHub ? await listarGitHub() : await fetch('/api/demandas').then((x) => x.json());
+    const r = modo === 'local' ? await fetch('/api/demandas').then((x) => x.json()) : await listarNuvem();
     const lista = r.demandas;
     $('lista').innerHTML = lista.length ? lista.map((d) => {
       const vivo = etapaAoVivo(d);
@@ -359,115 +445,259 @@ async function atualizar() {
       ultimoAgente = foco.agente || ultimoAgente;
       estado = { agente: foco.rodando ? foco.agente : null, etapa: foco.etapa, versao: foco.posts.at(-1) || 0 };
       if (!selecionada) selecionar(foco.id);
+    } else {
+      estado = { agente: null, etapa: null, versao: 0 };
+      $('detalhe').hidden = true;
     }
     desenharEsteira(foco);
     aplicarAoVivo();
     if (selecionada) carregarDetalhe();
-  } catch { /* painel offline: tenta de novo no próximo ciclo */ }
+  } catch (e) {
+    console.warn('Falha ao atualizar:', e);
+  }
 }
 
 $('lista').addEventListener('click', (e) => { const it = e.target.closest('.item'); if (it) selecionar(it.dataset.id); });
-function selecionar(id) { selecionada = id; carregarDetalhe(); document.querySelectorAll('.item').forEach((i) => i.classList.toggle('sel', i.dataset.id === id)); }
+function selecionar(id) { selecionada = id; assinaturaDetalhe = ''; carregarDetalhe(); document.querySelectorAll('.item').forEach((i) => i.classList.toggle('sel', i.dataset.id === id)); }
 
 let assinaturaDetalhe = '';
 async function carregarDetalhe() {
-  const d = modoGitHub
-    ? [...cacheGitHub.producao, ...cacheGitHub.demandas].find((x) => x.id === selecionada)
-    : await fetch(`/api/demandas/${encodeURIComponent(selecionada)}`).then((x) => x.json());
+  const d = modo === 'local'
+    ? await fetch(`/api/demandas/${encodeURIComponent(selecionada)}`).then((x) => x.json())
+    : minhas.find((x) => x.id === selecionada);
   if (!d || (d.erro && !d.id)) return;
-  const assinatura = JSON.stringify([d.id, d.etapa, d.rodando, d.posts, d.revisoes, d.temArte, (d.log || '').length]);
+  const assinatura = JSON.stringify([d.id, d.etapa, d.rodando, d.posts, d.revisoes, d.temArte, d.erro, (d.log || '').length]);
   if (assinatura === assinaturaDetalhe) return;
   assinaturaDetalhe = assinatura;
-  $('detalhe').hidden = false;
-  if (d.etapa === 'github') {
-    $('detalhe').innerHTML = `
-      <h2>▶ ${esc(d.tema).toUpperCase()}</h2>
-      <span class="tag ativo">EM PRODUÇÃO</span>
-      <p>Tiago, Roberto e Eloah estão trabalhando nesta demanda no GitHub Actions. Quando terminarem, o post e a arte aparecem aqui e como comentário na issue.</p>
-      <div class="acoes"><a class="botao" target="_blank" rel="noopener" href="${esc(d.url)}">VER ISSUE #${d.issue}</a><a class="botao sec" target="_blank" rel="noopener" href="${GH}/actions/workflows/escritorio-agentes.yml">VER ESTEIRA</a></div>`;
-    return;
-  }
   const abertos = new Set([...document.querySelectorAll('#detalhe details[open]')].map((x) => x.dataset.k));
   const hist = d.historico.map((h) => {
     const rev = h.revisao ? (h.revisao.startsWith('VEREDITO: APROVADO') ? '<span class="tag concluido">APROVADO</span>' : '<span class="tag erro">REPROVADO</span>') : '<span class="tag ativo">EM REVISÃO</span>';
     return `<details data-k="v${h.n}" ${abertos.has('v' + h.n) ? 'open' : ''}><summary>Versão ${h.n} do Tiago ${rev}</summary><pre>${esc(h.post)}</pre>${h.revisao ? `<h3>PARECER DO ROBERTO</h3><pre>${esc(h.revisao)}</pre>` : ''}</details>`;
   }).join('');
-  const arte = `../entregas/${encodeURIComponent(d.id)}/arte.png`;
-  const retomar = modoGitHub
-    ? (d.issue ? `<div class="acoes"><a class="botao sec" target="_blank" rel="noopener" href="${GH}/issues/${d.issue}">REFAZER: ADICIONE O LABEL "refazer" NA ISSUE #${d.issue}</a></div>` : '')
-    : '<div class="acoes"><button id="reprocessar" class="sec">RETOMAR ESTEIRA</button></div>';
+  const podeRetomar = modo === 'local'
+    ? !d.rodando && ['erro', 'interrompido', 'parado'].includes(d.etapa)
+    : d.etapa === 'erro';
+  let arte = '';
+  if (d.temArte && modo === 'local') {
+    const png = `/entregas/${encodeURIComponent(d.id)}/arte.png`;
+    arte = `<h3>ARTE</h3><img class="arte" src="${png}?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="${png}">BAIXAR ARTE</a></div>`;
+  } else if (d.temArte) {
+    arte = `<h3>ARTE</h3><div class="moldura" id="moldura"></div><div class="acoes"><button id="baixarArte">BAIXAR PNG</button><span class="msg" id="msgArte"></span></div>`;
+  }
+  $('detalhe').hidden = false;
   $('detalhe').innerHTML = `
     <h2>▶ ${esc(d.tema).toUpperCase()}</h2>
     <span class="tag ${d.rodando ? 'ativo' : d.etapa}">${NOMES[d.etapa] || d.etapa}</span>
-    ${d.issue ? `<a class="msg" target="_blank" rel="noopener" href="${GH}/issues/${d.issue}">issue #${d.issue}</a>` : ''}
     ${d.erro ? `<div class="alerta erro">${esc(d.erro)}</div>` : ''}
     ${d.pendencias ? `<div class="alerta">O Roberto não aprovou em 3 rodadas. Decisão sua:<pre>${esc(d.pendencias)}</pre></div>` : ''}
     ${d.postFinal ? `<h3>POST REVISADO</h3><pre id="final">${esc(d.postFinal)}</pre><div class="acoes"><button id="copiar">COPIAR POST</button><span class="msg" id="msgCopia"></span></div>` : ''}
-    ${d.temArte ? `<h3>ARTE</h3><img class="arte" src="${arte}?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="${arte}">BAIXAR ARTE</a></div>` : ''}
+    ${arte}
     <h3>HISTÓRICO</h3>
     <details data-k="briefing" ${abertos.has('briefing') ? 'open' : ''}><summary>Briefing</summary><pre>${esc(d.briefing)}</pre></details>
     ${hist || '<p class="vazio">O Tiago ainda não entregou a primeira versão.</p>'}
-    ${modoGitHub ? '' : `<details data-k="log" ${abertos.has('log') ? 'open' : ''}><summary>Log da execução</summary><pre>${esc(d.log || 'sem log')}</pre></details>`}
-    ${!d.rodando && ['erro', 'interrompido', 'parado', 'escalado'].includes(d.etapa) ? retomar : ''}`;
+    ${modo === 'local' ? `<details data-k="log" ${abertos.has('log') ? 'open' : ''}><summary>Log da execução</summary><pre>${esc(d.log || 'sem log')}</pre></details>` : ''}
+    ${podeRetomar ? '<div class="acoes"><button id="reprocessar" class="sec">RETOMAR ESTEIRA</button><span class="msg" id="msgRetomar"></span></div>' : ''}`;
   $('copiar')?.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(d.postFinal); $('msgCopia').textContent = 'Copiado!'; }
     catch { getSelection().selectAllChildren($('final')); $('msgCopia').textContent = 'Selecionado, use Ctrl+C.'; }
   });
-  $('reprocessar')?.addEventListener('click', async () => { await fetch(`/api/demandas/${encodeURIComponent(d.id)}/reprocessar`, { method: 'POST' }); atualizar(); });
+  $('reprocessar')?.addEventListener('click', () => retomar(d.id));
+  if (d.temArte && modo === 'nuvem') mostrarArte(d);
+}
+
+async function retomar(id) {
+  if (modo === 'local') {
+    await fetch(`/api/demandas/${encodeURIComponent(id)}/reprocessar`, { method: 'POST' });
+  } else {
+    const { error } = await sb.functions.invoke('escritorio-pedir', { body: { acao: 'retomar', id } });
+    if (error) { $('msgRetomar').textContent = await mensagemDeErro(error); return; }
+  }
+  atualizar();
+}
+
+// ---------------- arte (nuvem) ----------------
+// O HTML da Eloah roda num iframe sandbox sem scripts e com CSP (só estilos,
+// fontes do Google e imagens do próprio site). O PNG é gerado no navegador.
+
+const CSP_ARTE = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+
+function documentoDaArte(html) {
+  const comLogo = html.replaceAll('{{LOGO}}', LOGO_URL);
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${CSP_ARTE}">`;
+  return /<head[^>]*>/i.test(comLogo) ? comLogo.replace(/<head[^>]*>/i, (m) => `${m}${meta}`) : `${meta}${comLogo}`;
+}
+
+function mostrarArte(d) {
+  const moldura = $('moldura');
+  const quadroArte = document.createElement('iframe');
+  quadroArte.className = 'arteFrame';
+  quadroArte.title = 'Arte do post';
+  quadroArte.setAttribute('sandbox', 'allow-same-origin');
+  quadroArte.srcdoc = documentoDaArte(d.arteHtml);
+  moldura.replaceChildren(quadroArte);
+  const ajustar = () => { quadroArte.style.transform = `scale(${moldura.clientWidth / 1080})`; };
+  ajustar();
+  new ResizeObserver(ajustar).observe(moldura);
+  quadroArte.addEventListener('load', () => conferirArte(quadroArte));
+  $('baixarArte').addEventListener('click', () => baixarArte(quadroArte, d));
+}
+
+// Conferência visual no navegador: logo carregado e nada além de 1080x1350.
+function conferirArte(quadroArte) {
+  const doc = quadroArte.contentDocument;
+  const logo = doc?.querySelector('img[data-logo]');
+  const avisos = [];
+  if (!logo || !logo.complete || !logo.naturalWidth) avisos.push('o logo não carregou');
+  if (doc && (doc.documentElement.scrollHeight > 1352 || doc.documentElement.scrollWidth > 1082)) avisos.push('algum elemento passou do tamanho da arte');
+  $('msgArte').textContent = avisos.length ? `Atenção: ${avisos.join(' e ')}.` : '';
+}
+
+async function baixarArte(quadroArte, d) {
+  $('msgArte').textContent = 'Gerando PNG...';
+  try {
+    const { toPng } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
+    const doc = quadroArte.contentDocument;
+    await doc.fonts.ready;
+    const png = await toPng(doc.body, { width: 1080, height: 1350, pixelRatio: 1, cacheBust: true });
+    const a = document.createElement('a');
+    a.href = png;
+    a.download = `post-${d.tema.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.png`;
+    a.click();
+    $('msgArte').textContent = 'PNG baixado.';
+  } catch (e) {
+    console.error(e);
+    $('msgArte').textContent = 'Não consegui gerar o PNG. Tente de novo ou use o Chrome.';
+  }
+}
+
+// ---------------- pedidos ----------------
+
+async function mensagemDeErro(error) {
+  try { return (await error.context.json()).erro || error.message; } catch { return error.message; }
 }
 
 $('form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const dados = Object.fromEntries(new FormData(e.target));
-  if (modoGitHub) {
-    // O pedido vira uma issue pelo formulário do repositório, já preenchido.
-    const q = new URLSearchParams({ template: 'demanda-post.yml', title: `[Post] ${dados.tema}`, ...dados });
-    window.open(`${GH}/issues/new?${q}`, '_blank', 'noopener');
-    $('msgForm').textContent = 'Confirme em "Create" na aba do GitHub. A esteira começa sozinha.';
-    cacheGitHub.issuesEm = 0;
-    return;
-  }
   $('enviar').disabled = true; $('msgForm').textContent = 'Entregando ao Tiago...';
   try {
-    const r = await fetch('/api/demandas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.erro);
+    let id;
+    if (modo === 'local') {
+      const r = await fetch('/api/demandas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.erro);
+      id = j.id;
+    } else {
+      const { data, error } = await sb.functions.invoke('escritorio-pedir', { body: { acao: 'criar', ...dados } });
+      if (error) throw new Error(await mensagemDeErro(error));
+      id = data.id;
+    }
     e.target.reset(); $('msgForm').textContent = 'Demanda na mesa do Tiago!';
-    assinaturaDetalhe = ''; selecionar(j.id); atualizar();
+    selecionada = id; assinaturaDetalhe = ''; atualizar();
   } catch (err) { $('msgForm').textContent = 'Erro: ' + err.message; }
   finally { $('enviar').disabled = false; }
 });
 
-fetch('/api/config').then((r) => r.json()).then((c) => {
-  $('abrirOffice').href = c.escritorio;
-  $('verOffice').onclick = () => { const cx = $('caixaOffice'); cx.hidden = !cx.hidden; if (!cx.hidden && !$('office').src) $('office').src = c.escritorio; };
-}).catch(() => {
-  modoGitHub = true;
-  $('abrirOffice').href = `${GH}/issues?q=is%3Aissue+%22%5BPost%5D%22+in%3Atitle`;
-  $('abrirOffice').textContent = 'DEMANDAS NO GITHUB ↗';
-  $('verOffice').hidden = true;
-  $('enviar').textContent = 'ABRIR PEDIDO NO GITHUB ▶';
-}).finally(() => {
-  atualizar();
-  setInterval(atualizar, modoGitHub ? 20000 : 2500);
+// ---------------- login (nuvem) ----------------
+
+let abaLogin = 'entrar';
+document.querySelectorAll('.aba').forEach((b) => b.addEventListener('click', () => {
+  abaLogin = b.dataset.aba;
+  document.querySelectorAll('.aba').forEach((x) => x.classList.toggle('sel', x === b));
+  $('botaoLogin').textContent = abaLogin === 'entrar' ? 'ENTRAR ▶' : 'CRIAR CONTA ▶';
+  $('senha').autocomplete = abaLogin === 'entrar' ? 'current-password' : 'new-password';
+  $('msgLogin').textContent = '';
+}));
+
+$('caixaLogin').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('email').value.trim();
+  const password = $('senha').value;
+  $('botaoLogin').disabled = true; $('msgLogin').textContent = abaLogin === 'entrar' ? 'Entrando...' : 'Criando conta...';
+  try {
+    if (abaLogin === 'entrar') {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      $('msgLogin').textContent = '';
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split('#')[0] } });
+      if (error) throw error;
+      $('msgLogin').textContent = data.session ? '' : 'Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.';
+    }
+  } catch (err) {
+    $('msgLogin').textContent = /invalid login/i.test(err.message) ? 'E-mail ou senha incorretos.' : `Erro: ${err.message}`;
+  } finally { $('botaoLogin').disabled = false; }
 });
-</script>
-<script type="module">
-// Mesmo projeto Supabase (ClaudeProjects) e mesma versão pinada do resto do repo.
-// A chave publicável só lê escritorio_eventos (RLS); escrever exige o token do runner.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.5';
-try {
-  const sb = createClient('https://xtrvojnauvkkterogrst.supabase.co', 'sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT');
-  const desde = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
-  const { data } = await sb.from('escritorio_eventos').select('*').gte('criado_em', desde).order('id', { ascending: false }).limit(200);
-  (data || []).reverse().forEach((ev) => receberEvento(ev, true));
-  aplicarAoVivo();
-  sb.channel('escritorio-eventos')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'escritorio_eventos' }, (p) => receberEvento(p.new))
-    .subscribe();
-} catch (e) {
-  console.warn('Ao vivo indisponível:', e);
+
+$('sair').addEventListener('click', () => sb.auth.signOut());
+
+function mostrarConta() {
+  const logado = Boolean(usuario);
+  $('caixaLogin').hidden = logado;
+  $('form').hidden = !logado;
+  $('caixaComo').hidden = logado;
+  $('caixaLista').hidden = !logado;
+  $('sair').hidden = !logado;
+  $('conta').textContent = logado ? usuario.email : '';
+  $('tituloLista').textContent = '▶ MINHAS DEMANDAS';
+  if (!logado) { minhas = []; selecionada = null; $('detalhe').hidden = true; }
 }
+
+// ---------------- início ----------------
+
+async function conectarSupabase() {
+  try {
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.110.5');
+    sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+    const desde = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+    const { data } = await sb.from('escritorio_eventos').select('*').gte('criado_em', desde).order('id', { ascending: false }).limit(200);
+    (data || []).reverse().forEach((ev) => receberEvento(ev, true));
+    aplicarAoVivo();
+    sb.channel('escritorio-eventos')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'escritorio_eventos' }, (p) => receberEvento(p.new))
+      .subscribe();
+    return true;
+  } catch (e) {
+    console.warn('Supabase indisponível:', e);
+    return false;
+  }
+}
+
+async function iniciar() {
+  const config = await fetch('/api/config').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (config?.escritorio) {
+    modo = 'local';
+    $('form').hidden = false;
+    $('abrirOffice').hidden = false;
+    $('verOffice').hidden = false;
+    $('abrirOffice').href = config.escritorio;
+    $('verOffice').onclick = () => { const cx = $('caixaOffice'); cx.hidden = !cx.hidden; if (!cx.hidden && !$('office').src) $('office').src = config.escritorio; };
+    conectarSupabase();
+    atualizar();
+    setInterval(atualizar, 2500);
+    return;
+  }
+
+  modo = 'nuvem';
+  fetch('../entregas/exemplo-ia-fundacao-de-dados/post-final.md').then((r) => r.text()).then((t) => { $('exemploPost').textContent = t; }).catch(() => {});
+  mostrarConta();
+  if (!(await conectarSupabase())) {
+    $('msgLogin').textContent = 'Não consegui conectar ao servidor. Recarregue a página.';
+    return;
+  }
+  const { data } = await sb.auth.getSession();
+  usuario = data.session?.user || null;
+  mostrarConta();
+  sb.auth.onAuthStateChange((_evento, sessao) => {
+    const antes = usuario?.id;
+    usuario = sessao?.user || null;
+    if (antes !== usuario?.id) { mostrarConta(); atualizar(); }
+  });
+  atualizar();
+  setInterval(() => { if (usuario) atualizar(); }, 8000);
+}
+
+iniciar();
 </script>
 </body>
 </html>

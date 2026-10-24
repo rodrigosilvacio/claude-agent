@@ -5,7 +5,7 @@
 // dentro dela (parent_tool_use_id) viram ações ("Roberto roda a checagem").
 // Os eventos vão para a edge function `escritorio-evento` (Supabase), que o
 // painel assina via Realtime. Sem ESCRITORIO_TOKEN, só imprime no terminal.
-// Usado pelo workflow do GitHub e pelo painel local.
+// Usado pelo painel local (painel/server.mjs).
 // Uso: node scripts/rodar-esteira.mjs <id>
 
 import { spawn } from 'node:child_process';
@@ -26,17 +26,9 @@ if (!id || !existsSync(join(pasta, 'briefing.md'))) {
   console.error(`Demanda não encontrada: ${pasta}`);
   process.exit(2);
 }
-const issue = JSON.parse(readFileSync(join(pasta, 'briefing.json'), 'utf8')).issue ?? null;
 
 // Numa reexecução, o erro anterior sai do caminho (fica guardado com data).
 if (existsSync(join(pasta, 'erro.txt'))) renameSync(join(pasta, 'erro.txt'), join(pasta, `erro-${Date.now()}.txt`));
-
-// No GitHub Actions não existe login interativo: a credencial vem das secrets.
-if (process.env.GITHUB_ACTIONS && !process.env.ANTHROPIC_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-  writeFileSync(join(pasta, 'erro.txt'), 'Faltou configurar a secret ANTHROPIC_API_KEY (ou CLAUDE_CODE_OAUTH_TOKEN) no repositório.\n');
-  console.error('Sem credencial do Claude: configure ANTHROPIC_API_KEY ou CLAUDE_CODE_OAUTH_TOKEN.');
-  process.exit(1);
-}
 
 // ---------- envio dos eventos (em ordem, sem nunca derrubar a esteira) ----------
 
@@ -45,7 +37,7 @@ let avisouFalha = false;
 function emitir(tipo, agente, texto) {
   console.log(`[${agente ? NOME[agente] : 'Escritório'}] ${texto}`);
   if (!TOKEN) return;
-  const corpo = JSON.stringify({ demanda: id, issue, tipo, agente, texto });
+  const corpo = JSON.stringify({ demanda: id, tipo, agente, texto });
   fila = fila.then(() =>
     fetch(URL_EVENTOS, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-escritorio-token': TOKEN }, body: corpo, signal: AbortSignal.timeout(8000) })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); })

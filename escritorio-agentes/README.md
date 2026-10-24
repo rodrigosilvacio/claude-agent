@@ -1,72 +1,64 @@
 # Escritório de Agentes (pixel art)
 
-Três agentes de Claude Code produzem posts de LinkedIn para o Rodrigo Silva, trabalhando "em tela" num escritório pixel art ([pixel-agents](https://www.npmjs.com/package/pixel-agents)). Você faz o pedido num painel também em pixel art e recebe **o post revisado** e **a arte gráfica com o logotipo**.
+Três agentes de IA produzem posts de LinkedIn no estilo do Rodrigo Silva e trabalham "em tela" num escritório pixel art. Qualquer pessoa cria uma conta no painel, faz o pedido e acompanha ao vivo. No fim, recebe **o post revisado** e **a arte com o logotipo**.
+
+**Painel:** https://rodrigosilvacio.github.io/claude-agent/escritorio-agentes/painel/
 
 ## A equipe
 
-| Agente | Papel | Entrega |
-|---|---|---|
-| **Tiago** (o escritor) | escreve a copy com título chamativo e zero travessões; reescreve quando o Roberto reprova | `post-vN.md` |
-| **Roberto** (o revisor) | roda a checagem automática e faz leitura crítica (português, concordância, coerência, título, postura de CIO/CTO); emite veredito | `revisao-vN.md` |
-| **Eloah** (artista) | cria o criativo 1080x1350 com o logotipo e renderiza o PNG | `arte.html` + `arte.png` |
+| Agente | Papel |
+|---|---|
+| **Tiago** (escritor) | escreve a copy com título chamativo e zero travessões; reescreve quando o Roberto reprova |
+| **Roberto** (revisor) | checagem automática + leitura crítica (português, concordância, coerência, título, postura de CIO/CTO); aprova ou reprova |
+| **Eloah** (artista) | cria o criativo 1080x1350 com o logotipo |
 
 ## Fluxo
 
 ```
-Painel (pedido) ─▶ Tiago escreve v1 ─▶ Roberto revisa
-                        ▲                   │
-                        └── REPROVADO ◀─────┤  (máx. 3 rodadas)
-                                            │
-                        APROVADO ───────────┴─▶ post-final.md ─▶ Eloah cria a arte ─▶ arte.png
-                        3 reprovações ─▶ pendencias.md (decisão humana, sem arte)
+Pedido ─▶ Tiago escreve v1 ─▶ Roberto revisa
+               ▲                   │
+               └── REPROVADO ◀─────┤  (máx. 3 rodadas)
+                                   │
+               APROVADO ───────────┴─▶ post final ─▶ Eloah cria a arte ─▶ entrega
+               3 reprovações ─▶ pendências (decisão humana, sem arte)
 ```
 
-### Melhorias em relação ao desenho original
+### Regras do escritório
 
-1. **Limite de 3 rodadas** entre Tiago e Roberto. Sem isso, um texto difícil vira loop infinito (e custo). Na terceira reprovação, a demanda volta para você com `pendencias.md`.
-2. **Regra de aprovação objetiva** para o Roberto: nenhum bloqueante, nenhum critério abaixo de 8 e média de pelo menos 8,5. "Criterioso" vira critério, não humor do dia.
-3. **Guardrails determinísticos** além do julgamento do modelo: `scripts/checar-texto.mjs` pega travessão (`—`, `–`, hífen solto, linha começando com hífen), título acima de 90 caracteres, post acima de 3000 caracteres e quantidade de hashtags. `scripts/renderizar-arte.mjs` reprova arte sem logo carregado e visível, com texto transbordando ou com travessão.
-4. **Separação de funções**: Roberto aponta trecho e correção, mas não reescreve; Tiago não se autoaprova; o artista não mexe no texto aprovado.
-5. **Rastreabilidade**: cada demanda guarda briefing, todas as versões, todos os pareceres e o log em `entregas/<id>/`.
-6. **Human in the loop**: nada é publicado sozinho. Você copia o post e baixa a arte no painel.
-7. **Fila**: uma demanda por vez, para o escritório ficar legível na tela e o custo previsível.
+1. **No máximo 3 rodadas** entre Tiago e Roberto. Isso evita loop infinito e custo descontrolado. Na terceira reprovação, a demanda volta para a pessoa com as pendências.
+2. **Aprovação objetiva:** nenhum bloqueante, nenhum critério abaixo de 8 e média de pelo menos 8,5. A regra é aplicada no código, não fica a critério do modelo.
+3. **Guardrails determinísticos:**
+   - no texto: travessão (`—`, `–`, hífen solto, linha começando com hífen), título acima de 90 caracteres, post acima de 3000 caracteres e quantidade de hashtags;
+   - na arte: logo obrigatório e nenhum travessão.
+4. **Separação de funções:** Roberto aponta trecho e correção, mas não reescreve; Tiago não se autoaprova; Eloah não mexe no texto aprovado.
+5. **Rastreabilidade:** cada demanda guarda briefing, todas as versões e todos os pareceres.
+6. **Human in the loop:** nada é publicado sozinho. A pessoa copia o post e baixa a arte.
 
-## Dois jeitos de usar
+## Modo nuvem (o painel publicado)
 
-| | GitHub Pages (recomendado) | Local, com pixel-agents |
-|---|---|---|
-| Onde pede | painel no Pages ou formulário de issue | painel em http://127.0.0.1:4000 |
-| Quem roda os agentes | GitHub Actions | Claude Code na sua máquina |
-| Escritório pixel art | mini escritório do painel | mini escritório do painel + pixel-agents ao vivo |
-| Onde recebe | painel, comentário na issue e `entregas/` no repositório | painel e `entregas/` local |
-
-### Modo GitHub Pages
-
-Painel: `https://rodrigosilvacio.github.io/claude-agent/escritorio-agentes/painel/`
-
-1. Preencha o pedido no painel e clique em **Abrir pedido no GitHub**. Abre o formulário de issue já preenchido; clique em **Create**.
-2. O workflow `.github/workflows/escritorio-agentes.yml` comenta na issue, roda Tiago, Roberto e Eloah, commita a entrega em `entregas/<id>/`, atualiza `entregas/index.json` e responde na issue com o post e a arte (fechando a issue quando tudo deu certo).
-3. Em 1 a 2 minutos o GitHub Pages publica e a entrega aparece no painel.
-4. Para refazer uma demanda (erro ou pendências), adicione o label `refazer` na issue.
-
-Configuração única: em **Settings → Secrets and variables → Actions**, crie a secret `ANTHROPIC_API_KEY` (chave da API) ou `CLAUDE_CODE_OAUTH_TOKEN` (assinatura Claude, gerada com `claude setup-token`) e a secret `ESCRITORIO_TOKEN` (ao vivo, veja abaixo). Crie também o label `refazer`.
-
-Segurança: o repositório é público, então **só issues abertas pelo dono do repositório** disparam a esteira. Ninguém de fora gasta seus créditos nem injeta instruções nos agentes. Lembre que tudo em `entregas/` fica público.
-
-### Ao vivo: ver os agentes trabalhando
-
-O GitHub Actions roda a esteira, mas o painel mostra cada passo em tempo real, nos dois modos:
+Quem usa não instala nada: cria a conta com e-mail e senha, preenche o pedido e acompanha.
 
 ```
-Claude Code (stream-json) ─▶ scripts/rodar-esteira.mjs ─▶ edge function escritorio-evento ─▶ tabela escritorio_eventos ─▶ Realtime ─▶ painel
+Painel (GitHub Pages)
+  ├─ login ─────────────▶ Supabase Auth
+  ├─ pedido ────────────▶ edge function escritorio-pedir (limites diários)
+  │                          └─▶ tabela escritorio_demandas
+  │                                 └─ trigger + pg_net ─▶ edge function escritorio-esteira
+  │                                                        (1 etapa por chamada: Tiago, Roberto ou Eloah)
+  │                                                        └─ ao concluir, muda a etapa ─▶ o trigger dispara a próxima
+  └─ ao vivo ◀── Realtime ◀── tabela escritorio_eventos
 ```
 
-- O runner lê o stream do Claude: cada chamada de subagente vira uma **etapa** ("Tiago escreve a v1") e cada ferramenta usada dentro dela vira uma **ação** ("Roberto roda a checagem automática", "Eloah renderiza o PNG"). O veredito do Roberto sai com a média.
-- No painel, o personagem certo trabalha com o balão da ação real, a folha voa entre as mesas e um feed "AO VIVO" lista os passos.
-- Segurança: a tabela é só leitura para o público (RLS). Escrever exige o `ESCRITORIO_TOKEN`, que só permite inserir eventos validados. Os eventos não guardam o texto do briefing nem do post.
-- Configuração: a mesma string aleatória em dois lugares, a secret `ESCRITORIO_TOKEN` da edge function no Supabase e a secret `ESCRITORIO_TOKEN` do repositório no GitHub. Para o modo local, exporte `ESCRITORIO_TOKEN` antes do `./iniciar.sh`. Sem o token, a esteira funciona normalmente, só sem o ao vivo.
+- **Agentes:** `supabase/functions/escritorio-esteira` chama o Claude (`claude-opus-5-5`, saída em JSON estruturado, com `fallbacks: "default"` para pedidos recusados). Usa a `ANTHROPIC_API_KEY` que já existe nas secrets do projeto Supabase. As regras determinísticas ficam em `regras.ts` e os prompts em `prompts.ts`.
+- **Uma etapa por invocação:** cada agente roda numa chamada separada, para caber no teto de cerca de 150 s das edge functions (cada etapa leva de 10 a 30 s). O próprio banco conduz a esteira (migration `0062`).
+- **Rede de segurança:** um cron a cada 2 minutos reenvia etapas paradas; depois de 3 tentativas, marca erro. A pessoa pode clicar em "Retomar esteira".
+- **Arte:** o HTML da Eloah é sanitizado na função e exibido num iframe sandbox, sem scripts e com CSP. O PNG é gerado no navegador ao clicar em "Baixar PNG".
+- **Privacidade:** cada pessoa vê só as próprias demandas (RLS). O escritório ao vivo é público, mas os eventos só dizem quem está fazendo o quê ("Roberto revisa a v1"), nunca o conteúdo.
+- **Custos:** até 3 pedidos por pessoa a cada 24 h e 40 no total por dia. Os limites ficam em `public.escritorio_config` (`limite_usuario_dia`, `limite_global_dia`) e se ajustam com um `update`, sem novo deploy. Cada demanda faz de 3 a 7 chamadas ao modelo.
 
-### Modo local (na sua máquina)
+## Modo local (Claude Code + pixel-agents)
+
+Para demonstrações, os mesmos agentes rodam como subagentes do Claude Code na sua máquina e aparecem no [pixel-agents](https://www.npmjs.com/package/pixel-agents).
 
 Pré-requisitos: Node 20+ e [Claude Code](https://docs.claude.com/en/docs/claude-code) instalado e logado.
 
@@ -76,31 +68,34 @@ claude            # só na primeira vez: aceite o "trust" da pasta e saia (Ctrl+
 ./iniciar.sh      # instala o Playwright na 1ª vez, sobe o pixel-agents (3100) e o painel (4000)
 ```
 
-Abra:
-- **Painel de demandas:** http://127.0.0.1:4000 (preencha o pedido e clique em "Enviar para o Tiago")
-- **Escritório pixel-agents:** use a URL com `?token=` que o `pixel-agents` imprime no terminal (ou o botão "Ver office aqui" no painel)
-
-Os subagentes aparecem como personagens no pixel-agents, com o balão "Tiago escreve a v1", "Roberto revisa a v1", "Eloah cria a arte". O painel também tem o próprio mini escritório pixel art com a esteira em tempo real.
-
-Sem o painel, dá para disparar direto num terminal do pixel-agents ou do Claude Code, criando `entregas/<id>/briefing.md` e rodando `/post <id>`.
+- **Painel local:** http://127.0.0.1:4000 (sem login; as entregas ficam em `entregas/<id>/`)
+- **pixel-agents:** use a URL com `?token=` que o terminal imprime, ou o botão "Ver office aqui" no painel. Os subagentes aparecem como personagens com o balão "Tiago escreve a v1", "Roberto revisa a v1", "Eloah cria a arte".
+- **Ao vivo no painel (opcional):** exporte `ESCRITORIO_TOKEN` com o mesmo valor da secret da edge function `escritorio-evento`. `scripts/rodar-esteira.mjs` lê o stream do Claude Code e publica cada passo. Sem o token, tudo funciona igual, só sem o feed ao vivo.
+- Sem o painel: crie `entregas/<id>/briefing.md` e rode `/post <id>` no Claude Code.
 
 ## Estrutura
 
 ```
 escritorio-agentes/
-├── .claude/agents/          tiago-escritor, roberto-revisor, eloah-artista
-├── .claude/commands/post.md orquestrador da esteira
+├── painel/                  interface pixel art (nuvem e local) + servidor local sem dependências
 ├── assets/                  logotipo (PNG transparente e JPG original)
-├── painel/                  servidor Node sem dependências + interface pixel art (local e Pages)
-├── scripts/                 checar-texto, finalizar-post, renderizar-arte (esteira)
-│                            demanda-lib, rodar-esteira, briefing-da-issue,
-│                            gerar-indice, comentario-issue (modo GitHub)
-└── entregas/<id>/           briefing, post-vN, revisao-vN, post-final, arte.html, arte.png, log
+├── .claude/agents/          tiago-escritor, roberto-revisor, eloah-artista (modo local)
+├── .claude/commands/post.md orquestrador da esteira (modo local)
+├── scripts/                 checar-texto, finalizar-post, renderizar-arte, rodar-esteira, demanda-lib (modo local)
+└── entregas/exemplo-*/      entrega de exemplo exibida no painel
+
+supabase/
+├── functions/escritorio-pedir/    pedidos e retomada (usuário logado)
+├── functions/escritorio-esteira/  os três agentes na nuvem (prompts, regras, etapas)
+├── functions/escritorio-evento/   eventos ao vivo do modo local
+└── migrations/0061, 0062          eventos, demandas, versões, condução da esteira
 ```
 
-## Segurança e custos
+Os prompts da nuvem (`prompts.ts`) e os do modo local (`.claude/agents/*.md`) seguem as mesmas regras. Ao mudar uma regra de estilo, mude nos dois lugares.
 
-- Modo local: o painel escuta só em `127.0.0.1`. Quem acessa o painel dispara o Claude Code com a sua conta: não exponha a porta na rede.
-- Os agentes só têm permissão para ler, escrever em `entregas/` e rodar os três scripts. Sem web, sem git push.
-- Não coloque no briefing dado pessoal de terceiros ou informação confidencial: o texto vai para o modelo.
-- Cada demanda consome de 4 a 8 chamadas de agente (1 a 3 rodadas + arte).
+## Segurança
+
+- Só a service role (edge functions) escreve nas tabelas; usuários leem apenas o que é deles.
+- A função dos agentes só aceita chamadas do próprio banco (segredo interno em `escritorio_config`, sem acesso público).
+- O briefing é tratado como material de trabalho, não como instrução: os prompts delimitam o conteúdo do usuário.
+- Não coloque no pedido dado pessoal de terceiros ou informação confidencial: o texto vai para o modelo.
