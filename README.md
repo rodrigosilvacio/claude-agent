@@ -2,6 +2,17 @@
 
 Repositório com Projetos desenvolvidos com Claude Code como exemplo.
 
+## Escritório de Agentes (`/escritorio-agentes`)
+
+Escritório pixel art com três agentes de Claude Code que produzem posts de
+LinkedIn: **Tiago** (escritor) escreve a copy, **Roberto** (revisor) revisa com
+critério objetivo e devolve para ajuste (máx. 3 rodadas), e **Rodrigo**
+(artista gráfico) cria o criativo 1080x1350 sempre com o logotipo. Os pedidos
+são feitos num painel pixel art (`painel/`, Node sem dependências) e os
+agentes aparecem trabalhando no [pixel-agents](https://www.npmjs.com/package/pixel-agents).
+Guardrails determinísticos barram travessões, posts acima de 3000 caracteres e
+arte sem logo. Detalhes em [`escritorio-agentes/README.md`](escritorio-agentes/README.md).
+
 ## Notícias de IA (`/ninanews`)
 
 Página com um único botão ("Buscar notícias de hoje") que aciona a Edge

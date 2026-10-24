@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Write(./entregas/**)",
+      "Edit(./entregas/**)",
+      "Bash(node scripts/checar-texto.mjs:*)",
+      "Bash(node scripts/finalizar-post.mjs:*)",
+      "Bash(node scripts/renderizar-arte.mjs:*)"
+    ],
+    "deny": [
+      "WebFetch",
+      "Bash(git push:*)"
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+node_modules/
+entregas/*
+!entregas/.gitkeep
+!entregas/exemplo-*/

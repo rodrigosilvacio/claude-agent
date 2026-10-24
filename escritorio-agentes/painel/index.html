@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escritório de Agentes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #131311; --painel: #1d1c19; --painel2: #262420; --borda: #3a3731;
+    --texto: #f5f3ef; --apoio: #a8a39b; --terracota: #cc7c5e; --terracota2: #e9a58a;
+    --verde: #7fbf6a; --amarelo: #e8c15a; --vermelho: #e0625a; --azul: #6aa6d8;
+    --pixel: 'Press Start 2P', monospace; --vt: 'VT323', monospace; --corpo: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--texto); font-family: var(--vt); font-size: 20px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 4px solid var(--borda); flex-wrap: wrap; }
+  header img { height: 44px; }
+  header h1 { font-family: var(--pixel); font-size: 14px; margin: 0; color: var(--terracota2); letter-spacing: 1px; }
+  header .esp { flex: 1; }
+  main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .caixa { background: var(--painel); border: 4px solid var(--borda); box-shadow: 6px 6px 0 #000; padding: 16px; margin-bottom: 20px; image-rendering: pixelated; }
+  .caixa h2 { font-family: var(--pixel); font-size: 11px; color: var(--terracota2); margin: 0 0 14px; }
+  canvas#escritorio { width: 100%; image-rendering: pixelated; display: block; border: 4px solid #000; background: #000; }
+  .esteira { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .passo { flex: 1; min-width: 120px; background: var(--painel2); border: 3px solid var(--borda); padding: 8px; font-size: 18px; text-align: center; }
+  .passo b { font-family: var(--pixel); font-size: 9px; display: block; margin-bottom: 6px; }
+  .passo.ativo { border-color: var(--terracota); color: var(--terracota2); animation: pisca 1s steps(2) infinite; }
+  .passo.ok { border-color: var(--verde); color: var(--verde); }
+  @keyframes pisca { 50% { border-color: var(--terracota2); } }
+  label { display: block; font-size: 18px; color: var(--apoio); margin: 10px 0 4px; }
+  input, textarea { width: 100%; background: #0c0c0b; color: var(--texto); border: 3px solid var(--borda); padding: 8px 10px; font-family: var(--vt); font-size: 20px; outline: none; }
+  input:focus, textarea:focus { border-color: var(--terracota); }
+  textarea { min-height: 110px; resize: vertical; }
+  .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .linha2 { grid-template-columns: 1fr; } }
+  button, .botao { font-family: var(--pixel); font-size: 10px; background: var(--terracota); color: #131311; border: none; padding: 12px 14px; cursor: pointer; box-shadow: 4px 4px 0 #000; text-decoration: none; display: inline-block; }
+  button:hover, .botao:hover { background: var(--terracota2); }
+  button:active, .botao:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #000; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .sec { background: var(--painel2); color: var(--texto); }
+  .sec:hover { background: var(--borda); }
+  .acoes { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .msg { font-size: 18px; color: var(--apoio); }
+  .lista { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+  .item { background: var(--painel2); border: 3px solid var(--borda); padding: 8px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .item:hover, .item.sel { border-color: var(--terracota); }
+  .item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-family: var(--pixel); font-size: 8px; padding: 5px 6px; white-space: nowrap; background: var(--borda); }
+  .tag.concluido { background: var(--verde); color: #000; }
+  .tag.escalado, .tag.interrompido { background: var(--amarelo); color: #000; }
+  .tag.erro { background: var(--vermelho); color: #000; }
+  .tag.ativo { background: var(--terracota); color: #000; }
+  .vazio { color: var(--apoio); font-size: 18px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; background: #0c0c0b; border: 3px solid var(--borda); padding: 12px; font-family: var(--corpo); font-size: 14px; line-height: 1.55; margin: 8px 0 0; max-height: 420px; overflow-y: auto; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 19px; color: var(--apoio); }
+  summary .tag { margin-left: 6px; }
+  .arte { width: 100%; max-width: 420px; display: block; border: 4px solid #000; margin-top: 8px; }
+  .alerta { border: 3px solid var(--amarelo); padding: 10px; color: var(--amarelo); margin-top: 10px; font-size: 18px; }
+  .alerta.erro { border-color: var(--vermelho); color: var(--vermelho); }
+  iframe { width: 100%; height: 520px; border: 4px solid #000; background: #000; display: block; }
+  h3 { font-family: var(--pixel); font-size: 10px; margin: 18px 0 6px; color: var(--texto); }
+</style>
+</head>
+<body>
+<header>
+  <img src="/assets/logo-rodrigo-silva.png" alt="Rodrigo Silva · IA · Dados · Produtos">
+  <h1>ESCRITÓRIO DE AGENTES</h1>
+  <span class="esp"></span>
+  <a class="botao sec" id="abrirOffice" target="_blank" rel="noopener">ABRIR PIXEL-AGENTS ↗</a>
+  <button class="sec" id="verOffice">VER OFFICE AQUI</button>
+</header>
+
+<main>
+  <section>
+    <div class="caixa">
+      <h2>▶ O ESCRITÓRIO</h2>
+      <canvas id="escritorio" width="320" height="150"></canvas>
+      <div class="esteira" id="esteira"></div>
+    </div>
+
+    <div class="caixa" id="caixaOffice" hidden>
+      <h2>▶ PIXEL-AGENTS (AO VIVO)</h2>
+      <iframe id="office" title="Escritório pixel-agents"></iframe>
+      <p class="msg">Se aparecer em branco, rode <code>npx pixel-agents --port 3100</code> nesta pasta.</p>
+    </div>
+
+    <form class="caixa" id="form">
+      <h2>▶ NOVA DEMANDA</h2>
+      <label for="tema">Tema do post *</label>
+      <input id="tema" name="tema" maxlength="200" required placeholder="Ex.: Por que IA sem dados organizados é só demo bonita">
+      <label for="descricao">Descrição do post *</label>
+      <textarea id="descricao" name="descricao" maxlength="4000" required placeholder="Conte a história, a ideia central, fatos e números reais que devem entrar, e o ângulo que você quer."></textarea>
+      <div class="linha2">
+        <div><label for="objetivo">Objetivo</label><input id="objetivo" name="objetivo" maxlength="300" placeholder="Gerar reflexão, divulgar evento..."></div>
+        <div><label for="publico">Público</label><input id="publico" name="publico" maxlength="300" placeholder="CIOs, CTOs, conselheiros..."></div>
+      </div>
+      <label for="cta">Chamada para ação</label>
+      <input id="cta" name="cta" maxlength="300" placeholder="Ex.: comente como sua empresa trata isso">
+      <label for="observacoes">Observações</label>
+      <input id="observacoes" name="observacoes" maxlength="1500" placeholder="Tom, palavras proibidas, links...">
+      <div class="acoes">
+        <button id="enviar" type="submit">ENVIAR PARA O TIAGO ▶</button>
+        <span class="msg" id="msgForm"></span>
+      </div>
+    </form>
+  </section>
+
+  <section>
+    <div class="caixa">
+      <h2>▶ DEMANDAS</h2>
+      <div class="lista" id="lista"><span class="vazio">Nenhuma demanda ainda. Faça o primeiro pedido ao lado.</span></div>
+    </div>
+    <div class="caixa" id="detalhe" hidden></div>
+  </section>
+</main>
+
+<script>
+// ---------------- sprites em pixel art ----------------
+// Cada personagem é um mapa 12x16. Letras = cores da paleta do personagem.
+const BASE = [
+  '....HHHH....',
+  '...HHHHHH...',
+  '...HSSSSH...',
+  '...SEGSEG...',
+  '...SSSSSS...',
+  '....SMMS....',
+  '.....SS.....',
+  '...CCCCCC...',
+  '..CCCCCCCC..',
+  '..ACCCCCCA..',
+  '..ACCCCCCA..',
+  '...CCCCCC...',
+  '...PPPPPP...',
+  '...PP..PP...',
+  '...PP..PP...',
+  '...KK..KK...',
+];
+// Quadro "trabalhando": braços erguidos sobre o teclado.
+const TRABALHANDO = BASE.map((l, i) => (i === 9 ? '.ACCCCCCCCA.' : i === 10 ? '..CCCCCCCC..' : l));
+const AGENTES = {
+  tiago:   { nome: 'TIAGO',   papel: 'ESCRITOR', acao: 'ESCREVENDO', icone: '✎', x: 30,  cores: { H: '#3b2a20', S: '#e0b48f', E: '#1a1a1a', G: '#e0b48f', M: '#a0563f', C: '#4f7fb8', A: '#e0b48f', P: '#2c2c3a', K: '#111' } },
+  roberto: { nome: 'ROBERTO', papel: 'REVISOR',  acao: 'REVISANDO',  icone: '?', x: 135, cores: { H: '#9a9a9a', S: '#c99572', E: '#1a1a1a', G: '#f5f3ef', M: '#7a3f2e', C: '#4c8a5a', A: '#c99572', P: '#2a2a2a', K: '#111' } },
+  rodrigo: { nome: 'RODRIGO', papel: 'ARTISTA',  acao: 'DESENHANDO', icone: '✦', x: 240, cores: { H: '#c0392b', S: '#8d5a3b', E: '#111', G: '#8d5a3b', M: '#5a2a1a', C: '#cc7c5e', A: '#8d5a3b', P: '#3a3026', K: '#111' } },
+};
+// Roberto usa óculos: os olhos viram lentes claras com aro escuro.
+AGENTES.roberto.mapa = BASE.map((l, i) => (i === 3 ? '..KGEKGEK...' : l));
+AGENTES.roberto.mapaT = TRABALHANDO.map((l, i) => (i === 3 ? '..KGEKGEK...' : l));
+// Rodrigo artista usa boina.
+const boina = (m) => m.map((l, i) => (i === 0 ? '...HHHHHH...' : i === 1 ? '..HHHHHHHH..' : l));
+AGENTES.rodrigo.mapa = boina(BASE); AGENTES.rodrigo.mapaT = boina(TRABALHANDO);
+AGENTES.tiago.mapa = BASE; AGENTES.tiago.mapaT = TRABALHANDO;
+
+const cv = document.getElementById('escritorio');
+const g = cv.getContext('2d');
+g.imageSmoothingEnabled = false;
+let estado = { agente: null, etapa: null, versao: 0 };
+let voo = null; // folha de papel viajando entre mesas
+let quadro = 0;
+
+function px(x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+function sprite(mapa, cores, x, y) {
+  mapa.forEach((linha, j) => [...linha].forEach((ch, i) => { if (ch !== '.') px(x + i * 2, y + j * 2, 2, 2, cores[ch]); }));
+}
+function texto(t, x, y, c, tam = 8) { g.fillStyle = c; g.font = `${tam}px "Press Start 2P", monospace`; g.textAlign = 'center'; g.fillText(t, x, y); }
+
+function desenhar() {
+  quadro++;
+  // parede e janela
+  px(0, 0, 320, 52, '#2b2823');
+  for (let x = 0; x < 320; x += 16) px(x, 48, 8, 4, '#24221e');
+  px(120, 10, 80, 30, '#0d1b2a'); px(122, 12, 76, 26, '#1e3a5f');
+  for (let i = 0; i < 6; i++) px(126 + ((i * 13 + (quadro >> 4)) % 70), 16 + (i * 7) % 18, 2, 2, '#f5f3ef');
+  px(159, 10, 2, 30, '#0d1b2a');
+  texto('IA · DADOS · PRODUTOS', 60, 30, '#cc7c5e', 5);
+  // piso em xadrez
+  for (let y = 52; y < 150; y += 10) for (let x = 0; x < 320; x += 10) px(x, y, 10, 10, ((x + y) / 10) % 2 ? '#3d342b' : '#463c31');
+  // planta e café
+  px(298, 96, 12, 14, '#7a4b2a'); px(294, 80, 20, 18, '#3f7d3a'); px(300, 74, 8, 8, '#4f9a48');
+  px(8, 100, 14, 10, '#f5f3ef'); px(22, 103, 3, 4, '#f5f3ef'); px(10, 102, 10, 3, '#5a3a22');
+
+  for (const [id, a] of Object.entries(AGENTES)) {
+    const ativo = estado.agente === id;
+    const bob = ativo ? (quadro >> 3) % 2 : (quadro >> 5) % 2 ? 0 : 1;
+    // personagem atrás da mesa
+    sprite(ativo && (quadro >> 3) % 2 ? a.mapaT : a.mapa, a.cores, a.x + 13, 64 + bob);
+    // mesa e monitor
+    px(a.x, 92, 50, 6, '#8a5a35'); px(a.x, 98, 50, 3, '#5e3b22'); px(a.x + 3, 101, 4, 18, '#5e3b22'); px(a.x + 43, 101, 4, 18, '#5e3b22');
+    px(a.x + 30, 76, 18, 14, '#111'); px(a.x + 32, 78, 14, 10, ativo ? ((quadro >> 2) % 2 ? '#cc7c5e' : '#e9a58a') : '#2a3a4a');
+    px(a.x + 37, 90, 4, 2, '#111');
+    // placa com nome
+    px(a.x - 2, 124, 54, 22, '#1d1c19'); px(a.x - 2, 124, 54, 2, ativo ? '#cc7c5e' : '#3a3731');
+    texto(a.nome, a.x + 25, 135, ativo ? '#e9a58a' : '#f5f3ef', 6);
+    texto(a.papel, a.x + 25, 143, '#a8a39b', 5);
+    // balão de fala
+    if (ativo) {
+      const label = estado.etapa === 'ajuste' ? `AJUSTANDO V${estado.versao + 1}` : a.acao + '.'.repeat((quadro >> 4) % 4);
+      px(a.x - 6, 54, 62, 14, '#f5f3ef'); px(a.x + 20, 68, 4, 3, '#f5f3ef');
+      texto(label, a.x + 25, 64, '#131311', 5);
+    }
+  }
+  if (estado.etapa === 'concluido') { px(110, 56, 100, 14, '#7fbf6a'); texto('ENTREGUE! ✓', 160, 66, '#131311', 6); }
+  if (estado.etapa === 'escalado') { px(100, 56, 120, 14, '#e8c15a'); texto('PRECISA DE VOCÊ', 160, 66, '#131311', 6); }
+  // folha de papel em trânsito
+  if (voo) {
+    voo.t += 0.03;
+    const x = voo.de + (voo.para - voo.de) * voo.t, y = 84 - Math.sin(voo.t * Math.PI) * 30;
+    px(x, y, 8, 10, '#f5f3ef'); px(x + 1, y + 2, 6, 1, '#888'); px(x + 1, y + 5, 5, 1, '#888');
+    if (voo.t >= 1) voo = null;
+  }
+  requestAnimationFrame(desenhar);
+}
+document.fonts.ready.then(desenhar);
+
+// ---------------- esteira ----------------
+const ETAPAS = [
+  ['fila', 'FILA', 'aguardando'], ['escrita', 'TIAGO', 'escreve'], ['revisao', 'ROBERTO', 'revisa'],
+  ['arte', 'RODRIGO', 'cria a arte'], ['concluido', 'ENTREGA', 'post + arte'],
+];
+const ORDEM = { fila: 0, parado: 0, escrita: 1, ajuste: 1, revisao: 2, finalizando: 3, arte: 3, concluido: 4 };
+const NOMES = { fila: 'NA FILA', parado: 'PARADO', escrita: 'TIAGO ESCREVE', ajuste: 'TIAGO AJUSTA', revisao: 'ROBERTO REVISA', finalizando: 'APROVADO', arte: 'RODRIGO DESENHA', concluido: 'CONCLUÍDO', escalado: 'PRECISA DE VOCÊ', interrompido: 'INTERROMPIDO', erro: 'ERRO' };
+
+function desenharEsteira(d) {
+  const atual = d ? ORDEM[d.etapa] ?? -1 : -1;
+  document.getElementById('esteira').innerHTML = ETAPAS.map(([, n, s], i) => {
+    const cls = d && d.etapa === 'concluido' ? 'ok' : i < atual ? 'ok' : i === atual && d.rodando ? 'ativo' : '';
+    return `<div class="passo ${cls}"><b>${n}</b>${s}</div>`;
+  }).join('');
+}
+
+// ---------------- dados ----------------
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let selecionada = null;
+let ultimoAgente = null;
+
+async function atualizar() {
+  try {
+    const r = await fetch('/api/demandas').then((x) => x.json());
+    const lista = r.demandas;
+    $('lista').innerHTML = lista.length ? lista.map((d) => {
+      const ativo = d.rodando ? 'ativo' : d.etapa;
+      return `<div class="item ${d.id === selecionada ? 'sel' : ''}" data-id="${esc(d.id)}"><span class="t">${esc(d.tema)}</span><span class="tag ${ativo}">${NOMES[d.etapa] || d.etapa}</span></div>`;
+    }).join('') : '<span class="vazio">Nenhuma demanda ainda. Faça o primeiro pedido ao lado.</span>';
+    const foco = lista.find((d) => d.id === r.emExecucao) || lista.find((d) => d.id === selecionada) || lista[0];
+    if (foco) {
+      if (foco.agente && ultimoAgente && foco.agente !== ultimoAgente) voo = { de: AGENTES[ultimoAgente].x + 20, para: AGENTES[foco.agente].x + 20, t: 0 };
+      ultimoAgente = foco.agente || ultimoAgente;
+      estado = { agente: foco.rodando ? foco.agente : null, etapa: foco.etapa, versao: foco.posts.at(-1) || 0 };
+      if (!selecionada) selecionar(foco.id);
+    }
+    desenharEsteira(foco);
+    if (selecionada) carregarDetalhe();
+  } catch { /* painel offline: tenta de novo no próximo ciclo */ }
+}
+
+$('lista').addEventListener('click', (e) => { const it = e.target.closest('.item'); if (it) selecionar(it.dataset.id); });
+function selecionar(id) { selecionada = id; carregarDetalhe(); document.querySelectorAll('.item').forEach((i) => i.classList.toggle('sel', i.dataset.id === id)); }
+
+let assinaturaDetalhe = '';
+async function carregarDetalhe() {
+  const d = await fetch(`/api/demandas/${encodeURIComponent(selecionada)}`).then((x) => x.json());
+  if (d.erro && !d.id) return;
+  const assinatura = JSON.stringify([d.etapa, d.rodando, d.posts, d.revisoes, d.temArte, d.log.length]);
+  if (assinatura === assinaturaDetalhe) return;
+  assinaturaDetalhe = assinatura;
+  const abertos = new Set([...document.querySelectorAll('#detalhe details[open]')].map((x) => x.dataset.k));
+  const hist = d.historico.map((h) => {
+    const rev = h.revisao ? (h.revisao.startsWith('VEREDITO: APROVADO') ? '<span class="tag concluido">APROVADO</span>' : '<span class="tag erro">REPROVADO</span>') : '<span class="tag ativo">EM REVISÃO</span>';
+    return `<details data-k="v${h.n}" ${abertos.has('v' + h.n) ? 'open' : ''}><summary>Versão ${h.n} do Tiago ${rev}</summary><pre>${esc(h.post)}</pre>${h.revisao ? `<h3>PARECER DO ROBERTO</h3><pre>${esc(h.revisao)}</pre>` : ''}</details>`;
+  }).join('');
+  $('detalhe').hidden = false;
+  $('detalhe').innerHTML = `
+    <h2>▶ ${esc(d.tema).toUpperCase()}</h2>
+    <span class="tag ${d.rodando ? 'ativo' : d.etapa}">${NOMES[d.etapa] || d.etapa}</span>
+    ${d.erro ? `<div class="alerta erro">${esc(d.erro)}</div>` : ''}
+    ${d.pendencias ? `<div class="alerta">O Roberto não aprovou em 3 rodadas. Decisão sua:<pre>${esc(d.pendencias)}</pre></div>` : ''}
+    ${d.postFinal ? `<h3>POST REVISADO</h3><pre id="final">${esc(d.postFinal)}</pre><div class="acoes"><button id="copiar">COPIAR POST</button><span class="msg" id="msgCopia"></span></div>` : ''}
+    ${d.temArte ? `<h3>ARTE</h3><img class="arte" src="/entregas/${encodeURIComponent(d.id)}/arte.png?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="/entregas/${encodeURIComponent(d.id)}/arte.png">BAIXAR ARTE</a></div>` : ''}
+    <h3>HISTÓRICO</h3>
+    <details data-k="briefing" ${abertos.has('briefing') ? 'open' : ''}><summary>Briefing</summary><pre>${esc(d.briefing)}</pre></details>
+    ${hist || '<p class="vazio">O Tiago ainda não entregou a primeira versão.</p>'}
+    <details data-k="log" ${abertos.has('log') ? 'open' : ''}><summary>Log da execução</summary><pre>${esc(d.log || 'sem log')}</pre></details>
+    ${!d.rodando && ['erro', 'interrompido', 'parado'].includes(d.etapa) ? '<div class="acoes"><button id="reprocessar" class="sec">RETOMAR ESTEIRA</button></div>' : ''}`;
+  $('copiar')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(d.postFinal); $('msgCopia').textContent = 'Copiado!'; }
+    catch { getSelection().selectAllChildren($('final')); $('msgCopia').textContent = 'Selecionado, use Ctrl+C.'; }
+  });
+  $('reprocessar')?.addEventListener('click', async () => { await fetch(`/api/demandas/${encodeURIComponent(d.id)}/reprocessar`, { method: 'POST' }); atualizar(); });
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const dados = Object.fromEntries(new FormData(e.target));
+  $('enviar').disabled = true; $('msgForm').textContent = 'Entregando ao Tiago...';
+  try {
+    const r = await fetch('/api/demandas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.erro);
+    e.target.reset(); $('msgForm').textContent = 'Demanda na mesa do Tiago!';
+    assinaturaDetalhe = ''; selecionar(j.id); atualizar();
+  } catch (err) { $('msgForm').textContent = 'Erro: ' + err.message; }
+  finally { $('enviar').disabled = false; }
+});
+
+fetch('/api/config').then((r) => r.json()).then((c) => {
+  $('abrirOffice').href = c.escritorio;
+  $('verOffice').onclick = () => { const cx = $('caixaOffice'); cx.hidden = !cx.hidden; if (!cx.hidden && !$('office').src) $('office').src = c.escritorio; };
+});
+atualizar();
+setInterval(atualizar, 2500);
+</script>
+</body>
+</html>
