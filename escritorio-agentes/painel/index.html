@@ -26,6 +26,13 @@
   .caixa h2 { font-family: var(--pixel); font-size: 17px; color: var(--terracota2); margin: 0 0 14px; }
   canvas#escritorio { width: 100%; image-rendering: pixelated; display: block; border: 4px solid #000; background: #000; }
   .esteira { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .feed { margin-top: 12px; background: #0c0c0b; border: 3px solid var(--borda); padding: 8px 10px; max-height: 190px; overflow-y: auto; font-size: 18px; }
+  .feed h4 { font-family: var(--pixel); font-size: 13px; margin: 0 0 6px; color: var(--vermelho); }
+  .feed h4::before { content: '● '; animation: pisca 1s steps(2) infinite; }
+  .feed div { display: flex; gap: 8px; line-height: 1.25; }
+  .feed time { color: var(--apoio); flex: none; }
+  .feed .tiago { color: var(--azul); } .feed .roberto { color: var(--verde); } .feed .eloah { color: var(--terracota2); }
+  .feed .ok { color: var(--verde); } .feed .nok { color: var(--vermelho); }
   .passo { flex: 1; min-width: 120px; background: var(--painel2); border: 3px solid var(--borda); padding: 8px; font-size: 18px; text-align: center; }
   .passo b { font-family: var(--pixel); font-size: 14px; display: block; margin-bottom: 6px; }
   .passo.ativo { border-color: var(--terracota); color: var(--terracota2); animation: pisca 1s steps(2) infinite; }
@@ -81,6 +88,7 @@
       <h2>▶ O ESCRITÓRIO</h2>
       <canvas id="escritorio" width="320" height="150"></canvas>
       <div class="esteira" id="esteira"></div>
+      <div class="feed" id="feed" hidden></div>
     </div>
 
     <div class="caixa" id="caixaOffice" hidden>
@@ -199,9 +207,12 @@ function desenhar() {
     texto(a.papel, a.x + 25, 143, '#a8a39b', 5);
     // balão de fala
     if (ativo) {
-      const label = estado.etapa === 'ajuste' ? `AJUSTANDO V${estado.versao + 1}` : a.acao + '.'.repeat((quadro >> 4) % 4);
-      px(a.x - 6, 54, 62, 14, '#f5f3ef'); px(a.x + 20, 68, 4, 3, '#f5f3ef');
-      texto(label, a.x + 25, 64, '#131311', 5);
+      const label = estado.balao || (estado.etapa === 'ajuste' ? `AJUSTANDO V${estado.versao + 1}` : a.acao + '.'.repeat((quadro >> 4) % 4));
+      g.font = 'bold 8px "Pixelify Sans", monospace';
+      const w = Math.min(150, g.measureText(label).width + 10);
+      const bx = Math.max(2, Math.min(318 - w, a.x + 25 - w / 2));
+      px(bx, 54, w, 14, '#f5f3ef'); px(a.x + 20, 68, 4, 3, '#f5f3ef');
+      texto(label, bx + w / 2, 64, '#131311', 5);
     }
   }
   if (estado.etapa === 'concluido') { px(110, 40, 100, 14, '#7fbf6a'); texto('ENTREGUE! ✓', 160, 50, '#131311', 6); }
@@ -251,6 +262,72 @@ const [dono, repo] = location.hostname.endsWith('.github.io')
 const GH = `https://github.com/${dono}/${repo}`;
 let cacheGitHub = { demandas: [], producao: [], issuesEm: 0 };
 
+// ---------------- ao vivo (Supabase Realtime) ----------------
+// scripts/rodar-esteira.mjs publica cada passo dos agentes na tabela
+// escritorio_eventos; o módulo no fim da página assina os INSERTs e chama
+// receberEvento(). O escritório anima com o agente e a ação reais.
+const eventos = new Map(); // demanda -> eventos em ordem de id
+const ETAPA_DO_AGENTE = { tiago: 'escrita', roberto: 'revisao', eloah: 'arte' };
+const AO_VIVO_MS = 20 * 60 * 1000;   // sem evento há 20 min = execução abandonada
+const RECENTE_MS = 60 * 60 * 1000;   // o feed ainda mostra a última execução por 1 h
+
+function receberEvento(ev, inicial = false) {
+  const lista = eventos.get(ev.demanda) || [];
+  if (lista.some((x) => x.id === ev.id)) return;
+  lista.push(ev);
+  lista.sort((a, b) => a.id - b.id);
+  eventos.set(ev.demanda, lista.slice(-80));
+  if (inicial) return;
+  aplicarAoVivo();
+  if (ev.tipo === 'fim') setTimeout(atualizar, 1500);
+}
+
+function execucaoMaisRecente() {
+  let melhor = null;
+  for (const [demanda, lista] of eventos) {
+    const ult = lista.at(-1);
+    if (!melhor || ult.id > melhor.ult.id) melhor = { demanda, lista, ult };
+  }
+  if (!melhor) return null;
+  const idade = Date.now() - new Date(melhor.ult.criado_em).getTime();
+  return { ...melhor, aoVivo: melhor.ult.tipo !== 'fim' && idade < AO_VIVO_MS, recente: idade < RECENTE_MS };
+}
+
+// Etapa ao vivo de um item da lista (por id da demanda ou número da issue).
+function etapaAoVivo(d) {
+  const ex = execucaoMaisRecente();
+  if (!ex || !ex.aoVivo) return null;
+  if (ex.demanda !== d.id && !(d.issue && ex.lista.some((x) => x.issue === d.issue))) return null;
+  const comAgente = [...ex.lista].reverse().find((x) => x.agente);
+  return comAgente ? ETAPA_DO_AGENTE[comAgente.agente] : 'fila';
+}
+
+const hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function desenharFeed(ex) {
+  const feed = $('feed');
+  if (!ex || !ex.recente) { feed.hidden = true; return; }
+  feed.hidden = false;
+  const titulo = ex.demanda.replace(/^\d{8}-\d{6}-/, '').replace(/-/g, ' ');
+  feed.innerHTML = `<h4>${ex.aoVivo ? 'AO VIVO' : 'ÚLTIMA EXECUÇÃO'} · ${esc(titulo).toUpperCase()}</h4>` +
+    ex.lista.slice(-14).reverse().map((x) => {
+      const cls = x.tipo === 'veredito' ? (x.texto.includes('APROVOU') ? 'ok' : 'nok') : x.agente || '';
+      return `<div><time>${hora(x.criado_em)}</time><span class="${cls}">${esc(x.texto)}</span></div>`;
+    }).join('');
+}
+
+function aplicarAoVivo() {
+  const ex = execucaoMaisRecente();
+  desenharFeed(ex);
+  if (!ex || !ex.aoVivo) return;
+  const comAgente = [...ex.lista].reverse().find((x) => x.agente);
+  const agente = comAgente?.agente || 'tiago';
+  if (ultimoAgente && agente !== ultimoAgente && !voo) voo = { de: AGENTES[ultimoAgente].x + 20, para: AGENTES[agente].x + 20, t: 0 };
+  ultimoAgente = agente;
+  const fala = (comAgente?.texto || 'recebendo a demanda').replace(/^(Tiago|Roberto|Eloah)\s+/, '');
+  estado = { agente, etapa: ETAPA_DO_AGENTE[agente], versao: 0, balao: fala.toUpperCase().slice(0, 34) };
+  desenharEsteira({ etapa: ETAPA_DO_AGENTE[agente], rodando: true });
+}
+
 async function listarGitHub() {
   const indice = await fetch(`../entregas/index.json?t=${Date.now()}`).then((x) => x.json()).catch(() => ({ demandas: [] }));
   // A API pública do GitHub tem limite de 60 chamadas/hora sem login: consulta as issues a cada 60s.
@@ -272,8 +349,9 @@ async function atualizar() {
     const r = modoGitHub ? await listarGitHub() : await fetch('/api/demandas').then((x) => x.json());
     const lista = r.demandas;
     $('lista').innerHTML = lista.length ? lista.map((d) => {
-      const ativo = d.rodando ? 'ativo' : d.etapa;
-      return `<div class="item ${d.id === selecionada ? 'sel' : ''}" data-id="${esc(d.id)}"><span class="t">${esc(d.tema)}</span><span class="tag ${ativo}">${NOMES[d.etapa] || d.etapa}</span></div>`;
+      const vivo = etapaAoVivo(d);
+      const ativo = vivo || d.rodando ? 'ativo' : d.etapa;
+      return `<div class="item ${d.id === selecionada ? 'sel' : ''}" data-id="${esc(d.id)}"><span class="t">${esc(d.tema)}</span><span class="tag ${ativo}">${NOMES[vivo || d.etapa] || d.etapa}</span></div>`;
     }).join('') : '<span class="vazio">Nenhuma demanda ainda. Faça o primeiro pedido ao lado.</span>';
     const foco = lista.find((d) => d.id === r.emExecucao) || lista.find((d) => d.id === selecionada) || lista[0];
     if (foco) {
@@ -283,6 +361,7 @@ async function atualizar() {
       if (!selecionada) selecionar(foco.id);
     }
     desenharEsteira(foco);
+    aplicarAoVivo();
     if (selecionada) carregarDetalhe();
   } catch { /* painel offline: tenta de novo no próximo ciclo */ }
 }
@@ -372,6 +451,23 @@ fetch('/api/config').then((r) => r.json()).then((c) => {
   atualizar();
   setInterval(atualizar, modoGitHub ? 20000 : 2500);
 });
+</script>
+<script type="module">
+// Mesmo projeto Supabase (ClaudeProjects) e mesma versão pinada do resto do repo.
+// A chave publicável só lê escritorio_eventos (RLS); escrever exige o token do runner.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.5';
+try {
+  const sb = createClient('https://xtrvojnauvkkterogrst.supabase.co', 'sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT');
+  const desde = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+  const { data } = await sb.from('escritorio_eventos').select('*').gte('criado_em', desde).order('id', { ascending: false }).limit(200);
+  (data || []).reverse().forEach((ev) => receberEvento(ev, true));
+  aplicarAoVivo();
+  sb.channel('escritorio-eventos')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'escritorio_eventos' }, (p) => receberEvento(p.new))
+    .subscribe();
+} catch (e) {
+  console.warn('Ao vivo indisponível:', e);
+}
 </script>
 </body>
 </html>

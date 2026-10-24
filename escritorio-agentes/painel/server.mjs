@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Painel de demandas do escritório (pixel art). Sem dependências.
 // Recebe uma demanda, grava o briefing em entregas/<id>/ e dispara
-// `claude -p "/post <id>"` nesta pasta. Os agentes trabalham em fila (um por vez)
+// a esteira (scripts/rodar-esteira.mjs, que chama `claude -p "/post <id>"`). Os agentes trabalham em fila (um por vez)
 // e aparecem no escritório do pixel-agents. O status de cada demanda é lido
 // dos arquivos da pasta, então sobrevive a reinícios do painel.
 //
@@ -12,7 +12,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, wri
 import { createServer } from 'node:http';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { argsClaude, criarBriefing, detalhe, idsDemandas, statusDe } from '../scripts/demanda-lib.mjs';
+import { criarBriefing, detalhe, idsDemandas, statusDe } from '../scripts/demanda-lib.mjs';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ENTREGAS = join(RAIZ, 'entregas');
@@ -22,7 +22,6 @@ const args = Object.fromEntries(
 const PORTA = Number(args.port || process.env.PORT || 4000);
 const HOST = args.host || '127.0.0.1';
 const ESCRITORIO = args.office || process.env.PIXEL_AGENTS_URL || 'http://127.0.0.1:3100';
-const CLAUDE = process.env.CLAUDE_BIN || 'claude';
 
 mkdirSync(ENTREGAS, { recursive: true });
 
@@ -40,7 +39,9 @@ function proximo() {
   emExecucao = id;
   const log = createWriteStream(join(ENTREGAS, id, 'execucao.log'), { flags: 'a' });
   log.write(`\n[${new Date().toISOString()}] Iniciando /post ${id}\n`);
-  const proc = spawn(CLAUDE, argsClaude(id), { cwd: RAIZ, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  // O runner chama o Claude Code e transmite os eventos ao vivo (Supabase) quando
+  // ESCRITORIO_TOKEN está configurado; a saída legível vai para o execucao.log.
+  const proc = spawn(process.execPath, ['scripts/rodar-esteira.mjs', id], { cwd: RAIZ, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.pipe(log, { end: false });
   proc.stderr.pipe(log, { end: false });
   const fim = (msg) => {
@@ -49,7 +50,7 @@ function proximo() {
     proximo();
   };
   proc.on('error', (e) => {
-    writeFileSync(join(ENTREGAS, id, 'erro.txt'), `Não consegui iniciar o Claude Code (${CLAUDE}): ${e.message}\n`);
+    writeFileSync(join(ENTREGAS, id, 'erro.txt'), `Não consegui iniciar a esteira: ${e.message}\n`);
     fim('Falha ao iniciar');
   });
   proc.on('close', (code) => fim(`Encerrado com código ${code}`));

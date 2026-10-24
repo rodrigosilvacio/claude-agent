@@ -14,7 +14,7 @@ Se `entregas/$ARGUMENTS/briefing.md` não existir, escreva `entregas/$ARGUMENTS/
 
 ## Esteira
 
-Use a ferramenta Agent para cada etapa, **uma por vez, nunca em paralelo**, e sempre com uma `description` curta começando pelo nome do agente (é ela que aparece no balão do personagem no escritório pixel art), por exemplo `Tiago escreve a v1`, `Roberto revisa a v1`, `Eloah cria a arte`.
+Use a ferramenta Agent para cada etapa, **uma por vez, nunca em paralelo e sempre em primeiro plano** (`run_in_background: false`, esperando o resultado), e sempre com uma `description` curta começando pelo nome do agente (é ela que aparece no balão do personagem no escritório pixel art), por exemplo `Tiago escreve a v1`, `Roberto revisa a v1`, `Eloah cria a arte`.
 
 1. **Tiago escreve** (`subagent_type: tiago-escritor`): peça a versão `N = 1` informando a pasta da demanda.
 2. **Roberto revisa** (`subagent_type: roberto-revisor`): peça a revisão da versão `N`.
@@ -24,9 +24,11 @@ Use a ferramenta Agent para cada etapa, **uma por vez, nunca em paralelo**, e se
    - `VEREDITO: APROVADO`: siga para o passo 4.
 4. **Finalize o texto** rodando `node scripts/finalizar-post.mjs entregas/$ARGUMENTS <N>`. Isso gera `post-final.md` (pronto para copiar e colar) a partir da versão aprovada.
 5. **Eloah cria a arte** (`subagent_type: eloah-artista`): informe a pasta e a versão aprovada `N`.
-6. Confirme que existem `post-final.md` e `arte.png`. Se faltar algo, escreva `erro.txt` com o motivo.
+6. Confirme que existem `post-final.md` e `arte.png`. Se faltar `arte.png`, chame a **Eloah mais uma vez** (`Eloah refaz a arte`), lembrando que ela deve escrever o HTML com Write e rodar exatamente `node scripts/renderizar-arte.mjs entregas/$ARGUMENTS`. Se ainda faltar algo, escreva `erro.txt` com o motivo.
 
 ## Regras
+
+- Para ler ou listar arquivos use Read e Glob. Bash só para `node scripts/finalizar-post.mjs entregas/$ARGUMENTS <N>`, exatamente assim, sem `cd`, `&&` ou outros comandos juntos.
 
 - Máximo de **3 rodadas** de escrita e revisão. Isso evita loop infinito e custo descontrolado; o que não passar em 3 rodadas volta para decisão humana.
 - Você não corrige o texto do Tiago nem passa por cima do veredito do Roberto.

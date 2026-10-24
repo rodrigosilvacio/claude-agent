@@ -49,9 +49,22 @@ Painel: `https://rodrigosilvacio.github.io/claude-agent/escritorio-agentes/paine
 3. Em 1 a 2 minutos o GitHub Pages publica e a entrega aparece no painel.
 4. Para refazer uma demanda (erro ou pendências), adicione o label `refazer` na issue.
 
-Configuração única: em **Settings → Secrets and variables → Actions**, crie a secret `ANTHROPIC_API_KEY` (chave da API) ou `CLAUDE_CODE_OAUTH_TOKEN` (assinatura Claude, gerada com `claude setup-token`). Crie também o label `refazer`.
+Configuração única: em **Settings → Secrets and variables → Actions**, crie a secret `ANTHROPIC_API_KEY` (chave da API) ou `CLAUDE_CODE_OAUTH_TOKEN` (assinatura Claude, gerada com `claude setup-token`) e a secret `ESCRITORIO_TOKEN` (ao vivo, veja abaixo). Crie também o label `refazer`.
 
 Segurança: o repositório é público, então **só issues abertas pelo dono do repositório** disparam a esteira. Ninguém de fora gasta seus créditos nem injeta instruções nos agentes. Lembre que tudo em `entregas/` fica público.
+
+### Ao vivo: ver os agentes trabalhando
+
+O GitHub Actions roda a esteira, mas o painel mostra cada passo em tempo real, nos dois modos:
+
+```
+Claude Code (stream-json) ─▶ scripts/rodar-esteira.mjs ─▶ edge function escritorio-evento ─▶ tabela escritorio_eventos ─▶ Realtime ─▶ painel
+```
+
+- O runner lê o stream do Claude: cada chamada de subagente vira uma **etapa** ("Tiago escreve a v1") e cada ferramenta usada dentro dela vira uma **ação** ("Roberto roda a checagem automática", "Eloah renderiza o PNG"). O veredito do Roberto sai com a média.
+- No painel, o personagem certo trabalha com o balão da ação real, a folha voa entre as mesas e um feed "AO VIVO" lista os passos.
+- Segurança: a tabela é só leitura para o público (RLS). Escrever exige o `ESCRITORIO_TOKEN`, que só permite inserir eventos validados. Os eventos não guardam o texto do briefing nem do post.
+- Configuração: a mesma string aleatória em dois lugares, a secret `ESCRITORIO_TOKEN` da edge function no Supabase e a secret `ESCRITORIO_TOKEN` do repositório no GitHub. Para o modo local, exporte `ESCRITORIO_TOKEN` antes do `./iniciar.sh`. Sem o token, a esteira funciona normalmente, só sem o ao vivo.
 
 ### Modo local (na sua máquina)
 

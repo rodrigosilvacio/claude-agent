@@ -13,7 +13,12 @@ vira uma issue e o workflow `escritorio-agentes.yml` roda a esteira no GitHub
 Actions) ou localmente, com os agentes aparecendo no
 [pixel-agents](https://www.npmjs.com/package/pixel-agents).
 Guardrails determinísticos barram travessões, posts acima de 3000 caracteres e
-arte sem logo. Detalhes em [`escritorio-agentes/README.md`](escritorio-agentes/README.md).
+arte sem logo. **Ao vivo:** `scripts/rodar-esteira.mjs` lê o stream do Claude
+Code e publica cada passo dos agentes na edge function `escritorio-evento`
+(tabela `escritorio_eventos`, migration `0061`, só leitura pública via RLS);
+o painel assina via Supabase Realtime e anima o escritório com o que cada
+agente está fazendo. Requer a secret `ESCRITORIO_TOKEN` (mesmo valor na edge
+function e no GitHub; deploy com `--no-verify-jwt`, a function valida o token). Detalhes em [`escritorio-agentes/README.md`](escritorio-agentes/README.md).
 
 ## Notícias de IA (`/ninanews`)
 

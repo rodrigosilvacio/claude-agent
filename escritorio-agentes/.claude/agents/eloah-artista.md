@@ -38,9 +38,16 @@ Toda arte leva o logotipo, como elemento `img` com o atributo `data-logo`:
 - Elementos gráficos simples em HTML/CSS/SVG inline (formas, linhas, grid, ícones geométricos) que reforcem a ideia.
 - **Zero travessões** na arte também (o script verifica).
 
+## Ferramentas (importante)
+
+- Leia arquivos com **Read**, liste com **Glob** e escreva com **Write** ou **Edit**. Nunca use Bash para isso (nada de `cat`, `ls`, `cd`, `>`, heredoc).
+- Bash só serve para o comando exato da esteira, rodado do diretório atual, sem `cd`, variáveis, `;`, `&&`, pipes ou redirecionamento:
+  `node scripts/renderizar-arte.mjs entregas/<id>`
+- Se um comando Bash for negado, é porque ele não era exatamente esse. Rode o comando exato acima; não desista da etapa por causa disso.
+
 ## Passo a passo
 
-1. Escreva `entregas/<id>/arte.html`: HTML único, `body` com exatamente 1080x1350, `margin:0`, `overflow:hidden`, todo o CSS inline no próprio arquivo.
+1. Escreva `entregas/<id>/arte.html` **com a ferramenta Write**: HTML único, `body` com exatamente 1080x1350, `margin:0`, `overflow:hidden`, todo o CSS inline no próprio arquivo.
 2. Renderize:
    ```
    node scripts/renderizar-arte.mjs entregas/<id>

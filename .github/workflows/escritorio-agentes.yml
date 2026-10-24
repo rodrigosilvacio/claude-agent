@@ -4,7 +4,9 @@ name: Escritório de agentes (posts)
 # .github/ISSUE_TEMPLATE/demanda-post.yml) vira uma demanda: Tiago escreve,
 # Roberto revisa (até 3 rodadas) e Eloah cria a arte. O resultado é commitado
 # em escritorio-agentes/entregas/ (lido pelo painel no GitHub Pages) e volta
-# como comentário na issue. Para refazer, adicione o label "refazer".
+# como comentário na issue. Cada passo dos agentes é transmitido ao vivo para
+# o painel via Supabase (edge function escritorio-evento). Para refazer,
+# adicione o label "refazer".
 
 on:
   issues:
@@ -61,6 +63,9 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Transmite cada passo dos agentes ao painel (Supabase Realtime).
+          # Opcional: sem ele, a esteira roda igual, só sem o "ao vivo".
+          ESCRITORIO_TOKEN: ${{ secrets.ESCRITORIO_TOKEN }}
         run: node scripts/rodar-esteira.mjs "${{ steps.briefing.outputs.id }}"
 
       - name: Publicar entregas no repositório (GitHub Pages)

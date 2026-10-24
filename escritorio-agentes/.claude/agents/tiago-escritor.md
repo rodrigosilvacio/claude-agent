@@ -34,6 +34,10 @@ Leia sempre `entregas/<id>/briefing.md`. Na reescrita, leia também `post-v<N-1>
 - Avalie as SUGESTÕES: aceite as que melhoram o texto; registre nas notas as que recusou e por quê.
 - Não reescreva do zero o que já foi aprovado como bom. Mexa no que foi apontado.
 
+## Ferramentas
+
+Leia com **Read** e escreva com **Write**. Você não usa Bash.
+
 ## Entrega
 
 Escreva **um único arquivo**: `entregas/<id>/post-v<N>.md`, exatamente neste formato (as seções são lidas por script, não mude os cabeçalhos):
