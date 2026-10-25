@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nina News: o escritório</title>
-  <meta name="description" content="Quatro agentes em um escritório pixel art: Nina busca, Luana escolhe, Zaia revisa e a Entrega publica o post de LinkedIn." />
+  <meta name="description" content="Quatro agentes em um escritório pixel art: Nina busca, Luna escolhe, Zaia revisa e a Entrega publica o post de LinkedIn." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -41,7 +41,7 @@
     button:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
     button.ghost { background: var(--panel-2); color: var(--text); }
 
-    .office-wrap { background: var(--panel); border: 2px solid var(--line); box-shadow: 2px 2px 0 #0a0a14; padding: 12px; }
+    .office-wrap { background: var(--panel); border: 2px solid var(--line); box-shadow: 2px 2px 0 #0a0a14; padding: 12px; overflow-x: auto; }
     .stage { position: relative; margin: 0 auto; line-height: 0; }
     .stage canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
     .bubble {
@@ -98,7 +98,7 @@
   <header>
     <div>
       <h1>Nina News</h1>
-      <p class="sub">A Nina busca, a Luana escolhe, a Zaia revisa e a Entrega publica. Tudo no mesmo escritório.</p>
+      <p class="sub">A Nina busca, a Luna escolhe, a Zaia revisa e a Entrega publica. Cada uma na sua sala, no mesmo escritório.</p>
     </div>
     <button id="go" type="button">Iniciar busca</button>
   </header>
@@ -117,8 +117,8 @@
       <div id="noticias"><p class="empty">Clique em "Iniciar busca" e a Nina sai atrás de uma notícia de IA, uma de Dados e uma de Vazamentos.</p></div>
     </section>
     <section class="card" aria-live="polite">
-      <h2>Decisão da Luana</h2>
-      <div id="decisao"><p class="empty">A Luana escolhe a pauta mais relevante para CTO, CIO e CFO.</p></div>
+      <h2>Decisão da Luna</h2>
+      <div id="decisao"><p class="empty">A Luna escolhe a pauta mais relevante para CTO, CIO e CFO.</p></div>
     </section>
     <section class="card full" aria-live="polite">
       <h2>Texto final (Zaia e Entrega)</h2>
@@ -142,7 +142,8 @@ const FUNCAO = "ninanews-escritorio";
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ---------------------------------------------------------------- cena
-const T = 16, COLS = 20, ROWS = 12, W = COLS * T, H = ROWS * T;
+const T = 16, COLS = 25, ROWS = 12, W = COLS * T, H = ROWS * T;
+const ROOM_W = 6, WALL_ROW = 8, HALL_Y = 9 * T, FRONT_Y = 6 * T;
 const A = "./assets/";
 const ROTULO = { ia: "IA", dados: "Dados", vazamentos: "Vazamentos" };
 
@@ -169,13 +170,14 @@ const nomes = {
 // Agentes: cadeira na coluna `col`, mesa logo abaixo. Frames: walk1-3, type1-2, read1-2; linhas: baixo, cima, direita.
 const CHAIR_ROW = 3;
 const AGENTES = [
-  { key: "nina",    nome: "Nina",   papel: "Repórter",  col: 2,  sprite: "c0" },
-  { key: "luana",   nome: "Luana",  papel: "Editora",   col: 7,  sprite: "c1" },
-  { key: "zaia",    nome: "Zaia",   papel: "Revisora",  col: 12, sprite: "c2" },
-  { key: "entrega", nome: "Entrega", papel: "Publicação", col: 17, sprite: "c3" },
+  { key: "nina",    nome: "Nina",    papel: "Repórter",   sala: 0, sprite: "c0" },
+  { key: "luna",    nome: "Luna",    papel: "Editora",    sala: 1, sprite: "c1" },
+  { key: "zaia",    nome: "Zaia",    papel: "Revisora",   sala: 2, sprite: "c2" },
+  { key: "entrega", nome: "Entrega", papel: "Publicação", sala: 3, sprite: "c3" },
 ];
 const SPRITE_H = 32, SIT_OFFSET = 6;
 for (const a of AGENTES) {
+  a.roomX = a.sala * ROOM_W; a.col = a.roomX + 3; a.doorX = (a.roomX + 1) * T;
   a.homeX = a.col * T;
   a.homeY = (CHAIR_ROW + 1) * T - SPRITE_H + SIT_OFFSET;
   a.x = a.homeX; a.y = a.homeY;
@@ -183,33 +185,62 @@ for (const a of AGENTES) {
 }
 const porChave = Object.fromEntries(AGENTES.map((a) => [a.key, a]));
 
-let fundo; // canvas offscreen com piso, parede e decoração
+let fundo; // canvas offscreen com pisos, paredes e portas
+function tingir(g, x, y, w, h, cor) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const q = c.getContext("2d"); q.imageSmoothingEnabled = false;
+  if (IM.floor) for (let yy = 0; yy < h; yy += T) for (let xx = 0; xx < w; xx += T) q.drawImage(IM.floor, xx, yy);
+  else { q.fillStyle = "#777"; q.fillRect(0, 0, w, h); }
+  q.globalCompositeOperation = "multiply"; q.fillStyle = cor; q.fillRect(0, 0, w, h);
+  g.drawImage(c, x, y);
+}
 function montarFundo() {
   fundo = document.createElement("canvas"); fundo.width = W; fundo.height = H;
   const g = fundo.getContext("2d"); g.imageSmoothingEnabled = false;
-  // piso: textura cinza tingida
-  const piso = document.createElement("canvas"); piso.width = W; piso.height = H;
-  const p = piso.getContext("2d");
-  for (let r = 2; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (IM.floor) p.drawImage(IM.floor, c * T, r * T);
-  p.globalCompositeOperation = "multiply"; p.fillStyle = "#8a7ab0"; p.fillRect(0, 2 * T, W, H - 2 * T);
-  p.globalCompositeOperation = "destination-in"; p.fillStyle = "#000"; p.fillRect(0, 2 * T, W, H - 2 * T);
-  g.drawImage(piso, 0, 0);
-  if (!IM.floor) { g.fillStyle = "#4a4466"; g.fillRect(0, 2 * T, W, H - 2 * T); }
-  // parede
-  g.fillStyle = "#2d3a5c"; g.fillRect(0, 0, W, 2 * T);
-  g.fillStyle = "#3a4a74"; g.fillRect(0, 2 * T - 6, W, 6);
-  g.fillStyle = "#0a0a14"; g.fillRect(0, 2 * T, W, 2);
+  g.fillStyle = "#12121c"; g.fillRect(0, 0, W, H);
+  const PAREDE = "#2d3a5c", TOPO = "#3d4f7e", SOMBRA = "#0a0a14";
+  // corredor
+  tingir(g, 0, 9 * T, W, 3 * T, "#8aa0b8");
+  // salas
+  const cores = ["#b89070", "#a08ac0", "#7ab08c", "#c0a070"];
+  for (let r = 0; r < 4; r++) tingir(g, (r * ROOM_W + 1) * T, 2 * T, (ROOM_W - 1) * T, 6 * T, cores[r]);
+  // parede do fundo
+  g.fillStyle = PAREDE; g.fillRect(0, 0, W, 2 * T);
+  g.fillStyle = TOPO; g.fillRect(0, 2 * T - 5, W, 5);
+  // paredes entre salas e laterais
+  for (let r = 0; r <= 4; r++) {
+    const x = r * ROOM_W * T;
+    g.fillStyle = PAREDE; g.fillRect(x, 0, T, (WALL_ROW + 1) * T);
+    g.fillStyle = TOPO; g.fillRect(x, 0, 3, (WALL_ROW + 1) * T);
+    g.fillStyle = SOMBRA; g.fillRect(x + T - 2, 2 * T, 2, 7 * T);
+  }
+  // parede de baixo com portas
+  g.fillStyle = PAREDE; g.fillRect(0, WALL_ROW * T, W, T);
+  g.fillStyle = TOPO; g.fillRect(0, WALL_ROW * T, W, 3);
+  for (const a of AGENTES) {
+    g.clearRect(a.doorX, WALL_ROW * T, T, T);
+    tingir(g, a.doorX, WALL_ROW * T, T, T, "#8b6a4a");
+    g.fillStyle = "#5a3b26"; g.fillRect(a.doorX - 2, WALL_ROW * T, 2, T); g.fillRect(a.doorX + T, WALL_ROW * T, 2, T);
+  }
+  g.fillStyle = SOMBRA; g.fillRect(0, 9 * T - 1, W, 1);
 }
 const desenhar = (g, k, x, y) => { if (IM[k]) g.drawImage(IM[k], Math.round(x), Math.round(y)); };
 
 function decorar(lista) {
-  const parede = (k, x, y, zY) => lista.push({ z: zY, d: () => desenhar(ctx, k, x, y) });
-  parede("board", 4 * T + 8, 0, 32); parede("clock", 10 * T, 4, 32); parede("paint", 9 * T - 4, 4, 32);
-  parede("dbook", 14 * T + 8, 0, 32); parede("bookshelf", 0, 16, 32);
-  parede("plant", 0, 9 * T - 16, 12 * T); parede("plant", 19 * T, 9 * T - 16, 12 * T);
-  parede("coffee", 19 * T - 2, 5 * T + 8, 7 * T);
+  const item = (k, x, y, z) => lista.push({ z, d: () => desenhar(ctx, k, x, y) });
+  const decor = [
+    (r) => { item("paint", (r + 1) * T, 0, 2 * T); item("clock", (r + 5) * T, 0, 2 * T); },
+    (r) => { item("clock", (r + 1) * T, 0, 2 * T); item("paint", (r + 5) * T, 0, 2 * T); },
+    (r) => { item("paint", (r + 1) * T, 0, 2 * T); item("clock", (r + 5) * T, 0, 2 * T); },
+    (r) => { item("clock", (r + 1) * T, 0, 2 * T); item("paint", (r + 5) * T, 0, 2 * T); },
+  ];
+  for (let i = 0; i < 4; i++) {
+    const r = i * ROOM_W;
+    decor[i](r);
+    item("plant", (r + 5) * T, 6 * T, 8 * T);
+  }
+  item("lplant", 0, 9 * T + 8, 12 * T); item("plant", (COLS - 1) * T, 10 * T, 12 * T); item("coffee", 12 * T, 11 * T, 12 * T);
 }
-
 const SEQ_PC = ["pc1", "pc2", "pc3", "pc2"];
 function quadro(a) {
   // índice de frame no sprite sheet
@@ -252,12 +283,12 @@ function renderizar(dt) {
 let zoom = 1;
 function ajustar() {
   const larg = stage.parentElement.clientWidth - 24;
-  zoom = larg >= W * 2 ? Math.min(4, Math.floor(larg / W)) : Math.max(1, larg / W);
+  zoom = Math.min(3, Math.max(1.3, larg / W));
   cv.style.width = W * zoom + "px"; cv.style.height = H * zoom + "px";
   stage.style.width = W * zoom + "px"; stage.style.height = H * zoom + "px";
   for (const a of AGENTES) {
-    a.tag.style.left = (a.col * T + T / 2) * zoom + "px";
-    a.tag.style.top = 6 * T * zoom + 2 + "px";
+    a.tag.style.left = (a.roomX + 3.5) * T * zoom + "px";
+    a.tag.style.top = "4px";
   }
 }
 for (const a of AGENTES) {
@@ -282,7 +313,9 @@ function posicionarBaloes() {
 
 // ---------------------------------------------------------------- movimento
 const VEL = 56; // px/s
+let foco = null;
 function andar(a, pontos) {
+  foco = a;
   return new Promise((res) => { a.caminho = pontos.slice(); a.modo = "andando"; a.resolver = res; });
 }
 function atualizar(dt) {
@@ -300,12 +333,14 @@ let ultimo = performance.now();
 function loop(agora) {
   const dt = Math.min(0.1, (agora - ultimo) / 1000); ultimo = agora;
   atualizar(dt); renderizar(dt); posicionarBaloes();
+  const w = stage.parentElement;
+  if (foco && w.scrollWidth > w.clientWidth + 2) w.scrollLeft += (((foco.x + 8) * zoom + 14 - w.clientWidth / 2) - w.scrollLeft) * 0.1;
   requestAnimationFrame(loop);
 }
 
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 function sentar(a) { a.x = a.homeX; a.y = a.homeY; a.dir = 0; a.modo = "sentado"; }
-function trabalhar(a, texto) { sentar(a); a.modo = "digitando"; a.pcOn = true; status(a, texto, "working"); }
+function trabalhar(a, texto) { foco = a; sentar(a); a.modo = "digitando"; a.pcOn = true; status(a, texto, "working"); }
 function parar(a, texto, estado) { a.modo = "sentado"; a.pcOn = false; status(a, texto, estado); }
 
 async function falar(a, texto, segurar) {
@@ -316,13 +351,13 @@ async function falar(a, texto, segurar) {
 }
 // Vai até a frente da mesa de `para`, fala olhando para ela e volta ao assento.
 async function entregarAFala(de, para, texto) {
-  const corredor = 8 * T, frente = 7 * T;
   de.pcOn = false; status(de, "Indo falar com " + para.nome, "working");
-  await andar(de, [[de.homeX, 7 * T], [de.homeX, corredor], [para.homeX, corredor], [para.homeX, frente]]);
+  // sai pela porta da própria sala, anda pelo corredor e entra pela porta da sala de `para`
+  await andar(de, [[de.doorX, de.homeY], [de.doorX, HALL_Y], [para.doorX, HALL_Y], [para.doorX, FRONT_Y], [para.homeX, FRONT_Y]]);
   de.dir = 1; de.modo = "sentado"; para.dir = 0;
   await falar(de, texto);
   status(de, "Entregou para " + para.nome, "done");
-  await andar(de, [[para.homeX, corredor], [de.homeX, corredor], [de.homeX, 7 * T], [de.homeX, de.homeY]]);
+  await andar(de, [[para.doorX, FRONT_Y], [para.doorX, HALL_Y], [de.doorX, HALL_Y], [de.doorX, de.homeY], [de.homeX, de.homeY]]);
   sentar(de);
 }
 
@@ -352,7 +387,7 @@ const urlSegura = (u) => { try { const x = new URL(u); return x.protocol === "ht
 function cartao(n, escolhida) {
   const href = urlSegura(n.url);
   const titulo = href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`;
-  return `<div class="news${escolhida ? " chosen" : ""}"><span class="meta">${esc(ROTULO[n.tema] || n.tema).toUpperCase()} · ${esc(n.fonte)}${escolhida ? " · ESCOLHIDA PELA LUANA" : ""}</span>${titulo}<p>${esc(n.resumo)}</p></div>`;
+  return `<div class="news${escolhida ? " chosen" : ""}"><span class="meta">${esc(ROTULO[n.tema] || n.tema).toUpperCase()} · ${esc(n.fonte)}${escolhida ? " · ESCOLHIDA PELA LUNA" : ""}</span>${titulo}<p>${esc(n.resumo)}</p></div>`;
 }
 function pintarNoticias() {
   if (!S.noticias) return;
@@ -392,11 +427,11 @@ const ETAPAS = [
       const [r] = await Promise.all([chamar({ etapa: "nina" }), dormir(2200)]);
       S.noticias = r.noticias; S.avisos = r.avisos; pintarNoticias();
       parar(a, "Pauta pronta", "done");
-      await entregarAFala(a, porChave.luana, r.fala);
+      await entregarAFala(a, porChave.luna, r.fala);
   } },
-  { id: "luana", pronto: () => !!S.escolha, async rodar() {
-      const a = porChave.luana; trabalhar(a, "Escolhendo a pauta...");
-      const [r] = await Promise.all([chamar({ etapa: "luana", noticias: S.noticias }), dormir(1800)]);
+  { id: "luna", pronto: () => !!S.escolha, async rodar() {
+      const a = porChave.luna; trabalhar(a, "Escolhendo a pauta...");
+      const [r] = await Promise.all([chamar({ etapa: "luna", noticias: S.noticias }), dormir(1800)]);
       S.escolha = { indice: r.indice, motivo: r.motivo }; pintarNoticias(); pintarDecisao();
       parar(a, "Pauta escolhida", "done");
       await entregarAFala(a, porChave.zaia, r.fala);

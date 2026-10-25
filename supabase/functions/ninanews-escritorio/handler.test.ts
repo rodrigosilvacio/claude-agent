@@ -26,7 +26,7 @@ test("nina: uma notícia por tema, ids inválidos caem no primeiro candidato", a
     if (url.includes("firecrawl")) return firecrawl(body.query.slice(0, 6));
     return msg({
       escolhidas: [{ tema: "ia", id: 2, titulo: "IA — manchete", resumo: "Resumo — IA" }, { tema: "dados", id: 999, titulo: "x", resumo: "y" }],
-      fala: "Luana — trouxe as pautas",
+      fala: "Luna — trouxe as pautas",
     });
   });
   const r = await tratar(post({ etapa: "nina" }), ctx);
@@ -45,10 +45,10 @@ test("nina: sem resultados vira 502", async () => {
 
 const NOT = { tema: "ia", titulo: "T", resumo: "R", fonte: "g1.com", url: "https://g1.com/a" };
 
-test("luana: valida índice", async () => {
-  const bom = await tratar(post({ etapa: "luana", noticias: [NOT, { ...NOT, tema: "dados" }] }), ctxCom(() => msg({ indice: 1, motivo: "m", fala: "f" })));
+test("luna: valida índice", async () => {
+  const bom = await tratar(post({ etapa: "luna", noticias: [NOT, { ...NOT, tema: "dados" }] }), ctxCom(() => msg({ indice: 1, motivo: "m", fala: "f" })));
   assert.equal((await bom.json()).indice, 1);
-  const ruim = await tratar(post({ etapa: "luana", noticias: [NOT, { ...NOT, tema: "dados" }] }), ctxCom(() => msg({ indice: 7, motivo: "m", fala: "f" })));
+  const ruim = await tratar(post({ etapa: "luna", noticias: [NOT, { ...NOT, tema: "dados" }] }), ctxCom(() => msg({ indice: 7, motivo: "m", fala: "f" })));
   assert.equal(ruim.status, 502);
 });
 
@@ -79,8 +79,8 @@ test("entradas inválidas e método", async () => {
   const ctx = ctxCom(() => ok({}));
   assert.equal((await tratar(post({ etapa: "xyz" }), ctx)).status, 400);
   assert.equal((await tratar(new Request("http://x", { method: "POST", body: "{{" }), ctx)).status, 400);
-  assert.equal((await tratar(post({ etapa: "luana", noticias: [] }), ctx)).status, 400);
-  assert.equal((await tratar(post({ etapa: "luana", noticias: [{ ...NOT, url: "javascript:alert(1)" }] }), ctx)).status, 400);
+  assert.equal((await tratar(post({ etapa: "luna", noticias: [] }), ctx)).status, 400);
+  assert.equal((await tratar(post({ etapa: "luna", noticias: [{ ...NOT, url: "javascript:alert(1)" }] }), ctx)).status, 400);
   assert.equal((await tratar(new Request("http://x", { method: "GET" }), ctx)).status, 405);
   assert.equal((await tratar(post({ etapa: "nina" }), null)).status, 500);
   assert.equal((await tratar(new Request("http://x", { method: "POST", body: "x".repeat(30000) }), ctx)).status, 400);

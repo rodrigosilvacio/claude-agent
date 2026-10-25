@@ -1,7 +1,7 @@
 // Roteador da Edge Function ninanews-escritorio. Separado do Deno.serve para
 // poder ser testado de ponta a ponta com fetch simulado.
 
-import { type Ctx, ErroExterno, etapaEntrega, etapaLuana, etapaNina, etapaZaia } from "./agentes.ts";
+import { type Ctx, ErroExterno, etapaEntrega, etapaLuna, etapaNina, etapaZaia } from "./agentes.ts";
 import { EntradaInvalida, texto, validarNoticia, validarNoticias } from "./regras.ts";
 
 const CORS = {
@@ -33,9 +33,9 @@ export async function tratar(req: Request, ctx: Ctx | null): Promise<Response> {
     switch (corpo.etapa) {
       case "nina":
         return json({ etapa: "nina", ...(await etapaNina(ctx)), buscado_em: ctx.agora().toISOString() });
-      case "luana": {
+      case "luna": {
         const noticias = validarNoticias(corpo.noticias);
-        return json({ etapa: "luana", ...(await etapaLuana(ctx, noticias)) });
+        return json({ etapa: "luna", ...(await etapaLuna(ctx, noticias)) });
       }
       case "zaia": {
         const noticia = validarNoticia(corpo.noticia);
@@ -47,7 +47,7 @@ export async function tratar(req: Request, ctx: Ctx | null): Promise<Response> {
         return json({ etapa: "entrega", ...r });
       }
       default:
-        throw new EntradaInvalida('Campo "etapa" deve ser nina, luana, zaia ou entrega.');
+        throw new EntradaInvalida('Campo "etapa" deve ser nina, luna, zaia ou entrega.');
     }
   } catch (err) {
     if (err instanceof EntradaInvalida) return json({ error: err.message }, err.message.startsWith("Post reprovado") ? 422 : 400);

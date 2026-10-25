@@ -37,8 +37,8 @@ para `ninanews/assets/`). O botão "Iniciar busca" coloca quatro agentes para
 trabalhar e conversar entre si, com balões de fala:
 
 1. **Nina** (repórter) busca na web uma notícia de IA, uma de Dados e uma de
-   Vazamentos e entrega as pautas para a Luana.
-2. **Luana** (editora) escolhe a mais relevante para CTO, CIO e CFO e passa
+   Vazamentos e entrega as pautas para a Luna.
+2. **Luna** (editora) escolhe a mais relevante para CTO, CIO e CFO e passa
    para a Zaia.
 3. **Zaia** (revisora) escreve e revisa o post de LinkedIn com título
    chamativo e **sem travessões**.
@@ -46,7 +46,7 @@ trabalhar e conversar entre si, com balões de fala:
    copiar.
 
 **Backend:** Edge Function nova `ninanews-escritorio`, uma etapa por chamada
-(`{etapa: "nina" | "luana" | "zaia" | "entrega"}`), para caber no limite de
+(`{etapa: "nina" | "luna" | "zaia" | "entrega"}`), para caber no limite de
 tempo das Edge Functions. A página guarda o estado entre etapas e, se uma
 etapa falhar, "Tentar de novo" retoma de onde parou. Cada resposta traz uma
 `fala`, que vira o balão do agente. Nada é salvo no banco. Reaproveita as
