@@ -494,7 +494,7 @@ async function carregarDetalhe() {
     const png = `/entregas/${encodeURIComponent(d.id)}/arte.png`;
     arte = `<h3>ARTE</h3><img class="arte" src="${png}?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="${png}">BAIXAR ARTE</a></div>`;
   } else if (d.temArte) {
-    arte = `<h3>ARTE</h3><div class="moldura" id="moldura"></div><div class="acoes"><button id="baixarArte">BAIXAR PNG</button><span class="msg" id="msgArte"></span></div>`;
+    arte = `<h3>ARTE</h3><div class="moldura" id="moldura"></div><div class="acoes"><button id="baixarArte">BAIXAR PNG</button><span class="msg" id="msgArte"></span></div><div id="pngPronto" hidden><p class="msg">Se o download não começou, clique com o botão direito na imagem abaixo e escolha "Salvar imagem" (no celular, toque e segure).</p><img class="arte" id="pngGerado" alt="Arte em PNG pronta para salvar"></div>`;
   }
   $('detalhe').hidden = false;
   $('detalhe').innerHTML = `
@@ -552,6 +552,7 @@ function mostrarArte(d) {
   new ResizeObserver(ajustar).observe(moldura);
   quadroArte.addEventListener('load', () => conferirArte(quadroArte));
   $('baixarArte').addEventListener('click', () => baixarArte(quadroArte, d));
+  carregarHtmlParaImagem().catch(() => {});
 }
 
 // Conferência visual no navegador: logo carregado e nada além de 1080x1350.
@@ -564,21 +565,63 @@ function conferirArte(quadroArte) {
   $('msgArte').textContent = avisos.length ? `Atenção: ${avisos.join(' e ')}.` : '';
 }
 
+// Carregada assim que a arte aparece, para o clique em "Baixar" ser rápido.
+let htmlParaImagem = null;
+const carregarHtmlParaImagem = () => (htmlParaImagem ??= import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm'));
+
+// Fontes do Google usadas pela arte, embutidas como data URL. O html-to-image
+// não alcança as folhas de estilo de dentro do iframe; sem isso o PNG sai com
+// a fonte reserva em vez da fonte da arte.
+async function cssDasFontes(doc) {
+  const comoDataUrl = (blob) => new Promise((ok, falha) => {
+    const leitor = new FileReader();
+    leitor.onload = () => ok(leitor.result);
+    leitor.onerror = falha;
+    leitor.readAsDataURL(blob);
+  });
+  let css = '';
+  for (const link of doc.querySelectorAll('link[href^="https://fonts.googleapis.com/"]')) {
+    let texto = await fetch(link.href).then((r) => r.text());
+    const arquivos = [...new Set(texto.match(/https:\/\/fonts\.gstatic\.com\/[^)'"\s]+/g) || [])];
+    for (const arquivo of arquivos) {
+      const dataUrl = await fetch(arquivo).then((r) => r.blob()).then(comoDataUrl);
+      texto = texto.split(arquivo).join(dataUrl);
+    }
+    css += texto;
+  }
+  return css;
+}
+
 async function baixarArte(quadroArte, d) {
+  $('baixarArte').disabled = true;
   $('msgArte').textContent = 'Gerando PNG...';
   try {
-    const { toPng } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
+    const { toBlob } = await carregarHtmlParaImagem();
     const doc = quadroArte.contentDocument;
     await doc.fonts.ready;
-    const png = await toPng(doc.body, { width: 1080, height: 1350, pixelRatio: 1, cacheBust: true });
+    const fontEmbedCSS = await cssDasFontes(doc).catch(() => undefined);
+    const opcoes = { width: 1080, height: 1350, pixelRatio: 1, backgroundColor: '#131311', fontEmbedCSS };
+    // A primeira passada às vezes sai sem fontes ou imagens (Safari e alguns
+    // Chrome): a segunda usa o que a primeira já carregou.
+    await toBlob(doc.body, opcoes).catch(() => null);
+    const blob = await toBlob(doc.body, opcoes);
+    if (!blob || blob.size < 1000) throw new Error('imagem vazia');
+    const url = URL.createObjectURL(blob);
+    // Mostra o PNG na tela: se o navegador bloquear o download, dá para salvar a imagem.
+    $('pngGerado').src = url;
+    $('pngPronto').hidden = false;
     const a = document.createElement('a');
-    a.href = png;
-    a.download = `post-${d.tema.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.png`;
+    a.href = url;
+    a.download = `post-${d.tema.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.png`;
+    document.body.appendChild(a);
     a.click();
-    $('msgArte').textContent = 'PNG baixado.';
+    a.remove();
+    $('msgArte').textContent = 'PNG pronto.';
   } catch (e) {
-    console.error(e);
-    $('msgArte').textContent = 'Não consegui gerar o PNG. Tente de novo ou use o Chrome.';
+    console.error('Falha ao gerar o PNG:', e);
+    $('msgArte').textContent = `Não consegui gerar o PNG (${e?.message || e}). Recarregue a página e tente de novo.`;
+  } finally {
+    $('baixarArte').disabled = false;
   }
 }
 
