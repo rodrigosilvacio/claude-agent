@@ -29,17 +29,46 @@ com JWT. Detalhes em [`escritorio-agentes/README.md`](escritorio-agentes/README.
 **Local:** os mesmos agentes rodam como subagentes do Claude Code e aparecem no
 [pixel-agents](https://www.npmjs.com/package/pixel-agents) (`./iniciar.sh`).
 
-## Notícias de IA (`/ninanews`)
+## Nina News: o escritório (`/ninanews`)
 
-Página com um único botão ("Buscar notícias de hoje") que aciona a Edge
-Function `ninanews-buscar` e mostra 5 notícias sobre inteligência artificial
-do dia, cada uma com título e resumo em formato executivo, mais um texto
-único já pronto para colar no LinkedIn (com botão de copiar). A busca manual
-não atualiza nada sozinha e nada é salvo no banco: sem histórico, cada
-clique busca e gera tudo de novo do zero. Mesmo padrão do resto do repo:
-HTML/JS estático + Supabase, sem build. (A pasta e a function continuam se
-chamando `ninanews`/`ninanews-buscar` — só a marca visível na página e no
-e-mail diário mudou para "Notícias de IA".)
+A página agora é um escritório pixel art (sprites e visual do projeto
+[pixel-agents](https://github.com/pablodelucca/pixel-agents), MIT, copiados
+para `ninanews/assets/`). O botão "Iniciar busca" coloca quatro agentes para
+trabalhar e conversar entre si, com balões de fala:
+
+1. **Nina** (repórter) busca na web uma notícia de IA, uma de Dados e uma de
+   Vazamentos e entrega as pautas para a Luana.
+2. **Luana** (editora) escolhe a mais relevante para CTO, CIO e CFO e passa
+   para a Zaia.
+3. **Zaia** (revisora) escreve e revisa o post de LinkedIn com título
+   chamativo e **sem travessões**.
+4. **Entrega** confere o texto final (regras determinísticas) e libera para
+   copiar.
+
+**Backend:** Edge Function nova `ninanews-escritorio`, uma etapa por chamada
+(`{etapa: "nina" | "luana" | "zaia" | "entrega"}`), para caber no limite de
+tempo das Edge Functions. A página guarda o estado entre etapas e, se uma
+etapa falhar, "Tentar de novo" retoma de onde parou. Cada resposta traz uma
+`fala`, que vira o balão do agente. Nada é salvo no banco. Reaproveita as
+secrets `FIRECRAWL_API_KEY` e `ANTHROPIC_API_KEY` que já existem. As regras
+(travessões, limites, validação de entrada) ficam em `regras.ts`, e o código
+vence o modelo: se sobrar travessão, é removido por código.
+
+Deploy: `supabase functions deploy ninanews-escritorio --no-verify-jwt`
+(mesmo padrão de `ninanews-buscar`). Testes:
+`cd supabase/functions/ninanews-escritorio && node --experimental-strip-types --test`.
+Atenção: a function não tem rate limit próprio e cada clique custa chamadas
+ao Firecrawl e à Anthropic.
+
+`ninanews-buscar` não foi alterada e continua alimentando o e-mail diário
+(`noticias-ia-email-diario`).
+
+## Notícias de IA (versão anterior da `/ninanews`, via `ninanews-buscar`)
+
+Antes do escritório, a página tinha um único botão ("Buscar notícias de hoje")
+que acionava a Edge Function `ninanews-buscar` e mostrava 5 notícias sobre
+inteligência artificial do dia, cada uma com título e resumo em formato
+executivo, mais um texto único para o LinkedIn. A function segue ativa:
 
 **Pipeline dentro da Edge Function (`ninanews-buscar`):**
 1. **Busca (Firecrawl):** consulta `https://api.firecrawl.dev/v1/search` com
