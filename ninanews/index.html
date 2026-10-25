@@ -3,585 +3,452 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Notícias de IA — Wire de IA</title>
+  <title>Nina News: o escritório</title>
+  <meta name="description" content="Quatro agentes em um escritório pixel art: Nina busca, Luana escolhe, Zaia revisa e a Entrega publica o post de LinkedIn." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --desk: #1b1a17;
-      --paper: #f2ecdc;
-      --paper-edge: #ded2b0;
-      --ink: #211c15;
-      --ink-soft: #6e6656;
-      --stamp: #9a2f1f;
-      --stamp-bright: #b7371f;
-      --wire: #2f5c53;
-      --font-display: "Special Elite", "Courier New", monospace;
-      --font-body: "Source Serif 4", Georgia, serif;
-      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --bg: #12121c;
+      --panel: #1e1e2e;
+      --panel-2: #26263a;
+      --line: #3a3a56;
+      --text: #e8e8f2;
+      --muted: #9a9ab8;
+      --accent: #5ac88c;
+      --warn: #e6b450;
+      --error: #e55a5a;
+      --font-pixel: "Silkscreen", "Courier New", monospace;
+      --font-bubble: "VT323", ui-monospace, monospace;
+      --font-body: "Inter", system-ui, sans-serif;
     }
-
     * { box-sizing: border-box; }
-
     body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      gap: 1.1rem;
-      background: var(--desk);
-      background-image: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(183, 55, 31, 0.10), transparent 60%);
-      color: var(--ink);
-      font-family: var(--font-body);
-      padding: clamp(1.5rem, 5vw, 3.5rem) 1.25rem 3rem;
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font-family: var(--font-body); padding: 20px 16px 48px;
     }
+    main { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+    header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { margin: 0; font-family: var(--font-pixel); font-size: clamp(20px, 4vw, 28px); letter-spacing: .04em; }
+    .sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    button {
+      font-family: var(--font-pixel); font-size: 14px; color: #0c1a12; background: var(--accent);
+      border: 2px solid #0a0a14; box-shadow: 2px 2px 0 #0a0a14; padding: 10px 18px; cursor: pointer; border-radius: 0;
+    }
+    button:hover:not(:disabled) { filter: brightness(1.1); }
+    button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+    button:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+    button.ghost { background: var(--panel-2); color: var(--text); }
 
-    .sheet {
-      width: 100%;
-      max-width: 640px;
-      background: var(--paper);
-      border: 1px solid var(--paper-edge);
-      padding: clamp(1.6rem, 4.5vw, 2.75rem);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-      animation: rise 0.6s ease-out both;
+    .office-wrap { background: var(--panel); border: 2px solid var(--line); box-shadow: 2px 2px 0 #0a0a14; padding: 12px; }
+    .stage { position: relative; margin: 0 auto; line-height: 0; }
+    .stage canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+    .bubble {
+      position: absolute; z-index: 5; max-width: 250px; padding: 6px 10px; line-height: 1.05;
+      font-family: var(--font-bubble); font-size: 19px; color: #1a1a24; background: #fdfcf4;
+      border: 2px solid #0a0a14; box-shadow: 2px 2px 0 #0a0a14; pointer-events: none;
+      transform: translate(-50%, -100%); opacity: 0; transition: opacity .15s; word-break: break-word;
     }
+    .bubble.on { opacity: 1; }
+    .bubble::after {
+      content: ""; position: absolute; left: 50%; bottom: -9px; width: 10px; height: 10px; background: inherit;
+      border-right: 2px solid #0a0a14; border-bottom: 2px solid #0a0a14; transform: translateX(-50%) rotate(45deg);
+    }
+    .tag {
+      position: absolute; z-index: 4; transform: translateX(-50%); text-align: center; line-height: 1.2;
+      font-family: var(--font-pixel); font-size: 11px; color: var(--text); white-space: nowrap; pointer-events: none;
+    }
+    .tag b { display: block; font-size: 12px; }
+    .tag span { display: inline-block; margin-top: 2px; padding: 1px 6px; font-family: var(--font-bubble); font-size: 16px; color: var(--muted); background: rgba(10,10,20,.65); }
+    .tag[data-s="working"] span { color: var(--warn); }
+    .tag[data-s="done"] span { color: var(--accent); }
+    .tag[data-s="error"] span { color: var(--error); }
 
-    .slug {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 0.4rem 1rem;
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      letter-spacing: 0.08em;
-      color: var(--ink-soft);
-      border-bottom: 1px solid var(--paper-edge);
-      padding-bottom: 0.7rem;
-      margin: 0 0 1.6rem;
-      animation: fade-up 0.5s ease-out 0.05s both;
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--panel); border: 2px solid var(--line); box-shadow: 2px 2px 0 #0a0a14; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .card h2 { margin: 0; font-family: var(--font-pixel); font-size: 14px; color: var(--accent); letter-spacing: .04em; }
+    .empty { margin: 0; color: var(--muted); font-size: 14px; }
+    .news { border: 2px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 4px; background: var(--panel-2); }
+    .news.chosen { border-color: var(--accent); }
+    .news .meta { font-family: var(--font-pixel); font-size: 10px; color: var(--muted); }
+    .news a { color: var(--text); font-weight: 600; font-size: 14px; line-height: 1.3; }
+    .news p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .motivo { margin: 0; font-size: 13px; color: var(--text); }
+    .motivo b { color: var(--accent); }
+    .post-title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; }
+    .post { margin: 0; padding: 12px; background: #fff; color: #1a1a24; font-family: var(--font-body); font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; border: 2px solid var(--line); max-height: 420px; overflow: auto; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .count { color: var(--muted); font-size: 12px; }
+    .err { color: var(--error); font-size: 14px; margin: 0; }
+    .warn { color: var(--warn); font-size: 12px; margin: 0; }
+    .full { grid-column: 1 / -1; }
+    @media (max-width: 640px) {
+      .tag span { display: none; }
+      .tag { font-size: 9px; } .tag b { font-size: 9px; }
+      .bubble { font-size: 16px; max-width: 190px; padding: 4px 8px; }
     }
-
-    .wire-tag { margin: 0; font-weight: 700; }
-    .dateline { margin: 0; }
-    .cursor {
-      display: inline-block;
-      width: 0.5em;
-      background: var(--stamp);
-      animation: blink 1.1s steps(1) infinite;
-    }
-
-    .headline {
-      font-family: var(--font-display);
-      font-size: clamp(1.7rem, 4.5vw, 2.35rem);
-      line-height: 1.15;
-      margin: 0 0 0.85rem;
-      color: var(--ink);
-      animation: fade-up 0.5s ease-out 0.15s both;
-    }
-
-    .dek {
-      font-size: 1rem;
-      line-height: 1.55;
-      color: var(--ink-soft);
-      margin: 0 0 1.75rem;
-      max-width: 46ch;
-      animation: fade-up 0.5s ease-out 0.25s both;
-    }
-
-    .key {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.55rem;
-      width: 100%;
-      border: none;
-      background: var(--stamp);
-      color: var(--paper);
-      font-family: var(--font-mono);
-      font-weight: 700;
-      font-size: 0.92rem;
-      letter-spacing: 0.02em;
-      padding: 0.95rem 1rem;
-      border-radius: 3px;
-      cursor: pointer;
-      transition: background-color 0.15s, transform 0.05s;
-      animation: fade-up 0.5s ease-out 0.35s both;
-    }
-    .key:hover { background: var(--stamp-bright); }
-    .key:active { transform: translateY(1px); }
-    .key:disabled { cursor: progress; opacity: 0.92; }
-    .key-icon {
-      animation: blink 1.1s steps(1) infinite;
-    }
-
-    #message {
-      margin: 0.85rem 0 0;
-      min-height: 1.1em;
-      font-family: var(--font-mono);
-      font-size: 0.82rem;
-      text-align: center;
-      color: var(--ink-soft);
-    }
-    #message.error { color: var(--stamp); font-weight: 700; }
-
-    .result { margin-top: 1.9rem; }
-
-    .timestamp {
-      font-family: var(--font-mono);
-      font-size: 0.74rem;
-      color: var(--ink-soft);
-      text-align: center;
-      margin: 0 0 1.4rem;
-    }
-
-    .dispatches-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.5rem 0.9rem;
-      margin-bottom: 0.9rem;
-    }
-
-    .dispatches-label {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      color: var(--ink);
-    }
-
-    .dispatches {
-      list-style: none;
-      margin: 0 0 0.4rem;
-      padding: 0;
-      counter-reset: dispatch;
-    }
-
-    .dispatch {
-      counter-increment: dispatch;
-      padding: 1rem 0 1.15rem;
-      border-top: 1px solid var(--paper-edge);
-    }
-    .dispatch:first-child { border-top: none; padding-top: 0; }
-
-    .dispatch::before {
-      content: "DESPACHO " counter(dispatch, decimal-leading-zero);
-      display: block;
-      font-family: var(--font-mono);
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.09em;
-      color: var(--stamp);
-      margin-bottom: 0.4rem;
-    }
-
-    .dispatch h2 {
-      font-family: var(--font-body);
-      font-weight: 700;
-      font-size: 1.05rem;
-      line-height: 1.35;
-      margin: 0 0 0.4rem;
-      color: var(--ink);
-    }
-
-    .dispatch p {
-      font-size: 0.94rem;
-      line-height: 1.6;
-      color: var(--ink);
-      margin: 0 0 0.55rem;
-    }
-
-    .dispatch a {
-      display: inline-block;
-      font-family: var(--font-mono);
-      font-size: 0.76rem;
-      color: var(--wire);
-      text-decoration: none;
-      word-break: break-word;
-      border-bottom: 1px solid transparent;
-    }
-    .dispatch a:hover { border-bottom-color: var(--wire); }
-
-    .dispatch-foot {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.4rem 0.75rem;
-      margin-top: 0.15rem;
-    }
-
-    .dispatch-fonte {
-      font-family: var(--font-mono);
-      font-size: 0.76rem;
-      color: var(--ink-soft);
-      word-break: break-word;
-    }
-
-    .copy-mini {
-      flex-shrink: 0;
-      background: transparent;
-      color: var(--ink-soft);
-      border: 1px solid var(--paper-edge);
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      font-weight: 500;
-      letter-spacing: 0.02em;
-      padding: 0.32rem 0.65rem;
-      border-radius: 3px;
-      cursor: pointer;
-      transition: background-color 0.15s, color 0.15s, border-color 0.15s;
-    }
-    .copy-mini:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-
-    .tear {
-      height: 1px;
-      margin: 1.9rem 0 1.65rem;
-      background-image: repeating-linear-gradient(to right, var(--paper-edge) 0 6px, transparent 6px 13px);
-    }
-
-    .post-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.5rem 0.9rem;
-      margin-bottom: 0.65rem;
-    }
-
-    .post-label {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      color: var(--ink);
-    }
-
-    .stamp {
-      font-family: var(--font-mono);
-      font-size: 0.66rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--stamp);
-      border: 2px solid var(--stamp);
-      padding: 0.2rem 0.5rem;
-      border-radius: 2px;
-      transform: rotate(-3deg) scale(0.7);
-      opacity: 0;
-      transition: none;
-    }
-    .stamp.show {
-      animation: stamp-down 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.3) forwards;
-    }
-
-    textarea {
-      width: 100%;
-      min-height: 300px;
-      resize: vertical;
-      padding: 0.9rem 1rem;
-      border: 1px solid var(--paper-edge);
-      border-radius: 3px;
-      font-size: 0.9rem;
-      font-family: var(--font-body);
-      line-height: 1.6;
-      background: #fbf8ee;
-      color: var(--ink);
-      margin-bottom: 0.7rem;
-    }
-
-    .post-foot {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.6rem;
-    }
-
-    #char-count {
-      font-family: var(--font-mono);
-      font-size: 0.74rem;
-      color: var(--ink-soft);
-    }
-    #char-count.over { color: var(--stamp); font-weight: 700; }
-
-    .ghost {
-      background: transparent;
-      color: var(--ink);
-      border: 1px solid var(--ink);
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
-      font-weight: 500;
-      letter-spacing: 0.02em;
-      padding: 0.5rem 0.9rem;
-      border-radius: 3px;
-      cursor: pointer;
-      transition: background-color 0.15s, color 0.15s;
-    }
-    .ghost:hover { background: var(--ink); color: var(--paper); }
-
-    .footnote {
-      max-width: 640px;
-      width: 100%;
-      text-align: center;
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      letter-spacing: 0.02em;
-      color: #8a8478;
-      margin: 0;
-    }
-
-    button:focus-visible,
-    textarea:focus-visible,
-    a:focus-visible {
-      outline: 2px dashed var(--stamp);
-      outline-offset: 3px;
-    }
-
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(14px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes fade-up {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes blink {
-      50% { opacity: 0; }
-    }
-    @keyframes stamp-down {
-      0% { opacity: 0; transform: rotate(-3deg) scale(1.6); }
-      60% { opacity: 1; transform: rotate(-3deg) scale(0.92); }
-      100% { opacity: 1; transform: rotate(-3deg) scale(1); }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .sheet, .slug, .headline, .dek, .key, .cursor, .key-icon { animation: none; }
-      .stamp.show { animation: none; opacity: 1; transform: rotate(-3deg) scale(1); }
-    }
-
-    @media (max-width: 420px) {
-      .slug { font-size: 0.66rem; }
-    }
+    footer { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    footer a { color: var(--muted); }
   </style>
 </head>
 <body>
-  <main class="sheet" aria-labelledby="title">
-    <header class="slug">
-      <p class="wire-tag">NOTÍCIAS DE IA · WIRE DE IA<span class="cursor" aria-hidden="true">&nbsp;</span></p>
-      <p class="dateline" id="dateline"></p>
-    </header>
-
-    <h1 id="title" class="headline">Notícias de IA,<br>prontas para o LinkedIn.</h1>
-    <p class="dek">As 5 notícias mais relevantes sobre inteligência artificial hoje, resumidas em tom executivo e prontas para publicar.</p>
-
-    <button type="button" id="buscar-btn" class="key">
-      <span class="key-icon" aria-hidden="true">▌</span>
-      <span id="key-label">Buscar edição de hoje</span>
-    </button>
-
-    <p id="message" role="status" aria-live="polite"></p>
-
-    <div id="result" class="result" hidden>
-      <p class="timestamp" id="buscado-em"></p>
-
-      <div class="dispatches-head">
-        <span class="dispatches-label" id="dispatches-label">5 despachos de hoje</span>
-        <button type="button" class="ghost" id="copy-all-btn" aria-live="polite">Copiar todas</button>
-      </div>
-
-      <ol class="dispatches" id="noticias-list"></ol>
-
-      <div class="tear" aria-hidden="true"></div>
-
-      <div class="post-block">
-        <div class="post-head">
-          <span class="post-label">Texto pronto para o LinkedIn</span>
-          <span class="stamp" id="stamp">pronto para publicar</span>
-        </div>
-        <textarea id="post-final" readonly aria-label="Texto pronto para o LinkedIn"></textarea>
-        <div class="post-foot">
-          <span id="char-count"></span>
-          <button type="button" class="ghost" id="copy-btn" aria-live="polite">Copiar texto</button>
-        </div>
-      </div>
+<main>
+  <header>
+    <div>
+      <h1>Nina News</h1>
+      <p class="sub">A Nina busca, a Luana escolhe, a Zaia revisa e a Entrega publica. Tudo no mesmo escritório.</p>
     </div>
-  </main>
+    <button id="go" type="button">Iniciar busca</button>
+  </header>
 
-  <p class="footnote">Serviço automatizado — busca e gera tudo na hora; nada fica salvo.</p>
+  <section class="office-wrap" aria-label="Escritório dos agentes">
+    <div class="stage" id="stage">
+      <canvas id="cv" aria-label="Escritório pixel art com quatro agentes trabalhando" role="img"></canvas>
+    </div>
+  </section>
 
-  <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+  <p class="err" id="erro" role="alert" hidden></p>
 
-    const SUPABASE_URL = "https://xtrvojnauvkkterogrst.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT";
+  <div class="grid">
+    <section class="card" aria-live="polite">
+      <h2>Pauta da Nina</h2>
+      <div id="noticias"><p class="empty">Clique em "Iniciar busca" e a Nina sai atrás de uma notícia de IA, uma de Dados e uma de Vazamentos.</p></div>
+    </section>
+    <section class="card" aria-live="polite">
+      <h2>Decisão da Luana</h2>
+      <div id="decisao"><p class="empty">A Luana escolhe a pauta mais relevante para CTO, CIO e CFO.</p></div>
+    </section>
+    <section class="card full" aria-live="polite">
+      <h2>Texto final (Zaia e Entrega)</h2>
+      <div id="final"><p class="empty">A Zaia revisa e formata para o LinkedIn, sem travessões. A Entrega confere e libera o texto.</p></div>
+    </section>
+  </div>
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  <footer>
+    Sprites e visual do escritório baseados no projeto
+    <a href="https://github.com/pablodelucca/pixel-agents" target="_blank" rel="noopener noreferrer">pixel-agents</a> (licença MIT).
+    As notícias vêm de busca na web e o texto é gerado por IA: confira a fonte antes de publicar.
+  </footer>
+</main>
 
-    const buscarBtn = document.getElementById("buscar-btn");
-    const keyLabel = document.getElementById("key-label");
-    const messageEl = document.getElementById("message");
-    const resultEl = document.getElementById("result");
-    const buscadoEmEl = document.getElementById("buscado-em");
-    const dispatchesLabelEl = document.getElementById("dispatches-label");
-    const noticiasListEl = document.getElementById("noticias-list");
-    const copyAllBtn = document.getElementById("copy-all-btn");
-    const postFinalEl = document.getElementById("post-final");
-    const charCountEl = document.getElementById("char-count");
-    const copyBtn = document.getElementById("copy-btn");
-    const stampEl = document.getElementById("stamp");
-    const datelineEl = document.getElementById("dateline");
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-    // Notícias da edição atual, guardadas pra o botão "Copiar todas" montar
-    // o texto combinado sem precisar buscar de novo.
-    let noticiasAtuais = [];
+const SUPABASE_URL = "https://xtrvojnauvkkterogrst.supabase.co";
+const SUPABASE_KEY = "sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT";
+const FUNCAO = "ninanews-escritorio";
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // Um único despacho formatado pra colar direto num post: título, resumo
-    // (já pode vir em parágrafos) e a fonte, sempre separados por linha em
-    // branco pra manter a leitura fácil em qualquer editor.
-    function formatarDespacho(n) {
-      const partes = [n.titulo.trim(), n.resumo.trim()];
-      if (n.fonte) partes.push(`Fonte: ${n.fonte}`);
-      return partes.join("\n\n");
-    }
+// ---------------------------------------------------------------- cena
+const T = 16, COLS = 20, ROWS = 12, W = COLS * T, H = ROWS * T;
+const A = "./assets/";
+const ROTULO = { ia: "IA", dados: "Dados", vazamentos: "Vazamentos" };
 
-    // Várias notícias juntas: cada despacho numerado (igual ao rótulo
-    // "DESPACHO 0X" já usado nos cards) e separados por duas linhas em
-    // branco, pra ficar claro onde uma termina e a próxima começa.
-    function formatarTodosDespachos(noticias) {
-      return noticias
-        .map((n, i) => `[DESPACHO ${String(i + 1).padStart(2, "0")}] ${formatarDespacho(n)}`)
-        .join("\n\n\n");
-    }
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+cv.width = W; cv.height = H;
+const stage = document.getElementById("stage");
 
-    const MESES = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
-    function dataDateline(d) {
-      const dia = String(d.getDate()).padStart(2, "0");
-      return `SÃO PAULO, ${dia} ${MESES[d.getMonth()]} ${d.getFullYear()} —`;
-    }
-    datelineEl.textContent = dataDateline(new Date());
+function img(src) {
+  return new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = A + src; });
+}
+const IM = {};
+const nomes = {
+  desk: "furniture/DESK/DESK_FRONT.png", pcOff: "furniture/PC/PC_FRONT_OFF.png",
+  pc1: "furniture/PC/PC_FRONT_ON_1.png", pc2: "furniture/PC/PC_FRONT_ON_2.png", pc3: "furniture/PC/PC_FRONT_ON_3.png",
+  chair: "furniture/WOODEN_CHAIR/WOODEN_CHAIR_FRONT.png", plant: "furniture/PLANT/PLANT.png",
+  bookshelf: "furniture/BOOKSHELF/BOOKSHELF.png", dbook: "furniture/DOUBLE_BOOKSHELF/DOUBLE_BOOKSHELF.png",
+  board: "furniture/WHITEBOARD/WHITEBOARD.png", clock: "furniture/CLOCK/CLOCK.png",
+  coffee: "furniture/COFFEE/COFFEE.png", paint: "furniture/SMALL_PAINTING/SMALL_PAINTING.png",
+  lplant: "furniture/LARGE_PLANT/LARGE_PLANT.png", floor: "floors/floor_1.png",
+  c0: "characters/char_0.png", c1: "characters/char_1.png", c2: "characters/char_2.png", c3: "characters/char_3.png",
+};
 
-    const ETAPAS = [
-      "Buscando notícias de hoje...",
-      "Selecionando as 5 mais relevantes...",
-      "Escrevendo os resumos executivos...",
-      "Montando o post para o LinkedIn...",
-    ];
+// Agentes: cadeira na coluna `col`, mesa logo abaixo. Frames: walk1-3, type1-2, read1-2; linhas: baixo, cima, direita.
+const CHAIR_ROW = 3;
+const AGENTES = [
+  { key: "nina",    nome: "Nina",   papel: "Repórter",  col: 2,  sprite: "c0" },
+  { key: "luana",   nome: "Luana",  papel: "Editora",   col: 7,  sprite: "c1" },
+  { key: "zaia",    nome: "Zaia",   papel: "Revisora",  col: 12, sprite: "c2" },
+  { key: "entrega", nome: "Entrega", papel: "Publicação", col: 17, sprite: "c3" },
+];
+const SPRITE_H = 32, SIT_OFFSET = 6;
+for (const a of AGENTES) {
+  a.homeX = a.col * T;
+  a.homeY = (CHAIR_ROW + 1) * T - SPRITE_H + SIT_OFFSET;
+  a.x = a.homeX; a.y = a.homeY;
+  a.dir = 0; a.modo = "sentado"; a.t = 0; a.caminho = []; a.resolver = null; a.pcOn = false; a.fala = "";
+}
+const porChave = Object.fromEntries(AGENTES.map((a) => [a.key, a]));
 
-    function renderNoticias(noticias) {
-      noticiasListEl.innerHTML = "";
-      noticias.forEach((n) => {
-        const li = document.createElement("li");
-        li.className = "dispatch";
+let fundo; // canvas offscreen com piso, parede e decoração
+function montarFundo() {
+  fundo = document.createElement("canvas"); fundo.width = W; fundo.height = H;
+  const g = fundo.getContext("2d"); g.imageSmoothingEnabled = false;
+  // piso: textura cinza tingida
+  const piso = document.createElement("canvas"); piso.width = W; piso.height = H;
+  const p = piso.getContext("2d");
+  for (let r = 2; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (IM.floor) p.drawImage(IM.floor, c * T, r * T);
+  p.globalCompositeOperation = "multiply"; p.fillStyle = "#8a7ab0"; p.fillRect(0, 2 * T, W, H - 2 * T);
+  p.globalCompositeOperation = "destination-in"; p.fillStyle = "#000"; p.fillRect(0, 2 * T, W, H - 2 * T);
+  g.drawImage(piso, 0, 0);
+  if (!IM.floor) { g.fillStyle = "#4a4466"; g.fillRect(0, 2 * T, W, H - 2 * T); }
+  // parede
+  g.fillStyle = "#2d3a5c"; g.fillRect(0, 0, W, 2 * T);
+  g.fillStyle = "#3a4a74"; g.fillRect(0, 2 * T - 6, W, 6);
+  g.fillStyle = "#0a0a14"; g.fillRect(0, 2 * T, W, 2);
+}
+const desenhar = (g, k, x, y) => { if (IM[k]) g.drawImage(IM[k], Math.round(x), Math.round(y)); };
 
-        const h2 = document.createElement("h2");
-        h2.textContent = n.titulo;
+function decorar(lista) {
+  const parede = (k, x, y, zY) => lista.push({ z: zY, d: () => desenhar(ctx, k, x, y) });
+  parede("board", 4 * T + 8, 0, 32); parede("clock", 10 * T, 4, 32); parede("paint", 9 * T - 4, 4, 32);
+  parede("dbook", 14 * T + 8, 0, 32); parede("bookshelf", 0, 16, 32);
+  parede("plant", 0, 9 * T - 16, 12 * T); parede("plant", 19 * T, 9 * T - 16, 12 * T);
+  parede("coffee", 19 * T - 2, 5 * T + 8, 7 * T);
+}
 
-        const p = document.createElement("p");
-        p.textContent = n.resumo;
+const SEQ_PC = ["pc1", "pc2", "pc3", "pc2"];
+function quadro(a) {
+  // índice de frame no sprite sheet
+  if (a.modo === "andando") return [0, 1, 2, 1][Math.floor(a.t * 8) % 4];
+  if (a.modo === "digitando") return 3 + (Math.floor(a.t * 4) % 2);
+  return 1; // parado
+}
 
-        li.appendChild(h2);
-        li.appendChild(p);
+function renderizar(dt) {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(fundo, 0, 0);
+  const lista = [];
+  decorar(lista);
+  for (const a of AGENTES) {
+    const deskX = (a.col - 1) * T, deskY = (CHAIR_ROW + 1) * T;
+    const sentado = a.modo === "digitando" || (a.modo === "sentado" && a.x === a.homeX && a.y === a.homeY);
+    lista.push({ z: (CHAIR_ROW + 1) * T, d: () => desenhar(ctx, "chair", a.col * T, CHAIR_ROW * T) });
+    lista.push({ z: deskY + 2 * T, d: () => desenhar(ctx, "desk", deskX, deskY) });
+    lista.push({ z: deskY + 2 * T + 0.5, d: () => {
+      const k = a.pcOn ? SEQ_PC[Math.floor(performance.now() / 280) % 4] : "pcOff";
+      desenhar(ctx, k, (a.col + 1) * T, deskY - 22);
+    } });
+    const im = IM[a.sprite];
+    const pe = a.y + SPRITE_H;
+    lista.push({ z: sentado ? (CHAIR_ROW + 1) * T + 0.5 : pe + 0.5, d: () => {
+      if (!im) { ctx.fillStyle = "#fff"; ctx.fillRect(Math.round(a.x) + 4, Math.round(a.y) + 8, 8, 24); return; }
+      const f = quadro(a);
+      const linha = a.dir === 3 ? 2 : a.dir; // 0 baixo, 1 cima, 2 direita, 3 esquerda (espelha a direita)
+      if (a.dir === 3) {
+        ctx.save(); ctx.translate(Math.round(a.x) + T, Math.round(a.y)); ctx.scale(-1, 1);
+        ctx.drawImage(im, f * T, linha * SPRITE_H, T, SPRITE_H, 0, 0, T, SPRITE_H); ctx.restore();
+      } else ctx.drawImage(im, f * T, linha * SPRITE_H, T, SPRITE_H, Math.round(a.x), Math.round(a.y), T, SPRITE_H);
+    } });
+  }
+  lista.sort((p, q) => p.z - q.z).forEach((e) => e.d());
+}
 
-        const foot = document.createElement("div");
-        foot.className = "dispatch-foot";
+// ---------------------------------------------------------------- DOM: balões e etiquetas
+let zoom = 1;
+function ajustar() {
+  const larg = stage.parentElement.clientWidth - 24;
+  zoom = larg >= W * 2 ? Math.min(4, Math.floor(larg / W)) : Math.max(1, larg / W);
+  cv.style.width = W * zoom + "px"; cv.style.height = H * zoom + "px";
+  stage.style.width = W * zoom + "px"; stage.style.height = H * zoom + "px";
+  for (const a of AGENTES) {
+    a.tag.style.left = (a.col * T + T / 2) * zoom + "px";
+    a.tag.style.top = 6 * T * zoom + 2 + "px";
+  }
+}
+for (const a of AGENTES) {
+  a.balao = Object.assign(document.createElement("div"), { className: "bubble" });
+  a.balao.setAttribute("role", "status");
+  a.tag = document.createElement("div"); a.tag.className = "tag"; a.tag.dataset.s = "idle";
+  a.tag.innerHTML = `<b></b><span></span>`;
+  a.tag.querySelector("b").textContent = a.nome;
+  a.status = a.tag.querySelector("span"); a.status.textContent = a.papel;
+  stage.append(a.balao, a.tag);
+}
+function status(a, texto, estado) { a.status.textContent = texto; a.tag.dataset.s = estado || "idle"; }
+function posicionarBaloes() {
+  for (const a of AGENTES) {
+    if (!a.balao.classList.contains("on")) continue;
+    const w = a.balao.offsetWidth;
+    const cx = Math.min(Math.max((a.x + T / 2) * zoom, w / 2 + 4), W * zoom - w / 2 - 4);
+    a.balao.style.left = cx + "px";
+    a.balao.style.top = Math.max((a.y + 6) * zoom, a.balao.offsetHeight + 12) + "px";
+  }
+}
 
-        const fonteEl = document.createElement("span");
-        fonteEl.className = "dispatch-fonte";
-        if (n.url) {
-          fonteEl.append("Fonte: ");
-          const a = document.createElement("a");
-          a.href = n.url;
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-          a.textContent = `${n.fonte || n.url} ↗`;
-          fonteEl.appendChild(a);
-        } else if (n.fonte) {
-          fonteEl.textContent = `Fonte: ${n.fonte}`;
-        }
-        foot.appendChild(fonteEl);
+// ---------------------------------------------------------------- movimento
+const VEL = 56; // px/s
+function andar(a, pontos) {
+  return new Promise((res) => { a.caminho = pontos.slice(); a.modo = "andando"; a.resolver = res; });
+}
+function atualizar(dt) {
+  for (const a of AGENTES) {
+    a.t += dt;
+    if (a.modo !== "andando") continue;
+    const alvo = a.caminho[0];
+    if (!alvo) { a.modo = "sentado"; const r = a.resolver; a.resolver = null; r && r(); continue; }
+    const dx = alvo[0] - a.x, dy = alvo[1] - a.y, d = Math.hypot(dx, dy), passo = VEL * dt;
+    if (Math.abs(dx) > Math.abs(dy)) a.dir = dx > 0 ? 2 : 3; else a.dir = dy > 0 ? 0 : 1;
+    if (d <= passo) { a.x = alvo[0]; a.y = alvo[1]; a.caminho.shift(); } else { a.x += (dx / d) * passo; a.y += (dy / d) * passo; }
+  }
+}
+let ultimo = performance.now();
+function loop(agora) {
+  const dt = Math.min(0.1, (agora - ultimo) / 1000); ultimo = agora;
+  atualizar(dt); renderizar(dt); posicionarBaloes();
+  requestAnimationFrame(loop);
+}
 
-        const copyMiniBtn = document.createElement("button");
-        copyMiniBtn.type = "button";
-        copyMiniBtn.className = "copy-mini";
-        copyMiniBtn.textContent = "Copiar";
-        copyMiniBtn.addEventListener("click", async () => {
-          await navigator.clipboard.writeText(formatarDespacho(n));
-          copyMiniBtn.textContent = "Copiado!";
-          setTimeout(() => { copyMiniBtn.textContent = "Copiar"; }, 1500);
-        });
-        foot.appendChild(copyMiniBtn);
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+function sentar(a) { a.x = a.homeX; a.y = a.homeY; a.dir = 0; a.modo = "sentado"; }
+function trabalhar(a, texto) { sentar(a); a.modo = "digitando"; a.pcOn = true; status(a, texto, "working"); }
+function parar(a, texto, estado) { a.modo = "sentado"; a.pcOn = false; status(a, texto, estado); }
 
-        li.appendChild(foot);
+async function falar(a, texto, segurar) {
+  a.balao.textContent = ""; a.balao.classList.add("on");
+  for (let i = 1; i <= texto.length; i++) { a.balao.textContent = texto.slice(0, i); await dormir(22); }
+  await dormir(segurar ?? Math.min(2600, 700 + texto.length * 14));
+  a.balao.classList.remove("on");
+}
+// Vai até a frente da mesa de `para`, fala olhando para ela e volta ao assento.
+async function entregarAFala(de, para, texto) {
+  const corredor = 8 * T, frente = 7 * T;
+  de.pcOn = false; status(de, "Indo falar com " + para.nome, "working");
+  await andar(de, [[de.homeX, 7 * T], [de.homeX, corredor], [para.homeX, corredor], [para.homeX, frente]]);
+  de.dir = 1; de.modo = "sentado"; para.dir = 0;
+  await falar(de, texto);
+  status(de, "Entregou para " + para.nome, "done");
+  await andar(de, [[para.homeX, corredor], [de.homeX, corredor], [de.homeX, 7 * T], [de.homeX, de.homeY]]);
+  sentar(de);
+}
 
-        noticiasListEl.appendChild(li);
-      });
-    }
-
-    function renderCharCount(length) {
-      charCountEl.textContent = `${length} / 3000 caracteres`;
-      charCountEl.classList.toggle("over", length > 3000);
-    }
-
-    buscarBtn.addEventListener("click", async () => {
-      buscarBtn.disabled = true;
-      messageEl.textContent = "";
-      messageEl.className = "";
-      resultEl.hidden = true;
-      stampEl.classList.remove("show");
-
-      let etapa = 0;
-      keyLabel.textContent = ETAPAS[etapa];
-      const etapaTimer = setInterval(() => {
-        etapa = (etapa + 1) % ETAPAS.length;
-        keyLabel.textContent = ETAPAS[etapa];
-      }, 4500);
-
-      const { data, error } = await supabase.functions.invoke("ninanews-buscar", { body: {} });
-      clearInterval(etapaTimer);
-
-      if (error || !data?.noticias || !data?.post_final) {
-        messageEl.textContent = data?.error || "Não deu para buscar as notícias agora. Tente de novo em instantes.";
-        messageEl.className = "error";
-      } else {
-        const dataFormatada = new Date(data.buscado_em).toLocaleString("pt-BR", {
-          timeZone: "America/Sao_Paulo",
-        });
-        buscadoEmEl.textContent = `Edição buscada em ${dataFormatada}`;
-
-        noticiasAtuais = data.noticias;
-        dispatchesLabelEl.textContent = `${data.noticias.length} despacho${data.noticias.length === 1 ? "" : "s"} de hoje`;
-        copyAllBtn.textContent = "Copiar todas";
-
-        renderNoticias(data.noticias);
-        postFinalEl.value = data.post_final;
-        renderCharCount(data.post_final_length ?? data.post_final.length);
-
-        resultEl.hidden = false;
-        requestAnimationFrame(() => stampEl.classList.add("show"));
+// ---------------------------------------------------------------- backend
+async function chamar(corpo) {
+  let ultimoErro;
+  for (let i = 0; i < 2; i++) {
+    try {
+      const { data, error } = await sb.functions.invoke(FUNCAO, { body: corpo });
+      if (error) {
+        let msg = error.message || "Falha ao chamar a função.";
+        try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch {}
+        const e = new Error(msg); e.fatal = error.context && error.context.status >= 400 && error.context.status < 500; throw e;
       }
+      if (data && data.error) throw new Error(data.error);
+      return data;
+    } catch (e) { ultimoErro = e; if (e.fatal) break; await dormir(800); }
+  }
+  throw ultimoErro;
+}
 
-      buscarBtn.disabled = false;
-      keyLabel.textContent = "Buscar edição de hoje";
-    });
+// ---------------------------------------------------------------- painel
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const urlSegura = (u) => { try { const x = new URL(u); return x.protocol === "http:" || x.protocol === "https:" ? x.href : null; } catch { return null; } };
 
-    copyBtn.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(postFinalEl.value);
-      copyBtn.textContent = "Copiado!";
-      setTimeout(() => { copyBtn.textContent = "Copiar texto"; }, 1500);
-    });
+function cartao(n, escolhida) {
+  const href = urlSegura(n.url);
+  const titulo = href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`;
+  return `<div class="news${escolhida ? " chosen" : ""}"><span class="meta">${esc(ROTULO[n.tema] || n.tema).toUpperCase()} · ${esc(n.fonte)}${escolhida ? " · ESCOLHIDA PELA LUANA" : ""}</span>${titulo}<p>${esc(n.resumo)}</p></div>`;
+}
+function pintarNoticias() {
+  if (!S.noticias) return;
+  $("noticias").innerHTML = (S.avisos || []).map((a) => `<p class="warn">${esc(a)}</p>`).join("") +
+    S.noticias.map((n, i) => cartao(n, S.escolha && S.escolha.indice === i)).join("");
+}
+function pintarDecisao() {
+  if (!S.escolha) return;
+  const n = S.noticias[S.escolha.indice];
+  $("decisao").innerHTML = cartao(n, true) + `<p class="motivo"><b>Por que importa:</b> ${esc(S.escolha.motivo)}</p>`;
+}
+function pintarFinal() {
+  if (!S.zaia) return;
+  const entregue = S.entrega;
+  $("final").innerHTML =
+    `<p class="post-title">${esc(S.zaia.titulo)}</p><pre class="post" id="postTxt">${esc(S.zaia.post)}</pre>` +
+    `<div class="row"><button type="button" id="copiar" ${entregue ? "" : "disabled"}>Copiar texto</button>` +
+    `<span class="count">${S.zaia.caracteres} caracteres${entregue ? " · entregue" : " · aguardando a Entrega"}</span></div>` +
+    (S.zaia.avisos || []).map((a) => `<p class="warn">${esc(a)}</p>`).join("");
+  const b = $("copiar");
+  if (b) b.onclick = async () => {
+    try { await navigator.clipboard.writeText(S.zaia.post); } catch {
+      const r = document.createRange(); r.selectNodeContents($("postTxt")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand("copy"); s.removeAllRanges();
+    }
+    b.textContent = "Copiado!"; setTimeout(() => (b.textContent = "Copiar texto"), 1800);
+  };
+}
 
-    copyAllBtn.addEventListener("click", async () => {
-      if (!noticiasAtuais.length) return;
-      await navigator.clipboard.writeText(formatarTodosDespachos(noticiasAtuais));
-      copyAllBtn.textContent = "Copiado!";
-      setTimeout(() => { copyAllBtn.textContent = "Copiar todas"; }, 1500);
-    });
-  </script>
+// ---------------------------------------------------------------- fluxo
+let S = {}; // estado carregado entre etapas (permite retomar a etapa que falhou)
+let rodando = false;
+const go = $("go");
+
+const ETAPAS = [
+  { id: "nina", pronto: () => !!S.noticias, async rodar() {
+      const a = porChave.nina; trabalhar(a, "Buscando notícias...");
+      const [r] = await Promise.all([chamar({ etapa: "nina" }), dormir(2200)]);
+      S.noticias = r.noticias; S.avisos = r.avisos; pintarNoticias();
+      parar(a, "Pauta pronta", "done");
+      await entregarAFala(a, porChave.luana, r.fala);
+  } },
+  { id: "luana", pronto: () => !!S.escolha, async rodar() {
+      const a = porChave.luana; trabalhar(a, "Escolhendo a pauta...");
+      const [r] = await Promise.all([chamar({ etapa: "luana", noticias: S.noticias }), dormir(1800)]);
+      S.escolha = { indice: r.indice, motivo: r.motivo }; pintarNoticias(); pintarDecisao();
+      parar(a, "Pauta escolhida", "done");
+      await entregarAFala(a, porChave.zaia, r.fala);
+  } },
+  { id: "zaia", pronto: () => !!S.zaia, async rodar() {
+      const a = porChave.zaia; trabalhar(a, "Revisando e formatando...");
+      const [r] = await Promise.all([chamar({ etapa: "zaia", noticia: S.noticias[S.escolha.indice], motivo: S.escolha.motivo }), dormir(2200)]);
+      S.zaia = r; pintarFinal();
+      parar(a, "Texto revisado", "done");
+      await entregarAFala(a, porChave.entrega, r.fala);
+  } },
+  { id: "entrega", pronto: () => !!S.entrega, async rodar() {
+      const a = porChave.entrega; trabalhar(a, "Conferindo e entregando...");
+      const [r] = await Promise.all([chamar({ etapa: "entrega", titulo: S.zaia.titulo, post: S.zaia.post }), dormir(1500)]);
+      S.entrega = r; pintarFinal();
+      parar(a, "Entregue", "done");
+      await falar(a, r.fala, 2600);
+  } },
+];
+
+function mostrarErro(msg) { const e = $("erro"); e.textContent = msg; e.hidden = !msg; }
+
+async function iniciar() {
+  if (rodando) return;
+  if (ETAPAS.every((e) => e.pronto())) { // rodada anterior concluída: recomeça do zero
+    S = {}; for (const a of AGENTES) { parar(a, a.papel, "idle"); sentar(a); }
+    $("noticias").innerHTML = $("decisao").innerHTML = $("final").innerHTML = "";
+  }
+  rodando = true; go.disabled = true; go.textContent = "Trabalhando..."; mostrarErro("");
+  for (const e of ETAPAS) {
+    if (e.pronto()) continue;
+    try { await e.rodar(); }
+    catch (err) {
+      const a = porChave[e.id]; sentar(a); parar(a, "Deu problema", "error");
+      mostrarErro(`${a.nome} não conseguiu concluir: ${err.message}`);
+      falar(a, "Tive um problema. Vou tentar de novo quando você clicar.", 3000);
+      rodando = false; go.disabled = false; go.textContent = "Tentar de novo"; return;
+    }
+  }
+  rodando = false; go.disabled = false; go.textContent = "Nova busca";
+}
+go.addEventListener("click", iniciar);
+
+// ---------------------------------------------------------------- start
+(async () => {
+  await Promise.all(Object.entries(nomes).map(async ([k, v]) => { IM[k] = await img(v); }));
+  montarFundo(); ajustar();
+  for (const a of AGENTES) sentar(a);
+  window.addEventListener("resize", ajustar);
+  requestAnimationFrame(loop);
+  window.__ninanews = { S: () => S }; // facilita teste e depuração
+})();
+</script>
 </body>
 </html>
