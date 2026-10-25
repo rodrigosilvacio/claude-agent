@@ -118,9 +118,20 @@
       <input id="senha" type="password" autocomplete="current-password" minlength="6" required>
       <div class="acoes">
         <button id="botaoLogin" type="submit">ENTRAR ▶</button>
-        <span class="msg" id="msgLogin"></span>
+        <button id="esqueci" type="button" class="sec">ESQUECI A SENHA</button>
       </div>
+      <p class="msg" id="msgLogin"></p>
       <p class="msg">Cada conta pode pedir até 3 posts por dia. O texto e a arte ficam visíveis só para você.</p>
+    </form>
+
+    <form class="caixa" id="caixaNovaSenha" hidden>
+      <h2>▶ CRIE UMA NOVA SENHA</h2>
+      <label for="novaSenha">Nova senha (mínimo 6 caracteres)</label>
+      <input id="novaSenha" type="password" autocomplete="new-password" minlength="6" required>
+      <div class="acoes">
+        <button id="botaoNovaSenha" type="submit">SALVAR SENHA ▶</button>
+        <span class="msg" id="msgNovaSenha"></span>
+      </div>
     </form>
 
     <form class="caixa" id="form" hidden>
@@ -287,6 +298,7 @@ function desenharEsteira(d) {
 const SUPABASE_URL = 'https://xtrvojnauvkkterogrst.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_JmhdMN8S7lSpCeaJANw_lQ_RRwZ2_OT';
 const LOGO_URL = new URL('../assets/logo-rodrigo-silva.png', location.href).href;
+const URL_PAINEL = location.href.split('#')[0].split('?')[0];
 const AGENTE_DA_ETAPA = { escrita: 'tiago', ajuste: 'tiago', revisao: 'roberto', arte: 'eloah' };
 const CRITERIOS = { ortografia: 'Ortografia', gramatica: 'Gramática', coerencia: 'Coerência', titulo: 'Título', postura: 'Postura CIO/CTO', tom: 'Tom', estrutura: 'Estrutura', aderencia: 'Aderência' };
 
@@ -482,7 +494,7 @@ async function carregarDetalhe() {
     const png = `/entregas/${encodeURIComponent(d.id)}/arte.png`;
     arte = `<h3>ARTE</h3><img class="arte" src="${png}?v=${Date.now()}" alt="Criativo do post"><div class="acoes"><a class="botao" download="${esc(d.id)}.png" href="${png}">BAIXAR ARTE</a></div>`;
   } else if (d.temArte) {
-    arte = `<h3>ARTE</h3><div class="moldura" id="moldura"></div><div class="acoes"><button id="baixarArte">BAIXAR PNG</button><span class="msg" id="msgArte"></span></div>`;
+    arte = `<h3>ARTE</h3><div class="moldura" id="moldura"></div><div class="acoes"><button id="baixarArte">BAIXAR PNG</button><span class="msg" id="msgArte"></span></div><div id="pngPronto" hidden><p class="msg">Se o download não começou, clique com o botão direito na imagem abaixo e escolha "Salvar imagem" (no celular, toque e segure).</p><img class="arte" id="pngGerado" alt="Arte em PNG pronta para salvar"></div>`;
   }
   $('detalhe').hidden = false;
   $('detalhe').innerHTML = `
@@ -540,6 +552,7 @@ function mostrarArte(d) {
   new ResizeObserver(ajustar).observe(moldura);
   quadroArte.addEventListener('load', () => conferirArte(quadroArte));
   $('baixarArte').addEventListener('click', () => baixarArte(quadroArte, d));
+  carregarHtmlParaImagem().catch(() => {});
 }
 
 // Conferência visual no navegador: logo carregado e nada além de 1080x1350.
@@ -552,21 +565,63 @@ function conferirArte(quadroArte) {
   $('msgArte').textContent = avisos.length ? `Atenção: ${avisos.join(' e ')}.` : '';
 }
 
+// Carregada assim que a arte aparece, para o clique em "Baixar" ser rápido.
+let htmlParaImagem = null;
+const carregarHtmlParaImagem = () => (htmlParaImagem ??= import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm'));
+
+// Fontes do Google usadas pela arte, embutidas como data URL. O html-to-image
+// não alcança as folhas de estilo de dentro do iframe; sem isso o PNG sai com
+// a fonte reserva em vez da fonte da arte.
+async function cssDasFontes(doc) {
+  const comoDataUrl = (blob) => new Promise((ok, falha) => {
+    const leitor = new FileReader();
+    leitor.onload = () => ok(leitor.result);
+    leitor.onerror = falha;
+    leitor.readAsDataURL(blob);
+  });
+  let css = '';
+  for (const link of doc.querySelectorAll('link[href^="https://fonts.googleapis.com/"]')) {
+    let texto = await fetch(link.href).then((r) => r.text());
+    const arquivos = [...new Set(texto.match(/https:\/\/fonts\.gstatic\.com\/[^)'"\s]+/g) || [])];
+    for (const arquivo of arquivos) {
+      const dataUrl = await fetch(arquivo).then((r) => r.blob()).then(comoDataUrl);
+      texto = texto.split(arquivo).join(dataUrl);
+    }
+    css += texto;
+  }
+  return css;
+}
+
 async function baixarArte(quadroArte, d) {
+  $('baixarArte').disabled = true;
   $('msgArte').textContent = 'Gerando PNG...';
   try {
-    const { toPng } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
+    const { toBlob } = await carregarHtmlParaImagem();
     const doc = quadroArte.contentDocument;
     await doc.fonts.ready;
-    const png = await toPng(doc.body, { width: 1080, height: 1350, pixelRatio: 1, cacheBust: true });
+    const fontEmbedCSS = await cssDasFontes(doc).catch(() => undefined);
+    const opcoes = { width: 1080, height: 1350, pixelRatio: 1, backgroundColor: '#131311', fontEmbedCSS };
+    // A primeira passada às vezes sai sem fontes ou imagens (Safari e alguns
+    // Chrome): a segunda usa o que a primeira já carregou.
+    await toBlob(doc.body, opcoes).catch(() => null);
+    const blob = await toBlob(doc.body, opcoes);
+    if (!blob || blob.size < 1000) throw new Error('imagem vazia');
+    const url = URL.createObjectURL(blob);
+    // Mostra o PNG na tela: se o navegador bloquear o download, dá para salvar a imagem.
+    $('pngGerado').src = url;
+    $('pngPronto').hidden = false;
     const a = document.createElement('a');
-    a.href = png;
-    a.download = `post-${d.tema.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.png`;
+    a.href = url;
+    a.download = `post-${d.tema.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.png`;
+    document.body.appendChild(a);
     a.click();
-    $('msgArte').textContent = 'PNG baixado.';
+    a.remove();
+    $('msgArte').textContent = 'PNG pronto.';
   } catch (e) {
-    console.error(e);
-    $('msgArte').textContent = 'Não consegui gerar o PNG. Tente de novo ou use o Chrome.';
+    console.error('Falha ao gerar o PNG:', e);
+    $('msgArte').textContent = `Não consegui gerar o PNG (${e?.message || e}). Recarregue a página e tente de novo.`;
+  } finally {
+    $('baixarArte').disabled = false;
   }
 }
 
@@ -620,9 +675,16 @@ $('caixaLogin').addEventListener('submit', async (e) => {
       if (error) throw error;
       $('msgLogin').textContent = '';
     } else {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split('#')[0] } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: URL_PAINEL } });
       if (error) throw error;
-      $('msgLogin').textContent = data.session ? '' : 'Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.';
+      // E-mail já cadastrado: o Supabase responde "ok" sem enviar nada (para não
+      // revelar quem tem conta) e devolve o usuário sem identidades.
+      if (data.user && !data.user.identities?.length) {
+        document.querySelector('.aba[data-aba="entrar"]').click();
+        $('msgLogin').textContent = 'Este e-mail já tem conta (vale a mesma conta dos outros apps do Rodrigo). Entre com a sua senha ou use "Esqueci a senha".';
+      } else {
+        $('msgLogin').textContent = data.session ? '' : 'Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.';
+      }
     }
   } catch (err) {
     $('msgLogin').textContent = /invalid login/i.test(err.message) ? 'E-mail ou senha incorretos.' : `Erro: ${err.message}`;
@@ -631,10 +693,36 @@ $('caixaLogin').addEventListener('submit', async (e) => {
 
 $('sair').addEventListener('click', () => sb.auth.signOut());
 
+$('esqueci').addEventListener('click', async () => {
+  const email = $('email').value.trim();
+  if (!email) { $('msgLogin').textContent = 'Digite seu e-mail acima e clique de novo em "Esqueci a senha".'; return; }
+  $('esqueci').disabled = true;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: URL_PAINEL });
+  $('esqueci').disabled = false;
+  $('msgLogin').textContent = error
+    ? `Erro: ${error.message}`
+    : 'Se este e-mail tiver conta, enviamos um link para criar uma nova senha. Confira também a caixa de spam.';
+});
+
+// Volta do link "Esqueci a senha": a pessoa já está logada pelo link e só
+// precisa definir a nova senha.
+let recuperandoSenha = /type=recovery/.test(location.hash);
+$('caixaNovaSenha').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('botaoNovaSenha').disabled = true;
+  const { error } = await sb.auth.updateUser({ password: $('novaSenha').value });
+  $('botaoNovaSenha').disabled = false;
+  if (error) { $('msgNovaSenha').textContent = `Erro: ${error.message}`; return; }
+  recuperandoSenha = false;
+  history.replaceState(null, '', URL_PAINEL);
+  mostrarConta();
+});
+
 function mostrarConta() {
   const logado = Boolean(usuario);
+  $('caixaNovaSenha').hidden = !(logado && recuperandoSenha);
   $('caixaLogin').hidden = logado;
-  $('form').hidden = !logado;
+  $('form').hidden = !logado || recuperandoSenha;
   $('caixaComo').hidden = logado;
   $('caixaLista').hidden = !logado;
   $('sair').hidden = !logado;
@@ -685,14 +773,15 @@ async function iniciar() {
     $('msgLogin').textContent = 'Não consegui conectar ao servidor. Recarregue a página.';
     return;
   }
+  sb.auth.onAuthStateChange((evento, sessao) => {
+    const antes = usuario?.id;
+    usuario = sessao?.user || null;
+    if (evento === 'PASSWORD_RECOVERY') { recuperandoSenha = true; mostrarConta(); }
+    if (antes !== usuario?.id) { mostrarConta(); atualizar(); }
+  });
   const { data } = await sb.auth.getSession();
   usuario = data.session?.user || null;
   mostrarConta();
-  sb.auth.onAuthStateChange((_evento, sessao) => {
-    const antes = usuario?.id;
-    usuario = sessao?.user || null;
-    if (antes !== usuario?.id) { mostrarConta(); atualizar(); }
-  });
   atualizar();
   setInterval(() => { if (usuario) atualizar(); }, 8000);
 }
