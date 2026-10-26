@@ -127,11 +127,15 @@
   .fonte ul { margin: 0; padding-left: 18px; }
   .fonte li { margin: 2px 0; }
 
-  .pensando { display: flex; gap: 10px; align-items: center; color: var(--texto-2); font-size: 14px; }
-  .pontos span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: var(--texto-2); animation: pulo 1.2s infinite ease-in-out; }
-  .pontos span:nth-child(2) { animation-delay: .15s; }
-  .pontos span:nth-child(3) { animation-delay: .3s; }
-  @keyframes pulo { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+  .progresso { display: flex; gap: 14px; align-items: center; }
+  .gauge { position: relative; width: 56px; height: 56px; flex: none; }
+  .gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .gauge circle { fill: none; stroke-width: 5; }
+  .gauge .trilha { stroke: var(--superficie-2); }
+  .gauge .valor { stroke: var(--destaque); stroke-linecap: round; transition: stroke-dashoffset .3s ease; }
+  .gauge .pct { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .progresso .etapa { font-size: 14px; overflow-wrap: anywhere; }
+  .progresso .sub-etapa { font-size: 12.5px; color: var(--texto-2); }
 
   form.entrada { padding: 12px 16px 16px; background: var(--fundo); }
   form.entrada .caixa {
@@ -437,25 +441,108 @@ function rodape(r) {
   return `<div class="fonte">${drive}${ia}</div>`;
 }
 
+// Gauge da resposta. O agente não sabe de antemão quantas buscas fará, então o
+// percentual é estimado: avança com o tempo (calibrado pela duração típica das
+// últimas respostas) e com cada etapa real que a função informa. Nunca passa
+// de 95% antes da resposta chegar e nunca volta para trás.
+const CIRCUNFERENCIA = 2 * Math.PI * 24;
+
+function criarGauge(bolha) {
+  bolha.innerHTML = `
+    <div class="progresso" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso da resposta">
+      <div class="gauge">
+        <svg viewBox="0 0 56 56"><circle class="trilha" cx="28" cy="28" r="24"/><circle class="valor" cx="28" cy="28" r="24" stroke-dasharray="${CIRCUNFERENCIA}" stroke-dashoffset="${CIRCUNFERENCIA}"/></svg>
+        <span class="pct">0%</span>
+      </div>
+      <div><div class="etapa">Entendendo a pergunta...</div><div class="sub-etapa">Estimativa com base nas últimas respostas</div></div>
+    </div>`;
+  const el = bolha.querySelector('.progresso');
+  const g = { atual: 0, marco: 5, estimativa: 25_000, inicio: Date.now(), buscas: 0, timer: null };
+  const desenhar = (p) => {
+    g.atual = Math.max(g.atual, Math.round(p));
+    el.querySelector('.valor').style.strokeDashoffset = CIRCUNFERENCIA * (1 - g.atual / 100);
+    el.querySelector('.pct').textContent = `${g.atual}%`;
+    el.setAttribute('aria-valuenow', g.atual);
+  };
+  const passo = () => {
+    const pelaHora = 90 * (1 - Math.exp(-(Date.now() - g.inicio) / (g.estimativa * 0.6)));
+    desenhar(Math.min(95, Math.max(g.marco, pelaHora)));
+  };
+  g.timer = setInterval(passo, 200);
+  passo();
+  return {
+    evento(e) {
+      const etapa = el.querySelector('.etapa');
+      if (e.tipo === 'inicio') g.estimativa = e.estimativa_ms || g.estimativa;
+      if (e.tipo === 'busca') {
+        g.marco = Math.max(g.marco, Math.min(15 + (e.n - 1) * 12, 60));
+        etapa.textContent = `Buscando nos documentos: "${e.consulta}"`;
+      }
+      if (e.tipo === 'achou') {
+        g.buscas = e.n;
+        g.marco = Math.max(g.marco, Math.min(30 + (e.n - 1) * 12, 70));
+        etapa.textContent = e.encontrados ? `Encontrei ${e.encontrados} trechos. Lendo...` : 'Nada encontrado nessa busca. Tentando de outro jeito...';
+      }
+      if (e.tipo === 'analisando') {
+        g.marco = Math.max(g.marco, Math.min(45 + g.buscas * 10, 85));
+        etapa.textContent = 'Analisando os trechos e escrevendo a resposta...';
+      }
+      passo();
+    },
+    concluir() { clearInterval(g.timer); desenhar(100); },
+    parar() { clearInterval(g.timer); },
+  };
+}
+
 async function perguntar(texto) {
   if (ocupado || !texto.trim()) return;
   ocupado = true;
   $('enviar').disabled = true;
   adicionar('usuario', formatar(texto));
-  const espera = adicionar('agente', '<div class="pensando"><span class="pontos"><span></span><span></span><span></span></span> Pesquisando nos documentos...</div>');
+  const espera = adicionar('agente', '');
+  const bolha = espera.querySelector('.bolha');
+  const gauge = criarGauge(bolha);
   try {
-    const { data, error } = await sb.functions.invoke('drive-perguntar', { body: { pergunta: texto, historico } });
-    if (error) {
+    const { data: { session } } = await sb.auth.getSession();
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/drive-perguntar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session?.access_token}`, apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pergunta: texto, historico }),
+    });
+    if (!resp.ok) {
       let msg = 'Não consegui responder agora. Tente de novo em instantes.';
-      try { msg = (await error.context.json()).erro || msg; } catch { /* resposta sem JSON */ }
+      try { msg = (await resp.json()).erro || msg; } catch { /* resposta sem JSON */ }
       throw new Error(msg);
     }
-    espera.querySelector('.bolha').innerHTML = formatar(data.texto) + rodape(data);
-    historico.push({ pergunta: texto, resposta: data.texto });
+    // Um evento JSON por linha; o último traz a resposta ou o erro.
+    const leitor = resp.body.getReader();
+    const decodificador = new TextDecoder();
+    let buffer = '';
+    let resultado = null;
+    while (!resultado) {
+      const { value, done } = await leitor.read();
+      if (done) break;
+      buffer += decodificador.decode(value, { stream: true });
+      const linhas = buffer.split('\n');
+      buffer = linhas.pop();
+      for (const linha of linhas) {
+        if (!linha.trim()) continue;
+        const e = JSON.parse(linha);
+        if (e.tipo === 'fim') resultado = e.resposta;
+        else if (e.tipo === 'erro') throw new Error(e.erro);
+        else gauge.evento(e);
+      }
+    }
+    if (!resultado) throw new Error('A conexão caiu antes da resposta. Tente de novo.');
+    gauge.concluir();
+    await new Promise((r) => setTimeout(r, 350));
+    bolha.innerHTML = formatar(resultado.texto) + rodape(resultado);
+    historico.push({ pergunta: texto, resposta: resultado.texto });
     historico = historico.slice(-6);
   } catch (e) {
+    gauge.parar();
     espera.classList.add('erro');
-    espera.querySelector('.bolha').textContent = e.message;
+    bolha.textContent = e.message;
   } finally {
     ocupado = false;
     $('enviar').disabled = false;
@@ -508,7 +595,7 @@ async function carregarPainel() {
     $('sinc-barra').firstElementChild.style.width = `${pct}%`;
     $('sinc-status').textContent = s.status === 'listando'
       ? 'Lendo a pasta do Drive...'
-      : `Processando: ${s.processados} de ${s.total} arquivos`;
+      : `Processando: ${s.processados} de ${s.total} arquivos (${pct}%)`;
     $('sinc-detalhe').textContent = parada ? 'Parece ter parado. Clique em "Atualizar base" para retomar.' : `Iniciada em ${quando(s.criado_em)}`;
   } else if (s.status === 'erro') {
     $('sinc-status').textContent = `Última atualização falhou (${quando(s.criado_em)})`;
