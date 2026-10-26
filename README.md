@@ -2,6 +2,19 @@
 
 Repositório com Projetos desenvolvidos com Claude Code como exemplo.
 
+## Agente do Drive (`/drive-agente`)
+
+Página de perguntas e respostas sobre os documentos de uma pasta do Google
+Drive (PDF, PowerPoint, Word e Excel). O admin clica em "Atualizar base" e as
+edge functions `drive-sincronizar` e `drive-processar` extraem o texto por
+página, slide ou aba, geram embeddings (OpenAI) e gravam em `drive_trechos`.
+Na pergunta, `drive-perguntar` deixa o Claude (`claude-opus-5-5`) buscar
+quantas vezes precisar (busca híbrida: texto em português + vetor) e responder
+com a fonte no rodapé: Google Drive (arquivo e local), IA (quando não está nos
+documentos) ou misto. As citações são conferidas no código. Acesso por
+convite (`drive_acessos`). Migration `0063`. Detalhes em
+[`drive-agente/README.md`](drive-agente/README.md).
+
 ## Escritório de Agentes (`/escritorio-agentes`)
 
 Escritório pixel art com três agentes de IA que produzem posts de LinkedIn:
