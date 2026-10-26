@@ -7,6 +7,10 @@
 // citado foi de fato devolvido pela busca nesta pergunta. Sem citação real, a
 // resposta é marcada como "ia"; citação real em resposta declarada "ia" vira
 // "misto". A tela monta o rodapé a partir desses campos.
+//
+// A resposta vem em streaming (NDJSON, um evento por linha): o progresso de
+// cada etapa (busca, trechos encontrados, análise) alimenta o gauge da tela e
+// o último evento traz a resposta ou o erro.
 import Anthropic from "npm:@anthropic-ai/sdk@0.137.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.5";
 
@@ -160,7 +164,16 @@ function finalizar(
   };
 }
 
-async function perguntar(historico: { pergunta: string; resposta: string }[], pergunta: string): Promise<Resultado> {
+type Evento =
+  | { tipo: "busca"; consulta: string; n: number }
+  | { tipo: "achou"; encontrados: number; n: number }
+  | { tipo: "analisando" };
+
+async function perguntar(
+  historico: { pergunta: string; resposta: string }[],
+  pergunta: string,
+  avisar: (e: Evento) => void,
+): Promise<Resultado> {
   const inicio = Date.now();
   const mensagens: Anthropic.Beta.BetaMessageParam[] = [];
   for (const h of historico) {
@@ -215,12 +228,15 @@ async function perguntar(historico: { pergunta: string; resposta: string }[], pe
         continue;
       }
       const consulta = String((uso.input as { consulta?: string }).consulta ?? "").slice(0, 500);
+      avisar({ tipo: "busca", consulta, n: buscas.length + 1 });
       const trechos = await buscar(consulta);
       for (const t of trechos) vistos.set(t.trecho_id, t);
       buscas.push({ consulta, encontrados: trechos.length });
+      avisar({ tipo: "achou", encontrados: trechos.length, n: buscas.length });
       resultados.push({ type: "tool_result", tool_use_id: uso.id, content: trechosEmTexto(trechos) });
     }
     mensagens.push({ role: "user", content: resultados });
+    avisar({ tipo: "analisando" });
   }
   throw new Error("O agente não concluiu a resposta a tempo. Tente reformular a pergunta.");
 }
@@ -252,25 +268,44 @@ Deno.serve(async (req) => {
     .map((h) => ({ pergunta: String(h?.pergunta ?? "").slice(0, 2000), resposta: String(h?.resposta ?? "").slice(0, 4000) }))
     .filter((h) => h.pergunta && h.resposta);
 
-  const inicio = Date.now();
-  try {
-    const r = await perguntar(historico, pergunta);
-    await supabase.from("drive_perguntas").insert({
-      user_id: auth!.user!.id,
-      email,
-      pergunta,
-      resposta: r.texto,
-      tipo_fonte: r.tipo_fonte,
-      fontes: r.citados,
-      buscas: r.buscas,
-      fonte_corrigida: r.corrigida,
-      duracao_ms: Date.now() - inicio,
-    });
-    return json({ texto: r.texto, tipo_fonte: r.tipo_fonte, fontes: r.fontes });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("drive-perguntar:", msg);
-    await supabase.from("drive_perguntas").insert({ user_id: auth!.user!.id, email, pergunta, erro: msg.slice(0, 500), duracao_ms: Date.now() - inicio });
-    return json({ erro: "Não consegui responder agora. Tente de novo em instantes." }, 500);
-  }
+  // Tempo típico das últimas respostas: a tela usa para calibrar o gauge.
+  const { data: recentes } = await supabase.from("drive_perguntas")
+    .select("duracao_ms").is("erro", null).not("duracao_ms", "is", null)
+    .order("criado_em", { ascending: false }).limit(20);
+  const tempos = (recentes ?? []).map((r) => r.duracao_ms as number).sort((a, b) => a - b);
+  const estimativa = tempos.length ? tempos[Math.floor(tempos.length / 2)] : 25_000;
+
+  const codificador = new TextEncoder();
+  const userId = auth!.user!.id;
+  const corpoStream = new ReadableStream({
+    async start(controle) {
+      const enviar = (e: unknown) => controle.enqueue(codificador.encode(JSON.stringify(e) + "\n"));
+      const inicio = Date.now();
+      enviar({ tipo: "inicio", estimativa_ms: estimativa });
+      try {
+        const r = await perguntar(historico, pergunta, enviar);
+        await supabase.from("drive_perguntas").insert({
+          user_id: userId,
+          email,
+          pergunta,
+          resposta: r.texto,
+          tipo_fonte: r.tipo_fonte,
+          fontes: r.citados,
+          buscas: r.buscas,
+          fonte_corrigida: r.corrigida,
+          duracao_ms: Date.now() - inicio,
+        });
+        enviar({ tipo: "fim", resposta: { texto: r.texto, tipo_fonte: r.tipo_fonte, fontes: r.fontes } });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("drive-perguntar:", msg);
+        await supabase.from("drive_perguntas").insert({ user_id: userId, email, pergunta, erro: msg.slice(0, 500), duracao_ms: Date.now() - inicio });
+        enviar({ tipo: "erro", erro: "Não consegui responder agora. Tente de novo em instantes." });
+      }
+      controle.close();
+    },
+  });
+  return new Response(corpoStream, {
+    headers: { ...corsHeaders, "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" },
+  });
 });
