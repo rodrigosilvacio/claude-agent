@@ -34,6 +34,37 @@ Usuário pergunta
   vetores que faltaram.
 - **Arquivos sem mudança** (mesmo hash SHA-256) não são reprocessados.
 
+## Projetos e conversas
+
+Como os Projetos do Claude: na barra lateral, cada pessoa cria os seus
+projetos e guarda as conversas dentro deles (ou fora, em "Conversas").
+
+- **Instruções do projeto:** texto livre que o agente segue em todas as
+  conversas daquele projeto (estilo, foco, formato), sem deixar de cumprir as
+  regras de fonte.
+- **Conversas salvas:** cada pergunta e resposta fica em `drive_perguntas`,
+  ligada à conversa (`drive_conversas`) e ao projeto (`drive_projetos`). Ao
+  reabrir, a conversa volta com o rodapé de fontes. O histórico usado pelo
+  agente vem do banco (últimas 6 trocas da conversa), não da tela.
+- **Privacidade:** projetos e conversas só aparecem para o dono (RLS).
+  Excluir um projeto apaga as conversas dele; excluir as conversas tira as
+  perguntas da base de conhecimento.
+
+## Base de conhecimento
+
+Toda pergunta respondida (fonte Drive, IA ou misto) entra na base, com o
+vetor da pergunta. Antes de cada resposta, `drive-perguntar` **sempre**
+consulta `drive_buscar_base` (texto + vetor) e entrega ao agente até 3
+respostas anteriores parecidas (cosseno ≥ 0,6), de qualquer usuário e sem
+identificar quem perguntou.
+
+O agente usa essas respostas como ponto de partida e **confere nos
+documentos**: se os documentos disserem outra coisa, eles prevalecem, e
+resposta anterior não conta como documento. Respostas anteriores de fonte "ia"
+chegam marcadas como conhecimento geral. Quando o agente aproveita uma
+resposta da base, o rodapé mostra 📚 "Base de conhecimento" com a pergunta
+anterior e a data; o código só aceita ids que foram de fato entregues.
+
 ## Acesso
 
 O projeto Supabase tem cadastro aberto por causa de outros apps, então estar
@@ -60,7 +91,7 @@ Configuration > Redirect URLs.
 | `drive_config.pasta_id` | ID da pasta do Drive (compartilhada como "Qualquer pessoa com o link") |
 | Secrets das Edge Functions | `ANTHROPIC_API_KEY` (já existia) e `OPENAI_API_KEY` |
 | Deploy | `drive-sincronizar` e `drive-perguntar` com JWT; `drive-processar` com `--no-verify-jwt` (autentica pelo segredo interno em `drive_config`) |
-| Migration | `supabase/migrations/0063_drive_agente.sql` |
+| Migrations | `0063_drive_agente.sql` (base de documentos) e `0064_drive_projetos_base_conhecimento.sql` (projetos, conversas e base de conhecimento) |
 
 ## Limites do MVP
 
