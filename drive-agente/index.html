@@ -87,7 +87,43 @@
   .cartao .rodape-form { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
 
   /* ---------- app ---------- */
-  .app { height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
+  .app { height: 100%; display: grid; grid-template-columns: 272px minmax(0, 1fr); }
+  .principal { height: 100%; min-height: 0; display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); }
+
+  /* ---------- barra lateral: projetos e conversas ---------- */
+  .lateral {
+    min-height: 0; overflow-y: auto; background: var(--superficie); border-right: 1px solid var(--borda);
+    padding: 14px 10px 24px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .lateral .botao { width: 100%; }
+  .lateral h3 {
+    display: flex; align-items: center; justify-content: space-between; margin: 0 6px 4px;
+    font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-2);
+  }
+  .lateral h3 button { background: none; border: 0; color: var(--destaque); cursor: pointer; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .item {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 0;
+    border-radius: 8px; padding: 7px 8px; cursor: pointer; font-size: 14px; color: var(--texto);
+  }
+  .item:hover { background: var(--superficie-2); }
+  .item.ativo { background: var(--superficie-2); font-weight: 600; }
+  .item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item.sub { padding-left: 26px; font-size: 13.5px; color: var(--texto-2); }
+  .item.sub.ativo { color: var(--texto); }
+  .lista-vazia { font-size: 13px; color: var(--texto-2); padding: 4px 8px; }
+  .menu-lateral { display: none; }
+
+  /* ---------- tela inicial do projeto ---------- */
+  .projeto-home { max-width: 780px; margin: 0 auto; display: grid; gap: 16px; }
+  .projeto-home .titulo { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .projeto-home .titulo input { font-size: 20px; font-weight: 700; flex: 1; min-width: 180px; }
+  .projeto-home label { display: grid; gap: 6px; font-size: 13px; color: var(--texto-2); }
+  .projeto-home textarea { min-height: 110px; resize: vertical; }
+  .projeto-home .acoes-projeto { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .projeto-home .conversas-projeto { display: grid; gap: 4px; }
+  .projeto-home .conversas-projeto .item { border: 1px solid var(--borda); background: var(--superficie); }
+  .botao.perigo { background: var(--erro-fundo); color: var(--erro); }
+  .selo.base { background: var(--superficie-2); color: var(--texto); }
   header.topo {
     display: flex; align-items: center; gap: 12px; padding: 12px 16px;
     background: var(--superficie); border-bottom: 1px solid var(--borda);
@@ -168,8 +204,14 @@
   .chip.erro { background: var(--erro-fundo); color: var(--erro); }
   .chip.fila { background: var(--ia-fundo); color: var(--ia); }
 
-  .app { grid-template-columns: minmax(0, 1fr); }
   header.topo h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* Até 860px a barra lateral vira gaveta, aberta pelo botão ☰. */
+  @media (max-width: 860px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    .lateral { position: fixed; inset: 0 auto 0 0; width: min(300px, 86%); z-index: 9; box-shadow: var(--sombra); transform: translateX(-102%); transition: transform .2s; }
+    .app.gaveta-aberta .lateral { transform: none; }
+    .menu-lateral { display: inline-flex; }
+  }
   @media (max-width: 560px) {
     header.topo { gap: 8px; padding: 10px 12px; }
     header.topo .info, header.topo .longo { display: none; }
@@ -223,17 +265,46 @@
 
 <!-- App -->
 <div class="app" id="tela-app" hidden>
+  <aside class="lateral" id="lateral" aria-label="Projetos e conversas">
+    <button class="botao" id="nova-conversa">+ Nova conversa</button>
+    <nav>
+      <h3>Projetos <button type="button" id="novo-projeto">+ Novo</button></h3>
+      <div id="lista-projetos"></div>
+    </nav>
+    <nav>
+      <h3>Conversas</h3>
+      <div id="lista-conversas"></div>
+    </nav>
+  </aside>
+
+  <section class="principal">
   <header class="topo">
-    <h1>Agente do Drive</h1>
+    <button class="botao secundario menu-lateral" id="abrir-lateral" aria-label="Projetos e conversas">☰</button>
+    <h1 id="titulo-topo">Agente do Drive</h1>
     <span class="info" id="info-base"></span>
     <div class="acoes">
       <button class="botao secundario" id="abrir-painel" hidden>Base<span class="longo"> de documentos</span></button>
-      <button class="botao secundario" id="nova-conversa">Nova<span class="longo"> conversa</span></button>
       <button class="botao secundario" id="sair">Sair</button>
     </div>
   </header>
 
   <main class="conversa" id="conversa">
+    <div class="projeto-home" id="projeto-home" hidden>
+      <div class="titulo">
+        <input class="campo" id="projeto-nome" maxlength="80" aria-label="Nome do projeto" />
+      </div>
+      <label>Instruções do projeto (o agente segue em todas as conversas deste projeto)
+        <textarea class="campo" id="projeto-instrucoes" maxlength="4000" placeholder="Exemplo: responda sempre em tópicos curtos e com foco no case Tarumã."></textarea>
+      </label>
+      <div class="acoes-projeto">
+        <button class="botao" id="projeto-salvar">Salvar</button>
+        <button class="botao secundario" id="projeto-nova-conversa">+ Nova conversa neste projeto</button>
+        <span class="lista-vazia" id="projeto-status"></span>
+        <button class="botao perigo" id="projeto-excluir" style="margin-left:auto">Excluir projeto</button>
+      </div>
+      <h3 style="margin:8px 0 0">Conversas do projeto</h3>
+      <div class="conversas-projeto" id="projeto-conversas"></div>
+    </div>
     <div class="trilho" id="trilho">
       <div class="vazio" id="vazio">
         <h2>O que você quer saber?</h2>
@@ -252,8 +323,9 @@
       <textarea id="pergunta" rows="1" maxlength="2000" placeholder="Digite sua pergunta" aria-label="Sua pergunta"></textarea>
       <button class="botao" type="submit" id="enviar">Perguntar</button>
     </div>
-    <div class="dica">Enter envia, Shift+Enter quebra a linha. Respostas da IA vêm sinalizadas no rodapé.</div>
+    <div class="dica" id="dica-entrada">Enter envia, Shift+Enter quebra a linha. Respostas da IA vêm sinalizadas no rodapé.</div>
   </form>
+  </section>
 </div>
 
 <!-- Painel do admin -->
@@ -333,6 +405,7 @@ async function entrar(sessao) {
   $('abrir-painel').hidden = !acesso.admin;
   mostrar('tela-app');
   atualizarInfoBase();
+  carregarLateral();
   if (acesso.admin) assinarPainel();
   $('pergunta').focus();
 }
@@ -397,7 +470,8 @@ $('form-senha').addEventListener('submit', async (e) => {
 });
 
 async function sair() {
-  historico = [];
+  projetoAtual = null;
+  conversaAtual = null;
   limparConversa();
   await sb.auth.signOut();
 }
@@ -409,15 +483,164 @@ async function atualizarInfoBase() {
   $('info-base').textContent = count ? `${count} documento${count > 1 ? 's' : ''} na base` : 'Base ainda vazia';
 }
 
-// ---------- conversa ----------
+// ---------- projetos e conversas ----------
 
-let historico = [];
-let ocupado = false;
+// Projeto aberto (ou null = sem projeto) e conversa aberta (ou null = nova).
+// As conversas e o histórico ficam no banco; a função drive-perguntar cria a
+// conversa na primeira pergunta e devolve o id.
+let projetoAtual = null;
+let conversaAtual = null;
+let projetos = [];
+let conversas = [];
+
+function quandoCurto(iso) {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+function itemConversa(c, classe = '') {
+  return `<button class="item ${classe} ${c.id === conversaAtual ? 'ativo' : ''}" data-conversa="${c.id}" title="${escapar(c.titulo)}">
+    <span>💬 ${escapar(c.titulo)}</span></button>`;
+}
+
+function desenharLateral() {
+  $('lista-projetos').innerHTML = projetos.map((p) => {
+    const aberto = p.id === projetoAtual;
+    const dele = aberto ? conversas.filter((c) => c.projeto_id === p.id).slice(0, 8) : [];
+    return `<button class="item ${aberto && !conversaAtual ? 'ativo' : ''}" data-projeto="${p.id}" title="${escapar(p.nome)}"><span>📁 ${escapar(p.nome)}</span></button>`
+      + dele.map((c) => itemConversa(c, 'sub')).join('');
+  }).join('') || '<div class="lista-vazia">Nenhum projeto ainda.</div>';
+  const soltas = conversas.filter((c) => !c.projeto_id).slice(0, 30);
+  $('lista-conversas').innerHTML = soltas.map((c) => itemConversa(c)).join('') || '<div class="lista-vazia">Suas conversas aparecem aqui.</div>';
+  const projeto = projetos.find((p) => p.id === projetoAtual);
+  $('titulo-topo').textContent = projeto ? `📁 ${projeto.nome}` : 'Agente do Drive';
+}
+
+async function carregarLateral() {
+  const [{ data: ps }, { data: cs }] = await Promise.all([
+    sb.from('drive_projetos').select('id, nome, instrucoes, atualizado_em').order('nome'),
+    sb.from('drive_conversas').select('id, titulo, projeto_id, atualizado_em').order('atualizado_em', { ascending: false }).limit(200),
+  ]);
+  projetos = ps || [];
+  conversas = cs || [];
+  desenharLateral();
+}
+
+function fecharGaveta() { $('tela-app').classList.remove('gaveta-aberta'); }
+
+function mostrarConversa() {
+  $('projeto-home').hidden = true;
+  $('trilho').hidden = false;
+  $('form-pergunta').hidden = false;
+}
 
 function limparConversa() {
   $('trilho').querySelectorAll('.msg').forEach((m) => m.remove());
   $('vazio').hidden = false;
 }
+
+function novaConversa(projetoId) {
+  projetoAtual = projetoId;
+  conversaAtual = null;
+  limparConversa();
+  mostrarConversa();
+  const projeto = projetos.find((p) => p.id === projetoId);
+  caixa.placeholder = projeto ? `Pergunte dentro do projeto ${projeto.nome}` : 'Digite sua pergunta';
+  desenharLateral();
+  fecharGaveta();
+  caixa.focus();
+}
+
+async function abrirConversa(id) {
+  const c = conversas.find((x) => x.id === id);
+  if (!c) return;
+  conversaAtual = id;
+  projetoAtual = c.projeto_id;
+  limparConversa();
+  mostrarConversa();
+  desenharLateral();
+  fecharGaveta();
+  const { data } = await sb.from('drive_perguntas')
+    .select('pergunta, resposta, tipo_fonte, fontes_tela, base_usada, erro').eq('conversa_id', id).order('criado_em');
+  if (conversaAtual !== id) return;
+  for (const p of data || []) {
+    adicionar('usuario', formatar(p.pergunta));
+    if (p.resposta) adicionar('agente', formatar(p.resposta) + rodape({ tipo_fonte: p.tipo_fonte, fontes: p.fontes_tela, base: p.base_usada }));
+    else adicionar('agente erro', escapar('Esta pergunta não foi respondida.'));
+  }
+  caixa.focus();
+}
+
+function abrirProjeto(id) {
+  const p = projetos.find((x) => x.id === id);
+  if (!p) return;
+  projetoAtual = id;
+  conversaAtual = null;
+  $('trilho').hidden = true;
+  $('form-pergunta').hidden = true;
+  $('projeto-home').hidden = false;
+  $('projeto-nome').value = p.nome;
+  $('projeto-instrucoes').value = p.instrucoes || '';
+  $('projeto-status').textContent = '';
+  const dele = conversas.filter((c) => c.projeto_id === id);
+  $('projeto-conversas').innerHTML = dele.map((c) => `<button class="item" data-conversa="${c.id}"><span>💬 ${escapar(c.titulo)}</span><span style="margin-left:auto;color:var(--texto-2);font-size:12px">${quandoCurto(c.atualizado_em)}</span></button>`).join('')
+    || '<div class="lista-vazia">Nenhuma conversa ainda. Comece uma nova.</div>';
+  desenharLateral();
+  fecharGaveta();
+}
+
+async function criarProjeto() {
+  const nome = prompt('Nome do novo projeto:')?.trim();
+  if (!nome) return;
+  const { data, error } = await sb.from('drive_projetos').insert({ nome: nome.slice(0, 80) }).select('id, nome, instrucoes, atualizado_em').single();
+  if (error) { alert('Não consegui criar o projeto. Tente de novo.'); return; }
+  projetos.push(data);
+  projetos.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  abrirProjeto(data.id);
+}
+
+async function salvarProjeto() {
+  const nome = $('projeto-nome').value.trim();
+  if (!nome) { $('projeto-status').textContent = 'Dê um nome ao projeto.'; return; }
+  const { error } = await sb.from('drive_projetos')
+    .update({ nome: nome.slice(0, 80), instrucoes: $('projeto-instrucoes').value.slice(0, 4000) }).eq('id', projetoAtual);
+  $('projeto-status').textContent = error ? 'Não consegui salvar.' : 'Salvo.';
+  if (!error) {
+    const p = projetos.find((x) => x.id === projetoAtual);
+    p.nome = nome.slice(0, 80);
+    p.instrucoes = $('projeto-instrucoes').value;
+    desenharLateral();
+  }
+}
+
+async function excluirProjeto() {
+  const p = projetos.find((x) => x.id === projetoAtual);
+  if (!p || !confirm(`Excluir o projeto "${p.nome}" e todas as conversas dele? As perguntas também saem da base de conhecimento.`)) return;
+  const { error } = await sb.from('drive_projetos').delete().eq('id', p.id);
+  if (error) { $('projeto-status').textContent = 'Não consegui excluir.'; return; }
+  await carregarLateral();
+  novaConversa(null);
+}
+
+$('nova-conversa').addEventListener('click', () => novaConversa(null));
+$('novo-projeto').addEventListener('click', criarProjeto);
+$('projeto-salvar').addEventListener('click', salvarProjeto);
+$('projeto-excluir').addEventListener('click', excluirProjeto);
+$('projeto-nova-conversa').addEventListener('click', () => novaConversa(projetoAtual));
+$('abrir-lateral').addEventListener('click', () => $('tela-app').classList.toggle('gaveta-aberta'));
+// No celular, tocar fora da gaveta fecha.
+document.querySelector('.principal').addEventListener('click', (e) => { if (!e.target.closest('#abrir-lateral')) fecharGaveta(); });
+for (const lista of ['lista-projetos', 'lista-conversas', 'projeto-conversas']) {
+  $(lista).addEventListener('click', (e) => {
+    const alvo = e.target.closest('[data-conversa], [data-projeto]');
+    if (!alvo || ocupado) return;
+    if (alvo.dataset.conversa) abrirConversa(alvo.dataset.conversa);
+    else abrirProjeto(alvo.dataset.projeto);
+  });
+}
+
+// ---------- conversa ----------
+
+let ocupado = false;
 
 function adicionar(classe, html) {
   $('vazio').hidden = true;
@@ -438,7 +661,11 @@ function rodape(r) {
     ? `<span class="selo ia">🤖 ${r.tipo_fonte === 'misto' ? 'Complemento: IA (conhecimento geral)' : 'Fonte: IA (conhecimento geral, não consta nos documentos)'}</span>
        <span>Confira antes de usar em decisões.</span>`
     : '';
-  return `<div class="fonte">${drive}${ia}</div>`;
+  const base = r.base?.length
+    ? `<span class="selo base">📚 Base de conhecimento: aproveitou ${r.base.length > 1 ? 'respostas anteriores' : 'uma resposta anterior'}</span>
+       <ul>${r.base.map((b) => `<li>"${escapar(b.pergunta)}", em ${quandoCurto(b.data)}</li>`).join('')}</ul>`
+    : '';
+  return `<div class="fonte">${drive}${ia}${base}</div>`;
 }
 
 // Gauge da resposta. O agente não sabe de antemão quantas buscas fará, então o
@@ -473,7 +700,16 @@ function criarGauge(bolha) {
   return {
     evento(e) {
       const etapa = el.querySelector('.etapa');
-      if (e.tipo === 'inicio') g.estimativa = e.estimativa_ms || g.estimativa;
+      if (e.tipo === 'inicio') {
+        g.estimativa = e.estimativa_ms || g.estimativa;
+        etapa.textContent = 'Consultando a base de conhecimento...';
+      }
+      if (e.tipo === 'base') {
+        g.marco = Math.max(g.marco, 10);
+        etapa.textContent = e.encontrados
+          ? `Encontrei ${e.encontrados} resposta${e.encontrados > 1 ? 's' : ''} parecida${e.encontrados > 1 ? 's' : ''} na base. Conferindo nos documentos...`
+          : 'Nada parecido na base. Buscando nos documentos...';
+      }
       if (e.tipo === 'busca') {
         g.marco = Math.max(g.marco, Math.min(15 + (e.n - 1) * 12, 60));
         etapa.textContent = `Buscando nos documentos: "${e.consulta}"`;
@@ -507,7 +743,7 @@ async function perguntar(texto) {
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/drive-perguntar`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${session?.access_token}`, apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pergunta: texto, historico }),
+      body: JSON.stringify({ pergunta: texto, conversa_id: conversaAtual, projeto_id: projetoAtual }),
     });
     if (!resp.ok) {
       let msg = 'Não consegui responder agora. Tente de novo em instantes.';
@@ -528,6 +764,7 @@ async function perguntar(texto) {
       for (const linha of linhas) {
         if (!linha.trim()) continue;
         const e = JSON.parse(linha);
+        if (e.tipo === 'inicio' && e.conversa_id) conversaAtual = e.conversa_id;
         if (e.tipo === 'fim') resultado = e.resposta;
         else if (e.tipo === 'erro') throw new Error(e.erro);
         else gauge.evento(e);
@@ -537,13 +774,12 @@ async function perguntar(texto) {
     gauge.concluir();
     await new Promise((r) => setTimeout(r, 350));
     bolha.innerHTML = formatar(resultado.texto) + rodape(resultado);
-    historico.push({ pergunta: texto, resposta: resultado.texto });
-    historico = historico.slice(-6);
   } catch (e) {
     gauge.parar();
     espera.classList.add('erro');
     bolha.textContent = e.message;
   } finally {
+    carregarLateral();
     ocupado = false;
     $('enviar').disabled = false;
     $('conversa').scrollTop = $('conversa').scrollHeight;
@@ -565,7 +801,6 @@ $('form-pergunta').addEventListener('submit', (e) => {
   perguntar(texto);
 });
 $('sugestoes').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') perguntar(e.target.textContent); });
-$('nova-conversa').addEventListener('click', () => { historico = []; limparConversa(); caixa.focus(); });
 
 // ---------- painel do admin ----------
 
