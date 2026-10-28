@@ -37,7 +37,9 @@ export function criarBriefing(entregas, dados, extra = {}) {
   if (!d.tema || !d.descricao) throw new Error('Tema e descrição são obrigatórios.');
   const agora = new Date();
   const carimbo = agora.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
-  const id = `${carimbo}-${slug(d.tema)}`;
+  // Mesmo tema no mesmo segundo geraria o mesmo id: acrescenta um sufixo.
+  let id = `${carimbo}-${slug(d.tema)}`;
+  for (let n = 2; existsSync(join(entregas, id)); n++) id = `${carimbo}-${slug(d.tema)}-${n}`;
   const pasta = join(entregas, id);
   mkdirSync(pasta, { recursive: true });
   writeFileSync(join(pasta, 'briefing.json'), JSON.stringify({ ...d, ...extra, criadoEm: agora.toISOString() }, null, 2));

@@ -474,9 +474,12 @@ function selecionar(id) { selecionada = id; assinaturaDetalhe = ''; carregarDeta
 
 let assinaturaDetalhe = '';
 async function carregarDetalhe() {
+  const pedida = selecionada;
   const d = modo === 'local'
-    ? await fetch(`/api/demandas/${encodeURIComponent(selecionada)}`).then((x) => x.json())
-    : minhas.find((x) => x.id === selecionada);
+    ? await fetch(`/api/demandas/${encodeURIComponent(pedida)}`).then((x) => x.json())
+    : minhas.find((x) => x.id === pedida);
+  // Se a pessoa trocou de demanda enquanto esta carregava, descarta a resposta antiga.
+  if (pedida !== selecionada) return;
   if (!d || (d.erro && !d.id)) return;
   const assinatura = JSON.stringify([d.id, d.etapa, d.rodando, d.posts, d.revisoes, d.temArte, d.erro, (d.log || '').length]);
   if (assinatura === assinaturaDetalhe) return;

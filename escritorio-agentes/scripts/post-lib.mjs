@@ -8,7 +8,7 @@ export function lerSecoes(md) {
   let atual = null;
   for (const linha of md.replace(/\r\n/g, '\n').split('\n')) {
     const m = linha.match(/^##\s+(.+?)\s*$/);
-    if (m) {
+    if (m && SECOES.includes(m[1])) {
       atual = m[1];
       secoes[atual] = [];
     } else if (atual) {

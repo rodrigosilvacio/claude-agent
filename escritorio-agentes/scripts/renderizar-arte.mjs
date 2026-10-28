@@ -52,7 +52,7 @@ try {
       };
     });
     const transbordando = [...document.body.querySelectorAll('*')]
-      .filter((el) => el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow === 'visible' && el.children.length === 0 && el.textContent.trim())
+      .filter((el) => el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow === 'visible' && el.textContent.trim())
       .map((el) => el.textContent.trim().slice(0, 40));
     return {
       logo,
