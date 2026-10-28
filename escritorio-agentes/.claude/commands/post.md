@@ -16,7 +16,7 @@ Se `entregas/$ARGUMENTS/briefing.md` não existir, escreva `entregas/$ARGUMENTS/
 
 Use a ferramenta Agent para cada etapa, **uma por vez, nunca em paralelo e sempre em primeiro plano** (`run_in_background: false`, esperando o resultado), e sempre com uma `description` curta começando pelo nome do agente (é ela que aparece no balão do personagem no escritório pixel art), por exemplo `Tiago escreve a v1`, `Roberto revisa a v1`, `Eloah cria a arte`.
 
-1. **Tiago escreve** (`subagent_type: tiago-escritor`): peça a versão `N = 1` informando a pasta da demanda.
+1. **Tiago escreve** (`subagent_type: tiago-escritor`): peça a versão `N = 1` informando a pasta da demanda. Numa retomada, pule para a etapa indicada acima em vez de começar aqui.
 2. **Roberto revisa** (`subagent_type: roberto-revisor`): peça a revisão da versão `N`.
 3. Leia a primeira linha de `revisao-v<N>.md`:
    - `VEREDITO: REPROVADO` e `N < 3`: chame o **Tiago** de novo com `N + 1`, informando o caminho da revisão anterior, e volte ao passo 2.

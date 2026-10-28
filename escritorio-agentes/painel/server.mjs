@@ -44,7 +44,11 @@ function proximo() {
   const proc = spawn(process.execPath, ['scripts/rodar-esteira.mjs', id], { cwd: RAIZ, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.pipe(log, { end: false });
   proc.stderr.pipe(log, { end: false });
+  let encerrado = false;
   const fim = (msg) => {
+    // 'error' e 'close' podem chegar os dois para o mesmo processo: só o primeiro conta.
+    if (encerrado) return;
+    encerrado = true;
     log.end(`\n[${new Date().toISOString()}] ${msg}\n`);
     emExecucao = null;
     proximo();
